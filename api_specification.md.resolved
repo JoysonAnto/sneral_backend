@@ -1,0 +1,1114 @@
+# Complete API Specification - Role-Based Access
+
+## Overview
+Based on frontend analysis, here's the complete API specification for all user roles.
+
+## Frontend Applications Discovered:
+
+1. **Partner App** (`/partner/apps/web`)
+   - Dashboard
+   - Auth (Login/Register)
+   
+2. **Admin Frontend** (`/admin/frontend`)
+   - Dashboard
+   - Login
+
+3. **Business Partner Frontend** (`/business_partner/frontend`)
+   - Dashboard
+   - Appointments
+   - Services
+   - Invoices
+   - Wallet
+   - KYC
+   - Auth (Login/Register)
+
+4. **User Frontend** (`/user/frontend`)
+   - Service booking
+   - Tracking
+   - Profile
+
+---
+
+## API Endpoints by Role
+
+### Legend:
+- 🔓 **Public** - No authentication required
+- 🔐 **Protected** - Authentication required
+- 👑 **Super Admin Only**
+- 🛡️ **Admin Only**  
+- 💼 **Business Partner Only**
+- 🔧 **Service Partner Only**
+- 👤 **Customer Only**
+
+---
+
+## 1. AUTHENTICATION APIs
+
+### 1.1 Registration & Login
+
+#### POST `/api/v1/auth/register` 🔓
+Register new user (all roles)
+
+**Request:**
+```json
+{
+  "email": "user@example.com",
+  "password": "password123",
+  "fullName": "John Doe",
+  "phoneNumber": "+919876543210",
+  "role": "CUSTOMER|SERVICE_PARTNER|BUSINESS_PARTNER"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "userId": "uuid",
+    "email": "user@example.com",
+    "role": "CUSTOMER"
+  },
+  "message": "Registration successful. Please verify your email."
+}
+```
+
+**Used By:** All roles except ADMIN (created by Super Admin)
+
+---
+
+#### POST `/api/v1/auth/login` 🔓
+Login with email and password
+
+**Request:**
+```json
+{
+  "email": "user@example.com",
+  "password": "password123"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": "uuid",
+      "email": "user@example.com",
+      "fullName": "John Doe",
+      "role": "CUSTOMER",
+      "phoneNumber": "+919876543210"
+    },
+    "accessToken": "jwt_access_token",
+    "refreshToken": "jwt_refresh_token"
+  },
+  "message": "Login successful"
+}
+```
+
+**Used By:** All roles
+
+---
+
+#### POST `/api/v1/auth/verify-email` 🔓
+Verify email with OTP
+
+**Request:**
+```json
+{
+  "email": "user@example.com",
+  "otp": "123456"
+}
+```
+
+**Used By:** All newly registered users
+
+---
+
+#### POST `/api/v1/auth/refresh-token` 🔓
+Refresh access token
+
+**Request:**
+```json
+{
+  "refreshToken": "jwt_refresh_token"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "accessToken": "new_jwt_access_token"
+  }
+}
+```
+
+**Used By:** All roles
+
+---
+
+#### POST `/api/v1/auth/logout` 🔐
+Logout user
+
+**Used By:** All roles
+
+---
+
+#### GET `/api/v1/auth/profile` 🔐
+Get current user profile
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "uuid",
+    "email": "user@example.com",
+    "fullName": "John Doe",
+    "role": "CUSTOMER",
+    "phoneNumber": "+919876543210",
+    "emailVerified": true,
+    "createdAt": "2024-01-01T00:00:00Z"
+  }
+}
+```
+
+**Used By:** All roles
+
+---
+
+#### POST `/api/v1/auth/change-password` 🔐
+Change password
+
+**Request:**
+```json
+{
+  "oldPassword": "old123",
+  "newPassword": "new123"
+}
+```
+
+**Used By:** All roles
+
+---
+
+## 2. USER MANAGEMENT APIs
+
+#### GET `/api/v1/users` 🛡️👑
+Get all users (with filters)
+
+**Query Params:**
+- `page` - Page number (default: 1)
+- `limit` - Items per page (default: 10)
+- `role` - Filter by role
+- `search` - Search by name/email
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "users": [
+      {
+        "id": "uuid",
+        "email": "user@example.com",
+        "fullName": "John Doe",
+        "role": "CUSTOMER",
+        "isActive": true,
+        "createdAt": "2024-01-01T00:00:00Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 10,
+      "total": 100
+    }
+  }
+}
+```
+
+**Used By:** Admin, Super Admin
+
+---
+
+#### GET `/api/v1/users/:id` 🛡️👑
+Get user by ID
+
+**Used By:** Admin, Super Admin
+
+---
+
+#### PATCH `/api/v1/users/:id` 🛡️👑
+Update user
+
+**Request:**
+```json
+{
+  "fullName": "Updated Name",
+  "phoneNumber": "+919876543210",
+  "isActive": true
+}
+```
+
+**Used By:** Admin, Super Admin
+
+---
+
+#### DELETE `/api/v1/users/:id` 👑
+Delete/deactivate user
+
+**Used By:** Super Admin only
+
+---
+
+#### POST `/api/v1/users/admin` 👑
+Create admin account
+
+**Request:**
+```json
+{
+  "email": "admin@example.com",
+  "password": "admin123",
+  "fullName": "Admin User",
+  "role": "ADMIN"
+}
+```
+
+**Used By:** Super Admin only
+
+---
+
+## 3. SERVICE CATALOG APIs
+
+#### GET `/api/v1/services` 🔓
+Get all services
+
+**Query Params:**
+- `category` - Filter by category
+- `search` - Search services
+- `active` - Filter active services
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid",
+      "name": "House Cleaning",
+      "description": "Professional cleaning service",
+      "category": "HOME_SERVICE",
+      "basePrice": 500,
+      "currency": "INR",
+      "unit": "per hour",
+      "estimatedTime": 120,
+      "isActive": true,
+      "avgRating": 4.5,
+      "totalRatings": 150
+    }
+  ]
+}
+```
+
+**Used By:** All users (public)
+
+---
+
+#### GET `/api/v1/services/:id` 🔓
+Get service details
+
+**Used By:** All users
+
+---
+
+#### POST `/api/v1/services` 🛡️👑
+Create new service
+
+**Request:**
+```json
+{
+  "name": "House Cleaning",
+  "description": "Professional cleaning",
+  "category": "HOME_SERVICE",
+  "basePrice": 500,
+  "currency": "INR",
+  "unit": "per hour",
+  "estimatedTime": 120,
+  "metadata": {}
+}
+```
+
+**Used By:** Admin, Super Admin
+
+---
+
+#### PATCH `/api/v1/services/:id` 🛡️👑💼
+Update service
+
+**Used By:** Admin, Super Admin, Business Partner (own services)
+
+---
+
+#### DELETE `/api/v1/services/:id` 👑
+Delete service
+
+**Used By:** Super Admin only
+
+---
+
+#### GET `/api/v1/services/categories` 🔓
+Get all service categories
+
+**Used By:** All users
+
+---
+
+## 4. PARTNER MANAGEMENT APIs
+
+#### GET `/api/v1/partners` 🛡️👑
+Get all partners
+
+**Query Params:**
+- `type` - SERVICE_PARTNER | BUSINESS_PARTNER
+- `status` - ACTIVE | INACTIVE | PENDING
+- `verified` - true | false
+
+**Used By:** Admin, Super Admin
+
+---
+
+#### GET `/api/v1/partners/:id` 🛡️👑💼🔧
+Get partner details
+
+**Used By:** Admin, Super Admin, Self
+
+---
+
+#### POST `/api/v1/partners` 💼
+Create service partner (by Business Partner)
+
+**Request:**
+```json
+{
+  "email": "partner@example.com",
+  "password": "pass123",
+  "fullName": "Partner Name",
+  "phoneNumber": "+919876543210",
+  "services": ["serviceId1", "serviceId2"]
+}
+```
+
+**Used By:** Business Partner, Admin
+
+---
+
+#### PATCH `/api/v1/partners/:id` 🛡️👑💼🔧
+Update partner profile
+
+**Used By:** Admin, Super Admin, Self
+
+---
+
+#### GET `/api/v1/partners/:id/services` 💼🔧
+Get partner services
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid",
+      "serviceId": "service-uuid",
+      "serviceName": "House Cleaning",
+      "customPrice": 600,
+      "isAvailable": true
+    }
+  ]
+}
+```
+
+**Used By:** Partner (self), Admin
+
+---
+
+#### PATCH `/api/v1/partners/:id/services` 💼🔧
+Update partner service pricing/availability
+
+**Request:**
+```json
+{
+  "serviceId": "uuid",
+  "customPrice": 600,
+  "isAvailable": true
+}
+```
+
+**Used By:** Business Partner, Service Partner
+
+---
+
+#### GET `/api/v1/partners/:id/bookings` 💼🔧
+Get partner bookings
+
+**Query Params:**
+- `status` - Filter by status
+- `startDate` - Date range start
+- `endDate` - Date range end
+
+**Used By:** Partner (self), Admin
+
+---
+
+#### GET `/api/v1/partners/:id/earnings` 💼🔧
+Get partner earnings
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "totalEarnings": 15000,
+    "currentBalance": 12000,
+    "pendingPayouts": 3000,
+    "completedBookings": 25,
+    "avgRating": 4.5
+  }
+}
+```
+
+**Used By:** Partner (self), Admin
+
+---
+
+#### PATCH `/api/v1/partners/:id/availability` 🔧
+Update availability status
+
+**Request:**
+```json
+{
+  "isAvailable": true,
+  "latitude": 12.9716,
+  "longitude": 77.5946
+}
+```
+
+**Used By:** Service Partner
+
+---
+
+## 5. BOOKING APIs
+
+#### GET `/api/v1/bookings` 🔐
+Get bookings (filtered by role)
+
+**Query Params:**
+- `status` - Filter by status
+- `page` - Page number
+- `limit` - Items per page
+- `startDate` - Date range
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "bookings": [
+      {
+        "id": "uuid",
+        "bookingNumber": "BK123456",
+        "customerId": "uuid",
+        "customerName": "John Doe",
+        "partnerId": "uuid",
+        "partnerName": "Partner Name",
+        "serviceId": "uuid",
+        "serviceName": "House Cleaning",
+        "status": "IN_PROGRESS",
+        "totalAmount": 600,
+        "scheduledAt": "2024-01-15T10:00:00Z",
+        "address": "123 Main St",
+        "latitude": 12.9716,
+        "longitude": 77.5946,
+        "createdAt": "2024-01-10T10:00:00Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 10,
+      "total": 50
+    }
+  }
+}
+```
+
+**Used By:**
+- Customer: Own bookings
+- Partner: Assigned bookings
+- Business Partner: Team bookings
+- Admin: All bookings
+
+---
+
+#### POST `/api/v1/bookings` 👤
+Create booking
+
+**Request:**
+```json
+{
+  "serviceId": "uuid",
+  "items": [
+    {
+      "serviceId": "uuid",
+      "quantity": 1
+    }
+  ],
+  "scheduledAt": "2024-01-15T10:00:00Z",
+  "address": "123 Main St",
+  "latitude": 12.9716,
+   "longitude": 77.5946,
+  "paymentMethod": "ONLINE|COD|WALLET",
+  "notes": "Please bring cleaning supplies"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "bookingId": "uuid",
+    "bookingNumber": "BK123456",
+    "totalAmount": 600,
+    "advanceAmount": 180,
+    "status": "PENDING",
+    "paymentUrl": "https://payment.link" // if online payment
+  }
+}
+```
+
+**Used By:** Customer
+
+---
+
+#### GET `/api/v1/bookings/:id` 🔐
+Get booking details
+
+**Used By:** Customer (own), Partner (assigned), Admin
+
+---
+
+#### PATCH `/api/v1/bookings/:id/status` 🛡️💼🔧
+Update booking status
+
+**Request:**
+```json
+{
+  "status": "PARTNER_ACCEPTED|IN_PROGRESS|COMPLETED|CANCELLED",
+  "notes": "Optional notes"
+}
+```
+
+**Used By:** Partner, Business Partner, Admin
+
+---
+
+#### POST `/api/v1/bookings/:id/assign` 🛡️💼
+Assign partner to booking
+
+**Request:**
+```json
+{
+  "partnerId": "uuid"
+}
+```
+
+**Used By:** Admin, Business Partner
+
+---
+
+#### POST `/api/v1/bookings/:id/cancel` 🔐
+Cancel booking
+
+**Request:**
+```json
+{
+  "reason": "Cancellation reason"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "refundAmount": 540,
+    "refundMethod": "WALLET",
+    "refundStatus": "PROCESSING"
+  }
+}
+```
+
+**Used By:** Customer, Partner, Admin
+
+---
+
+#### POST `/api/v1/bookings/:id/rate` 👤
+Rate completed booking
+
+**Request:**
+```json
+{
+  "rating": 5,
+  "review": "Excellent service!"
+}
+```
+
+**Used By:** Customer
+
+---
+
+## 6. PAYMENT APIs
+
+#### POST `/api/v1/payments` 👤
+Create payment
+
+**Request:**
+```json
+{
+  "bookingId": "uuid",
+  "amount": 600,
+  "method": "RAZORPAY|STRIPE|WALLET",
+  "type": "ADVANCE|FULL"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "paymentId": "uuid",
+    "orderId": "order_xyz",
+    "amount": 600,
+    "currency": "INR",
+    "status": "PENDING",
+    "paymentUrl": "https://payment.link"
+  }
+}
+```
+
+**Used By:** Customer
+
+---
+
+#### POST `/api/v1/payments/verify` 👤
+Verify payment
+
+**Request:**
+```json
+{
+  "paymentId": "payment_id",
+  "orderId": "order_id",
+  "signature": "payment_signature"
+}
+```
+
+**Used By:** Customer (callback)
+
+---
+
+#### POST `/api/v1/payments/refund` 🛡️
+Process refund
+
+**Request:**
+```json
+{
+  "bookingId": "uuid",
+  "amount": 540,
+  "reason": "Cancellation"
+}
+```
+
+**Used By:** Admin
+
+---
+
+#### GET `/api/v1/payments/history` 🔐
+Get payment history
+
+**Used By:** All roles (own payments)
+
+---
+
+## 7. WALLET APIs
+
+#### GET `/api/v1/wallet` 🔐
+Get wallet balance
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "balance": 5000,
+    "currency": "INR",
+    "pendingAmount": 1000
+  }
+}
+```
+
+**Used By:** Customer, Partner
+
+---
+
+#### POST `/api/v1/wallet/add-money` 🔐
+Add money to wallet
+
+**Request:**
+```json
+{
+  "amount": 1000,
+  "method": "UPI|CARD|NET_BANKING"
+}
+```
+
+**Used By:** Customer, Partner
+
+---
+
+#### POST `/api/v1/wallet/withdraw` 💼🔧
+Withdraw from wallet
+
+**Request:**
+```json
+{
+  "amount": 5000,
+  "bankAccountId": "uuid"
+}
+```
+
+**Used By:** Partner
+
+---
+
+#### GET `/api/v1/wallet/transactions` 🔐
+Get wallet transactions
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid",
+      "type": "CREDIT|DEBIT",
+      "amount": 600,
+      "description": "Booking #BK123456",
+      "balanceAfter": 5600,
+      "createdAt": "2024-01-15T10:00:00Z"
+    }
+  ]
+}
+```
+
+**Used By:** Customer, Partner
+
+---
+
+## 8. KYC APIs
+
+#### POST `/api/v1/kyc/submit` 💼🔧
+Submit KYC documents
+
+**Request (multipart/form-data):**
+```
+aadhaarFront: File
+aadhaarBack: File
+panCard: File
+photo: File
+bankProof: File
+```
+
+**Used By:** Service Partner, Business Partner
+
+---
+
+#### GET `/api/v1/kyc/:partnerId` 🛡️💼🔧
+Get KYC status
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "status": "PENDING|APPROVED|REJECTED",
+    "documents": [
+      {
+        "type": "AADHAAR",
+        "url": "https://...",
+        "verified": false
+      }
+    ],
+    "rejectionReason": null
+  }
+}
+```
+
+**Used By:** Partner (self), Admin
+
+---
+
+#### POST `/api/v1/kyc/:partnerId/verify` 🛡️
+Approve/Reject KYC
+
+**Request:**
+```json
+{
+  "status": "APPROVED|REJECTED",
+  "reason": "Rejection reason if rejected"
+}
+```
+
+**Used By:** Admin
+
+---
+
+## 9. MESSAGING APIs
+
+#### GET `/api/v1/messages/conversations` 🔐
+Get all conversations
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid",
+      "participantId": "uuid",
+      "participantName": "John Doe",
+      "participantRole": "CUSTOMER",
+      "lastMessage": "Hello",
+      "unreadCount": 2,
+      "updatedAt": "2024-01-15T10:00:00Z"
+    }
+  ]
+}
+```
+
+**Used By:** All roles
+
+---
+
+#### GET `/api/v1/messages/conversations/:id` 🔐
+Get conversation messages
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "messages": [
+      {
+        "id": "uuid",
+        "senderId": "uuid",
+        "message": "Hello",
+        "createdAt": "2024-01-15T10:00:00Z",
+        "read": true
+      }
+    ]
+  }
+}
+```
+
+**Used By:** All roles
+
+---
+
+#### POST `/api/v1/messages/conversations/:id/messages` 🔐
+Send message
+
+**Request:**
+```json
+{
+  "message": "Hello, when will you arrive?"
+}
+```
+
+**Used By:** All roles
+
+---
+
+## 10. NOTIFICATION APIs
+
+#### GET `/api/v1/notifications` 🔐
+Get notifications
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "uuid",
+      "title": "New Booking",
+      "message": "You have a new booking #BK123456",
+      "type": "BOOKING",
+      "read": false,
+      "createdAt": "2024-01-15T10:00:00Z"
+    }
+  ]
+}
+```
+
+**Used By:** All roles
+
+---
+
+#### PATCH `/api/v1/notifications/:id/read` 🔐
+Mark notification as read
+
+**Used By:** All roles
+
+---
+
+## 11. ADMIN DASHBOARD APIs
+
+#### GET `/api/v1/admin/dashboard/stats` 🛡️👑
+Get dashboard statistics
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "totalUsers": 10000,
+    "totalPartners": 500,
+    "totalBookings": 5000,
+    "activeBookings": 150,
+    "todayRevenue": 50000,
+    "monthlyRevenue": 1500000,
+    "pendingKYC": 25,
+    "topServices": [
+      {
+        "name": "House Cleaning",
+        "bookings": 250
+      }
+    ]
+  }
+}
+```
+
+**Used By:** Admin, Super Admin
+
+---
+
+#### GET `/api/v1/admin/reports` 🛡️👑
+Generate reports
+
+**Query Params:**
+- `type` - REVENUE|BOOKINGS|PARTNERS
+- `startDate` - Date range start
+- `endDate` - Date range end
+- `format` - JSON|PDF|CSV
+
+**Used By:** Admin, Super Admin
+
+---
+
+## 12. SOCKET.IO EVENTS
+
+### Namespace: `/customer`
+
+**Events to Emit (Client → Server):**
+- `booking:track` - Track booking location
+- `message:send` - Send chat message
+- `booking:cancel` - Cancel booking
+
+**Events to Listen (Server → Client):**
+- `booking:status_updated` - Booking status changed
+- `partner:assigned` - Partner assigned to booking
+- `partner:location_update` - Partner location update
+- `message:received` - New message received
+- `notification:new` - New notification
+
+---
+
+### Namespace: `/partner`
+
+**Events to Emit:**
+- `booking:accept` - Accept booking
+- `booking:reject` - Reject booking
+- `booking:status_update` - Update booking status
+- `location:update` - Update current location
+- `message:send` - Send message
+
+**Events to Listen:**
+- `booking:new_request` - New booking request
+- `booking:cancelled` - Booking cancelled by customer
+- `message:received` - New message
+- `earnings:updated` - Earnings updated
+- `notification:new` - New notification
+
+---
+
+### Namespace: `/admin`
+
+**Events to Listen:**
+- `dashboard:stats_update` - Real-time stats update
+- `booking:created` - New booking created
+- `partner:registered` - New partner registered
+- `kyc:submitted` - New KYC submitted
+
+---
+
+## Summary by Role
+
+### CUSTOMER (👤)
+- **Authentication:** Register, Login, Profile
+- **Services:** Browse, Search
+- **Bookings:** Create, View, Track, Cancel, Rate
+- **Payments:** Make payment, View history
+- **Wallet:** Add money, View transactions
+- **Messages:** Chat with partner
+- **Notifications:** View notifications
+
+### SERVICE_PARTNER (🔧)
+- **Authentication:** Register, Login, Profile
+- **Bookings:** View assigned, Accept/Reject, Update status
+- **Earnings:** View earnings, Request payout
+- **Wallet:** View balance, Withdraw
+- **KYC:** Submit documents, Check status
+- **Messages:** Chat with customers
+- **Location:** Update real-time location
+
+### BUSINESS_PARTNER (💼)
+- **Authentication:** Register, Login, Profile
+- **Partners:** Create service partners, Manage team
+- **Services:** Set pricing, Manage offerings
+- **Bookings:** View team bookings, Assign partners
+- **Earnings:** View business earnings, Request payouts
+- **Wallet:** Manage wallet
+- **KYC:** Submit business documents
+
+### ADMIN (🛡️)
+- **Users:** View all, Manage
+- **Partners:** View, Verify KYC, Manage
+- **Services:** Create, Edit, Delete
+- **Bookings:** View all, Assign partners, Manage
+- **Payments:** Process refunds
+- **Dashboard:** View stats, Generate reports
+
+### SUPER_ADMIN (👑)
+- **All Admin permissions +**
+- **System:** Configure settings
+- **Admins:** Create/manage admin accounts
+- **Pricing:** Set commission rates
+- **Override:** Any action
+
+---
+
+## Total API Count: **80+ endpoints**

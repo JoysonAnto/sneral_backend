@@ -1,0 +1,21 @@
+// Add this model after the existing models in schema.prisma
+
+model AuditLog {
+  id            String   @id @default(uuid())
+  user_id       String?
+  user          User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  action        String
+  resource_type String?
+  resource_id   String?
+  details       Json?
+  ip_address    String?
+  user_agent    String?
+  status        String   @default("SUCCESS")
+  timestamp     DateTime @default(now())
+  created_at    DateTime @default(now())
+
+  @@index([user_id])
+  @@index([action])
+  @@index([timestamp])
+  @@map("audit_logs")
+}

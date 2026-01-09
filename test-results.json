@@ -1,0 +1,132 @@
+{
+  "passed": 16,
+  "failed": 5,
+  "tests": [
+    {
+      "name": "Login with valid credentials",
+      "passed": true,
+      "details": "Received tokens",
+      "timestamp": "2025-12-15T05:06:06.102Z"
+    },
+    {
+      "name": "Login with invalid password",
+      "passed": true,
+      "details": "Correctly rejected",
+      "timestamp": "2025-12-15T05:06:06.419Z"
+    },
+    {
+      "name": "Login with missing password",
+      "passed": true,
+      "details": "Correctly rejected",
+      "timestamp": "2025-12-15T05:06:06.428Z"
+    },
+    {
+      "name": "Get profile without token",
+      "passed": true,
+      "details": "Correctly requires auth",
+      "timestamp": "2025-12-15T05:06:06.445Z"
+    },
+    {
+      "name": "Get profile with valid token",
+      "passed": true,
+      "details": "Profile retrieved",
+      "timestamp": "2025-12-15T05:06:06.468Z"
+    },
+    {
+      "name": "Refresh access token",
+      "passed": true,
+      "details": "New token received",
+      "timestamp": "2025-12-15T05:06:06.476Z"
+    },
+    {
+      "name": "Get all users",
+      "passed": false,
+      "details": "Request failed with status code 500",
+      "timestamp": "2025-12-15T05:06:06.507Z"
+    },
+    {
+      "name": "Get users with pagination",
+      "passed": false,
+      "details": "Request failed with status code 500",
+      "timestamp": "2025-12-15T05:06:06.524Z"
+    },
+    {
+      "name": "Filter users by role",
+      "passed": false,
+      "details": "Request failed with status code 500",
+      "timestamp": "2025-12-15T05:06:06.537Z"
+    },
+    {
+      "name": "Get all services (public)",
+      "passed": true,
+      "details": "Retrieved 10 services",
+      "timestamp": "2025-12-15T05:06:06.611Z"
+    },
+    {
+      "name": "Get service categories",
+      "passed": true,
+      "details": "Categories retrieved",
+      "timestamp": "2025-12-15T05:06:06.621Z"
+    },
+    {
+      "name": "Get all partners",
+      "passed": false,
+      "details": "Request failed with status code 500",
+      "timestamp": "2025-12-15T05:06:06.636Z"
+    },
+    {
+      "name": "Filter partners by type and status",
+      "passed": false,
+      "details": "Request failed with status code 500",
+      "timestamp": "2025-12-15T05:06:06.650Z"
+    },
+    {
+      "name": "Get all bookings",
+      "passed": true,
+      "details": "Bookings retrieved",
+      "timestamp": "2025-12-15T05:06:06.664Z"
+    },
+    {
+      "name": "Filter bookings by status",
+      "passed": true,
+      "details": "Status filter works",
+      "timestamp": "2025-12-15T05:06:06.671Z"
+    },
+    {
+      "name": "Get dashboard statistics",
+      "passed": true,
+      "details": "Stats retrieved",
+      "timestamp": "2025-12-15T05:06:06.746Z"
+    },
+    {
+      "name": "Unauthorized access to /users",
+      "passed": true,
+      "details": "Correctly blocked",
+      "timestamp": "2025-12-15T05:06:06.754Z"
+    },
+    {
+      "name": "Unauthorized access to /partners",
+      "passed": true,
+      "details": "Correctly blocked",
+      "timestamp": "2025-12-15T05:06:06.760Z"
+    },
+    {
+      "name": "Unauthorized access to /bookings",
+      "passed": true,
+      "details": "Correctly blocked",
+      "timestamp": "2025-12-15T05:06:06.766Z"
+    },
+    {
+      "name": "Unauthorized access to /admin/dashboard/stats",
+      "passed": true,
+      "details": "Correctly blocked",
+      "timestamp": "2025-12-15T05:06:06.774Z"
+    },
+    {
+      "name": "Invalid token rejection",
+      "passed": true,
+      "details": "Correctly rejected",
+      "timestamp": "2025-12-15T05:06:06.781Z"
+    }
+  ]
+}

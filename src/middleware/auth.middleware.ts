@@ -1,0 +1,47 @@
+import { Request, Response, NextFunction } from 'express';
+import { UnauthorizedError } from '../utils/errors';
+import { UserRole } from '@prisma/client';
+import { verifyAccessToken } from '../utils/jwt.helper';
+
+// Extend Express Request type
+declare global {
+    namespace Express {
+        interface Request {
+            user?: {
+                userId: string;
+                role: UserRole;
+                email: string;
+            };
+        }
+    }
+}
+
+export const authenticateToken = async (
+    req: Request,
+    _res: Response,
+    next: NextFunction
+) => {
+    try {
+        const authHeader = req.headers['authorization'];
+        const token = authHeader && authHeader.split(' ')[1];
+
+        if (!token) {
+            throw new UnauthorizedError('Access token required');
+        }
+
+        const decoded = verifyAccessToken(token) as any;
+        req.user = decoded;
+        next();
+    } catch (error) {
+        next(new UnauthorizedError('Invalid or expired token'));
+    }
+};
+
+export const authorize = (...allowedRoles: UserRole[]) => {
+    return async (req: Request, _res: Response, next: NextFunction) => {
+        if (!req.user || !allowedRoles.includes(req.user.role)) {
+            throw new UnauthorizedError('Access denied - insufficient permissions');
+        }
+        next();
+    };
+};

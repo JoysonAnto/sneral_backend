@@ -1,0 +1,1644 @@
+# Unified Backend System Prompt
+
+## Project Overview
+Create a production-grade unified backend system using Express.js (plain JavaScript) that consolidates all separate backends (Partner, Admin, Business Partner, User) into a single cohesive application with Socket.IO real-time capabilities.
+
+## Technology Stack Requirements
+
+### Core Framework
+- **Express.js** (latest stable version) - Primary backend framework
+- **Node.js** (v18+) - JavaScript runtime
+- **Prisma** - Database ORM with PostgreSQL
+- **Socket.IO** - Real-time bidirectional communication
+- **Redis** - Session management, caching, and pub/sub for Socket.IO scaling
+
+### Authentication & Security
+- **jsonwebtoken** - JWT for access & refresh tokens
+- **Passport.js** - Authentication middleware (passport, passport-jwt, passport-local)
+- **Bcryptjs** - Password hashing
+- **Helmet** - Security headers
+- **CORS** - Configured for multiple frontends
+- **Express-rate-limit** - API protection
+
+### Additional Libraries
+- **Express-validator** - Request validation
+- **Joi** - Schema validation
+- **BullMQ** - Job queues for background tasks
+- **Winston** or **Morgan** - Logging
+- **Swagger-jsdoc** & **Swagger-ui-express** - API documentation
+- **Nodemailer** - Email sending
+
+## Architecture Requirements
+
+### 1. Multi-Role System
+Implement role-based access control (RBAC) for:
+- **Super Admin** - Full system access
+- **Admin** - Manage users, partners, services
+- **Business Partner** - Manage business, services, bookings
+- **Service Partner** - Individual service provider
+- **Customer** - Book services, track orders
+
+### 2. Folder Structure
+Organize the Express.js application following MVC pattern:
+```
+src/
+├── config/                  # Configuration files
+│   ├── database.ts          # Prisma client initialization
+│   ├── redis.ts             # Redis client setup
+│   ├── jwt.ts               # JWT configuration
+│   └── env.ts               # Environment variables
+├── middleware/              # Express middleware
+│   ├── auth.middleware.ts   # JWT authentication
+│   ├── role.middleware.ts   # Role-based access control
+│   ├── validate.middleware.ts # Request validation
+│   ├── error.middleware.ts  # Global error handler
+│   └── logger.middleware.ts # Request logging
+├── routes/                  # Route definitions
+│   ├── index.ts             # Main router
+│   ├── auth.routes.ts
+│   ├── user.routes.ts
+│   ├── partner.routes.ts
+│   ├── service.routes.ts
+│   ├── booking.routes.ts
+│   ├── payment.routes.ts
+│   ├── message.routes.ts
+│   ├── notification.routes.ts
+│   └── admin.routes.ts
+├── controllers/             # Request handlers
+│   ├── auth.controller.ts
+│   ├── user.controller.ts
+│   ├── partner.controller.ts
+│   ├── service.controller.ts
+│   ├── booking.controller.ts
+│   ├── payment.controller.ts
+│   ├── message.controller.ts
+│   ├── notification.controller.ts
+│   └── admin.controller.ts
+├── services/                # Business logic
+│   ├── auth.service.ts
+│   ├── user.service.ts
+│   ├── partner.service.ts
+│   ├── service.service.ts
+│   ├── booking.service.ts
+│   ├── payment.service.ts
+│   ├── wallet.service.ts
+│   ├── notification.service.ts
+│   └── email.service.ts
+├── repositories/            # Data access layer
+│   ├── user.repository.ts
+│   ├── partner.repository.ts
+│   ├── service.repository.ts
+│   ├── booking.repository.ts
+│   └── transaction.repository.ts
+├── validators/              # Request validation schemas
+│   ├── auth.validator.ts
+│   ├── user.validator.ts
+│   ├── booking.validator.ts
+│   └── payment.validator.ts
+├── socket/                  # Socket.IO setup
+│   ├── socket.server.ts     # Socket.IO server initialization
+│   ├── handlers/            # Socket event handlers
+│   │   ├── booking.handler.ts
+│   │   ├── message.handler.ts
+│   │   ├── notification.handler.ts
+│   │   └── location.handler.ts
+│   └── middleware/
+│       └── socket.auth.ts   # Socket authentication
+├── jobs/                    # Background jobs
+│   ├── queues/
+│   │   ├── email.queue.ts
+│   │   ├── payment.queue.ts
+│   │   └── notification.queue.ts
+│   └── workers/
+│       ├── email.worker.ts
+│       ├── payment.worker.ts
+│       └── notification.worker.ts
+├── utils/                   # Utility functions
+│   ├── logger.ts
+│   ├── response.ts          # Standardized API responses
+│   ├── errors.ts            # Custom error classes
+│   ├── jwt.helper.ts
+│   └── encryption.ts
+├── types/                   # JSDoc type definitions
+│   └── jsdoc.js             # Common type definitions
+├── prisma/                  # Prisma schema and migrations
+│   ├── schema.prisma
+│   ├── migrations/
+│   └── seed.js
+├── app.js                   # Express app setup
+└── server.js                # Server entry point
+```
+
+### 3. Complete Email + Password Authentication System
+
+Implement authentication for all user roles (Admin, Business Partner, Service Partner, Customer):
+
+#### Authentication Flow:
+1. **Registration** - User registers with email and password
+2. **Email Verification** - Send verification email with OTP/link
+3. **Login** - User logs in with email and password
+4. **JWT Tokens** - Issue access token (15min) and refresh token (7 days)
+5. **Role-Based Access** - Different permissions based on user role
+
+#### User Roles:
+```javascript
+const UserRole = {
+  SUPER_ADMIN: 'SUPER_ADMIN',
+  ADMIN: 'ADMIN',
+  BUSINESS_PARTNER: 'BUSINESS_PARTNER',
+  SERVICE_PARTNER: 'SERVICE_PARTNER',
+  CUSTOMER: 'CUSTOMER'
+};
+```
+
+#### Auth Routes:
+```javascript
+// routes/auth.routes.js
+const express = require('express');
+const AuthController = require('../controllers/auth.controller');
+const { validateRegister, validateLogin } = require('../validators/auth.validator');
+const { authenticateToken } = require('../middleware/auth.middleware');
+
+const router = express.Router();
+const authController = new AuthController();
+
+// Public routes
+router.post('/register', validateRegister, authController.register);
+router.post('/login', validateLogin, authController.login);
+router.post('/verify-email', authController.verifyEmail);
+router.post('/forgot-password', authController.forgotPassword);
+router.post('/reset-password', authController.resetPassword);
+router.post('/refresh-token', authController.refreshToken);
+
+// Protected routes
+router.post('/logout', authenticateToken, authController.logout);
+router.get('/profile', authenticateToken, authController.getProfile);
+router.patch('/profile', authenticateToken, authController.updateProfile);
+router.post('/change-password', authenticateToken, authController.changePassword);
+
+module.exports = router;
+```
+
+#### Auth Controller:
+```javascript
+// controllers/auth.controller.js
+const AuthService = require('../services/auth.service');
+const { successResponse } = require('../utils/response');
+
+class AuthController {
+  constructor() {
+    this.authService = new AuthService();
+  }
+
+  register = async (req, res, next) => {
+    try {
+      const { email, password, fullName, role, phoneNumber } = req.body;
+      const result = await this.authService.register({
+        email,
+        password,
+        fullName,
+        role,
+        phoneNumber
+      });
+      res.status(201).json(successResponse(result, 'Registration successful. Please verify your email.'));
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  login = async (req, res, next) => {
+    try {
+      const { email, password } = req.body;
+      const result = await this.authService.login(email, password);
+      res.json(successResponse(result, 'Login successful'));
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  verifyEmail = async (req, res, next) => {
+    try {
+      const { email, otp } = req.body;
+      await this.authService.verifyEmail(email, otp);
+      res.json(successResponse(null, 'Email verified successfully'));
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  refreshToken = async (req, res, next) => {
+    try {
+      const { refreshToken } = req.body;
+      const result = await this.authService.refreshToken(refreshToken);
+      res.json(successResponse(result, 'Token refreshed successfully'));
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  logout = async (req, res, next) => {
+    try {
+      await this.authService.logout(req.user.userId);
+      res.json(successResponse(null, 'Logout successful'));
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  getProfile = async (req, res, next) => {
+    try {
+      const profile = await this.authService.getProfile(req.user.userId);
+      res.json(successResponse(profile, 'Profile retrieved successfully'));
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  changePassword = async (req, res, next) => {
+    try {
+      const { oldPassword, newPassword } = req.body;
+      await this.authService.changePassword(req.user.userId, oldPassword, newPassword);
+      res.json(successResponse(null, 'Password changed successfully'));
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
+module.exports = AuthController;
+```
+
+#### Auth Service:
+```javascript
+// services/auth.service.js
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { PrismaClient } = require('@prisma/client');
+const { BadRequestError, UnauthorizedError } = require('../utils/errors');
+const EmailService = require('./email.service');
+const redisClient = require('../config/redis');
+
+const prisma = new PrismaClient();
+
+class AuthService {
+  constructor() {
+    this.emailService = new EmailService();
+  }
+
+  async register(userData) {
+    const { email, password, fullName, role, phoneNumber } = userData;
+
+    // Check if user already exists
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (existingUser) {
+      throw new BadRequestError('Email already registered');
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    // Generate OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // Create user
+    const user = await prisma.user.create({
+      data: {
+        email,
+        password: hashedPassword,
+        full_name: fullName,
+        role: role || 'CUSTOMER',
+        phone_number: phoneNumber,
+        email_verified: false,
+        verification_otp: otp,
+        otp_expiry: otpExpiry
+      }
+    });
+
+    // Send verification email
+    await this.emailService.sendVerificationEmail(email, otp, fullName);
+
+    return {
+      userId: user.id,
+      email: user.email,
+      role: user.role
+    };
+  }
+
+  async login(email, password) {
+    // Find user
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      throw new UnauthorizedError('Invalid email or password');
+    }
+
+    // Check if email is verified
+    if (!user.email_verified) {
+      throw new UnauthorizedError('Please verify your email first');
+    }
+
+    // Verify password
+    const isValidPassword = await bcrypt.compare(password, user.password);
+    if (!isValidPassword) {
+      throw new UnauthorizedError('Invalid email or password');
+    }
+
+    // Generate tokens
+    const accessToken = this.generateAccessToken(user);
+    const refreshToken = this.generateRefreshToken(user);
+
+    // Store refresh token in Redis
+    await redisClient.setex(`refresh_token:${user.id}`, 7 * 24 * 60 * 60, refreshToken);
+
+    // Update last login
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { last_login: new Date() }
+    });
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.full_name,
+        role: user.role,
+        phoneNumber: user.phone_number
+      },
+      accessToken,
+      refreshToken
+    };
+  }
+
+  async verifyEmail(email, otp) {
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      throw new BadRequestError('User not found');
+    }
+
+    if (user.email_verified) {
+      throw new BadRequestError('Email already verified');
+    }
+
+    if (user.verification_otp !== otp || new Date() > new Date(user.otp_expiry)) {
+      throw new BadRequestError('Invalid or expired OTP');
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        email_verified: true,
+        verification_otp: null,
+        otp_expiry: null
+      }
+    });
+  }
+
+  async refreshToken(refreshToken) {
+    try {
+      const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
+      
+      // Check if token exists in Redis
+      const storedToken = await redisClient.get(`refresh_token:${decoded.userId}`);
+      if (storedToken !== refreshToken) {
+        throw new UnauthorizedError('Invalid refresh token');
+      }
+
+      const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
+      if (!user) {
+        throw new UnauthorizedError('User not found');
+      }
+
+      const newAccessToken = this.generateAccessToken(user);
+      
+      return { accessToken: newAccessToken };
+    } catch (error) {
+      throw new UnauthorizedError('Invalid or expired refresh token');
+    }
+  }
+
+  async logout(userId) {
+    // Remove refresh token from Redis
+    await redisClient.del(`refresh_token:${userId}`);
+  }
+
+  async changePassword(userId, oldPassword, newPassword) {
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    
+    const isValidPassword = await bcrypt.compare(oldPassword, user.password);
+    if (!isValidPassword) {
+      throw new BadRequestError('Current password is incorrect');
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+    await prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword }
+    });
+  }
+
+  generateAccessToken(user) {
+    return jwt.sign(
+      { userId: user.id, role: user.role, email: user.email },
+      process.env.JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+  }
+
+  generateRefreshToken(user) {
+    return jwt.sign(
+      { userId: user.id },
+      process.env.REFRESH_TOKEN_SECRET,
+      { expiresIn: '7d' }
+    );
+  }
+}
+
+module.exports = AuthService;
+```
+
+#### Auth Middleware:
+```javascript
+// middleware/auth.middleware.js
+const jwt = require('jsonwebtoken');
+const { UnauthorizedError } = require('../utils/errors');
+
+const authenticateToken = async (req, res, next) => {
+  try {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+      throw new UnauthorizedError('Access token required');
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (error) {
+    next(new UnauthorizedError('Invalid or expired token'));
+  }
+};
+
+const authorizeRoles = (...roles) => {
+  return (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      throw new UnauthorizedError('Access denied');
+    }
+    next();
+  };
+};
+
+module.exports = { authenticateToken, authorizeRoles };
+```
+
+### 4. Role Definitions, Responsibilities & Permissions
+
+#### Role Overview:
+
+##### 1. SUPER_ADMIN
+**Responsibilities:**
+- Complete system control and configuration
+- Manage all admins and their permissions
+- Configure system settings and parameters
+- Access all data and analytics
+- Approve/reject critical operations
+- Manage service catalog (add/edit/delete services)
+- Handle escalated issues
+
+**Permissions:**
+- ✅ Full access to all modules
+- ✅ Create/manage admin accounts
+- ✅ System configuration
+- ✅ View all financial data
+- ✅ Override any action
+- ✅ Access audit logs
+- ✅ Manage pricing and commissions
+
+**Key Actions:**
+- Create admin accounts
+- Configure service categories
+- Set platform commission rates
+- Approve business partners
+- Suspend/activate any user
+- Generate system reports
+
+---
+
+##### 2. ADMIN
+**Responsibilities:**
+- Manage day-to-day operations
+- Approve/verify partners (KYC)
+- Handle customer support tickets
+- Monitor bookings and transactions
+- Manage disputes and refunds
+- Generate operational reports
+
+**Permissions:**
+- ✅ View all bookings and users
+- ✅ Approve/reject partner KYC
+- ✅ Manage customer support
+- ✅ Process refunds
+- ✅ View financial reports
+- ❌ Cannot create other admins
+- ❌ Cannot modify system configuration
+
+**Key Actions:**
+- Verify partner KYC documents
+- Assign bookings to partners
+- Handle customer complaints
+- Process cancellations and refunds
+- Monitor service quality
+
+---
+
+##### 3. BUSINESS_PARTNER
+**Responsibilities:**
+- Manage their business entity
+- Onboard service partners under their business
+- Set pricing for services
+- Manage booking assignments
+- Track earnings and payouts
+- Maintain service quality standards
+
+**Permissions:**
+- ✅ Create service partner accounts
+- ✅ Manage their services and pricing
+- ✅ View/assign bookings
+- ✅ Manage their team
+- ✅ View their financial data
+- ✅ Request payouts
+- ❌ Cannot access other business data
+- ❌ Cannot modify platform settings
+
+**Key Actions:**
+- Register service partners
+- Set custom service pricing
+- Assign bookings to service partners
+- Track team performance
+- Manage business profile
+- Request payment withdrawals
+
+---
+
+##### 4. SERVICE_PARTNER
+**Responsibilities:**
+- Accept/complete service bookings
+- Provide quality service to customers
+- Update booking status in real-time
+- Maintain professional conduct
+- Keep availability updated
+- Collect payments (if COD)
+
+**Permissions:**
+- ✅ View assigned bookings
+- ✅ Accept/reject booking requests
+- ✅ Update booking status
+- ✅ Update location in real-time
+- ✅ Chat with customers
+- ✅ View their earnings
+- ❌ Cannot see other partners' data
+- ❌ Cannot modify service pricing
+
+**Key Actions:**
+- Accept booking requests
+- Start/complete jobs
+- Update real-time location
+- Mark service as completed
+- Collect COD payments
+- Update availability status
+
+---
+
+##### 5. CUSTOMER
+**Responsibilities:**
+- Book services as needed
+- Provide accurate service details
+- Make payments on time
+- Rate and review completed services
+- Maintain respectful communication
+
+**Permissions:**
+- ✅ Browse and book services
+- ✅ Track booking status
+- ✅ Chat with assigned partner
+- ✅ Make payments
+- ✅ Cancel bookings (with policy)
+- ✅ Rate and review
+- ❌ Cannot access partner data
+- ❌ Cannot modify pricing
+
+**Key Actions:**
+- Search and book services
+- Make advance/full payments
+- Track partner location
+- Cancel bookings
+- Provide ratings and reviews
+- Request refunds
+
+---
+
+### 5. Permission Matrix
+
+| Feature | Super Admin | Admin | Business Partner | Service Partner | Customer |
+|---------|------------|-------|------------------|----------------|----------|
+| **User Management** |
+| Create Admins | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Manage Users | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Create Service Partners | ✅ | ✅ | ✅ | ❌ | ❌ |
+| View All Users | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **Service Catalog** |
+| Add/Edit Services | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Set Service Pricing | ✅ | ✅ | ✅ | ❌ | ❌ |
+| View Services | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Bookings** |
+| View All Bookings | ✅ | ✅ | ✅ (own) | ✅ (own) | ✅ (own) |
+| Assign Partners | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Create Booking | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Cancel Booking | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Update Status | ✅ | ✅ | ✅ | ✅ | ❌ |
+| **Payments** |
+| Process Refunds | ✅ | ✅ | ❌ | ❌ | ❌ |
+| View All Transactions | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Request Payout | ❌ | ❌ | ✅ | ✅ | ❌ |
+| Make Payment | ❌ | ❌ | ❌ | ❌ | ✅ |
+| **KYC** |
+| Approve KYC | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Submit KYC | ❌ | ❌ | ✅ | ✅ | ❌ |
+| **Reports** |
+| System Reports | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Business Reports | ✅ | ✅ | ✅ (own) | ❌ | ❌ |
+| Earnings Report | ✅ | ✅ | ✅ (own) | ✅ (own) | ❌ |
+
+---
+
+### 6. Business Logic & Workflows
+
+#### 6.1 Booking Lifecycle
+
+```
+┌─────────────┐
+│  CUSTOMER   │
+│ Creates     │
+│ Booking     │
+└──────┬──────┘
+       │
+       v
+┌─────────────────────────────────────────┐
+│ PENDING                                 │
+│ - Validate service availability         │
+│ - Calculate pricing                     │
+│ - Process advance payment (if required) │
+└──────┬──────────────────────────────────┘
+       │
+       v
+┌─────────────────────────────────────────┐
+│ SEARCHING_PARTNER                       │
+│ - Auto-assign algorithm runs            │
+│ - Notify nearby available partners      │
+│ - Wait for partner acceptance           │
+└──────┬──────────────────────────────────┘
+       │
+       ├──> TIMEOUT (30 min) ──> CANCELLED
+       │
+       v
+┌─────────────────────────────────────────┐
+│ PARTNER_ASSIGNED                        │
+│ - Partner accepted                      │
+│ - Notify customer                       │
+│ - Share partner details                 │
+└──────┬──────────────────────────────────┘
+       │
+       v
+┌─────────────────────────────────────────┐
+│ PARTNER_ACCEPTED                        │
+│ - Partner confirms arrival              │
+│ - Real-time location tracking active    │
+└──────┬──────────────────────────────────┘
+       │
+       v
+┌─────────────────────────────────────────┐
+│ IN_PROGRESS                             │
+│ - Service being performed               │
+│ - Location updates every 30 seconds     │
+│ - Customer can track                    │
+└──────┬──────────────────────────────────┘
+       │
+       v
+┌─────────────────────────────────────────┐
+│ COMPLETED                               │
+│ - Partner marks complete                │
+│ - Collect remaining payment             │
+│ - Generate invoice                      │
+│ - Update partner earnings               │
+└──────┬──────────────────────────────────┘
+       │
+       v
+┌─────────────────────────────────────────┐
+│ RATED                                   │
+│ - Customer provides rating & review     │
+│ - Update partner avg rating             │
+│ - Booking closed                        │
+└─────────────────────────────────────────┘
+```
+
+**Cancellation Rules:**
+- Customer can cancel up to 2 hours before scheduled time (90% refund)
+- Customer can cancel within 2 hours (50% refund)
+- Partner can reject before accepting (full refund)
+- After IN_PROGRESS, no cancellation allowed
+
+---
+
+#### 6.2 Partner Assignment Logic
+
+```javascript
+// Algorithm for auto-assigning partners
+const assignPartnerToBooking = async (bookingId) => {
+  const booking = await getBooking(bookingId);
+  
+  // Step 1: Find available partners
+  const availablePartners = await findAvailablePartners({
+    serviceId: booking.serviceId,
+    location: booking.location,
+    radius: 5, // km
+    status: 'AVAILABLE'
+  });
+  
+  // Step 2: Filter by rating and completion rate
+  const qualifiedPartners = availablePartners.filter(p => 
+    p.avgRating >= 4.0 && p.completionRate >= 80
+  );
+  
+  // Step 3: Sort by proximity and rating
+  const sortedPartners = qualifiedPartners.sort((a, b) => {
+    const distanceScore = a.distance - b.distance;
+    const ratingScore = (b.avgRating - a.avgRating) * 1000;
+    return distanceScore + ratingScore;
+  });
+  
+  // Step 4: Notify top 3 partners
+  const topPartners = sortedPartners.slice(0, 3);
+  
+  for (const partner of topPartners) {
+    await sendBookingNotification(partner.id, bookingId);
+  }
+  
+  // Step 5: Wait for acceptance (30 min timeout)
+  await waitForAcceptance(bookingId, 30 * 60 * 1000);
+};
+```
+
+---
+
+#### 6.3 Payment Flow
+
+**Advance Payment (Online):**
+```
+1. Customer selects service
+2. System calculates total amount
+3. Customer chooses payment method (Razorpay/Wallet)
+4. Process advance (30% or custom)
+5. Create booking with PAID status
+6. Remaining amount collected after service
+```
+
+**Cash on Delivery (COD):**
+```
+1. Customer books with COD option
+2. Booking created with PENDING_PAYMENT status
+3. Partner completes service
+4. Partner collects cash from customer
+5. Partner confirms payment received
+6. Platform deducts commission from partner wallet
+```
+
+**Wallet Flow:**
+```
+1. Customer/Partner has wallet balance
+2. Can add money via UPI/Card/Net Banking
+3. Use wallet for bookings/payouts
+4. Cashback and rewards added to wallet
+5. Withdrawal to bank account (2-3 days)
+```
+
+---
+
+#### 6.4 KYC Verification Flow
+
+```
+PARTNER REGISTRATION
+        │
+        v
+SUBMIT DOCUMENTS
+- Aadhaar/PAN
+- Address Proof
+- Bank Details
+- Photo
+        │
+        v
+PENDING_VERIFICATION
+        │
+        v
+    ┌───┴───┐
+    │ ADMIN │
+    │Reviews│
+    └───┬───┘
+        │
+   ┌────┴────┐
+   │         │
+APPROVED  REJECTED
+   │         │
+   v         v
+ACTIVE   RE-SUBMIT
+```
+
+**KYC Document Requirements:**
+- **Service Partner:** Aadhaar, PAN, Bank Account
+- **Business Partner:** Business License, GST, Bank Account
+
+---
+
+#### 6.5 Commission & Payout Logic
+
+```javascript
+// Calculate platform commission
+const calculateCommission = (bookingAmount, partnerType) => {
+  const commissionRates = {
+    SERVICE_PARTNER: 0.15,    // 15%
+    BUSINESS_PARTNER: 0.10,   // 10%
+  };
+  
+  const commission = bookingAmount * commissionRates[partnerType];
+  const partnerEarning = bookingAmount - commission;
+  
+  return {
+    totalAmount: bookingAmount,
+    platformCommission: commission,
+    partnerEarning: partnerEarning
+  };
+};
+
+// Payout schedule
+const schedulePayouts = async () => {
+  // Run every Monday
+  const eligiblePartners = await getPartnersWithMinBalance(500);
+  
+  for (const partner of eligiblePartners) {
+    await createPayoutRequest({
+      partnerId: partner.id,
+      amount: partner.walletBalance,
+      method: 'BANK_TRANSFER',
+      processingTime: '2-3 days'
+    });
+  }
+};
+```
+
+---
+
+#### 6.6 Rating & Review System
+
+```javascript
+// Update partner rating after booking completion
+const updatePartnerRating = async (partnerId, newRating) => {
+  const partner = await prisma.servicePartner.findUnique({
+    where: { id: partnerId }
+  });
+  
+  const totalRatings = partner.totalRatings + 1;
+  const newAvgRating = 
+    ((partner.avgRating * partner.totalRatings) + newRating) / totalRatings;
+  
+  await prisma.servicePartner.update({
+    where: { id: partnerId },
+    data: {
+      avgRating: newAvgRating,
+      totalRatings: totalRatings
+    }
+  });
+  
+  // Check if partner falls below threshold
+  if (newAvgRating < 3.5 && totalRatings > 10) {
+    await sendWarningToPartner(partnerId);
+  }
+};
+```
+
+---
+
+### 7. Unified Database Schema
+
+Design a comprehensive Prisma schema that includes:
+
+**User Management:**
+- Single `User` table with `role` enum (ADMIN, BUSINESS_PARTNER, SERVICE_PARTNER, CUSTOMER)
+- `Profile` table with role-specific data
+- `ServicePartner` extension table
+- `BusinessPartner` extension table
+
+**Service Catalog:**
+- `Category` - Service categories
+- `Service` - Master service catalog
+- `PartnerService` - Partner-specific service offerings
+
+**Booking System:**
+- `Booking` - Main booking entity
+- `BookingItem` - Line items
+- `BookingStatus` - Status tracking with timestamps
+
+**Financial:**
+- `Wallet` - User wallets
+- `Transaction` - All financial transactions
+- `Invoice` - Generated invoices
+- `Payment` - Payment records
+
+**Communication:**
+- `Message` - In-app messages
+- `Notification` - Push/email/SMS notifications
+- `CallLog` - Call history
+
+**Compliance:**
+- `KycDocument` - KYC documents
+- `Rating` - Reviews & ratings
+- `AuditLog` - System audit trail
+
+### 4. Socket.IO Implementation
+
+#### Real-time Features:
+1. **Booking Updates**
+   - Live booking status changes
+   - Partner assignment notifications
+   - Location tracking
+
+2. **Messaging**
+   - User-to-Partner chat
+   - Customer support chat
+   - Typing indicators
+   - Read receipts
+
+3. **Notifications**
+   - New booking alerts for partners
+   - Payment confirmations
+   - KYC status updates
+
+4. **Admin Dashboard**
+   - Live booking statistics
+   - Active users count
+   - Real-time reports
+
+#### Socket.IO Structure:
+```typescript
+// Namespaces
+/customer      - Customer namespace
+/partner       - Service partner namespace
+/business      - Business partner namespace
+/admin         - Admin namespace
+
+// Room Structure
+booking:{bookingId}        - Booking-specific room
+user:{userId}              - User-specific room
+partner:{partnerId}        - Partner-specific room
+chat:{chatId}              - Chat room
+admin:dashboard            - Admin dashboard room
+```
+
+#### Events to Implement:
+```typescript
+// Customer Events
+'booking:created'
+'booking:updated'
+'booking:cancelled'
+'partner:assigned'
+'partner:location_update'
+'message:received'
+'notification:new'
+
+// Partner Events
+'booking:new_request'
+'booking:accepted'
+'booking:completed'
+'earnings:updated'
+'kyc:status_changed'
+
+// Admin Events
+'dashboard:stats_update'
+'user:registered'
+'partner:approval_needed'
+'report:generated'
+```
+
+## API Design Requirements
+
+### RESTful APIs
+Follow REST principles with proper HTTP methods:
+- `GET` - Retrieve resources
+- `POST` - Create resources
+- `PUT/PATCH` - Update resources
+- `DELETE` - Remove resources
+
+### API Structure:
+```
+/api/v1/
+  /auth
+    POST /register
+    POST /login
+    POST /refresh
+    POST /logout
+    GET  /profile
+  
+  /users
+    GET    /
+    GET    /:id
+    PATCH  /:id
+    DELETE /:id
+  
+  /partners
+    GET    /
+    POST   /
+    GET    /:id
+    PATCH  /:id
+    GET    /:id/services
+    GET    /:id/bookings
+    GET    /:id/earnings
+  
+  /services
+    GET    /
+    POST   /
+    GET    /:id
+    PATCH  /:id
+    DELETE /:id
+    GET    /categories
+  
+  /bookings
+    GET    /
+    POST   /
+    GET    /:id
+    PATCH  /:id/status
+    POST   /:id/assign
+    POST   /:id/cancel
+  
+  /payments
+    POST   /
+    GET    /:id
+    POST   /:id/refund
+  
+  /messages
+    GET    /conversations
+    GET    /conversations/:id
+    POST   /conversations/:id/messages
+  
+  /notifications
+    GET    /
+    PATCH  /:id/read
+  
+  /admin
+    GET    /dashboard/stats
+    GET    /reports
+    POST   /partners/:id/approve
+    POST   /kyc/:id/verify
+```
+
+### Response Format:
+```typescript
+{
+  "success": boolean,
+  "data": any,
+  "message": string,
+  "pagination": {
+    "page": number,
+    "limit": number,
+    "total": number
+  },
+  "timestamp": string
+}
+```
+
+## Key Features Implementation
+
+### 1. Authentication Flow
+- JWT-based authentication with refresh tokens
+- Role-based guards for route protection
+- Session management with Redis
+- Multi-device support
+- Logout from all devices
+
+### 2. Partner Onboarding
+- Registration with phone/email
+- OTP verification
+- KYC document upload
+- Admin approval workflow
+- Service selection
+- Bank account setup
+
+### 3. Booking Lifecycle
+```
+PENDING → SEARCHING_PARTNER → PARTNER_ASSIGNED → 
+PARTNER_ACCEPTED → IN_PROGRESS → COMPLETED → RATED
+```
+
+With cancellation at any stage and refund handling.
+
+### 4. Real-time Location Tracking
+- Partner location updates via Socket.IO
+- Customer tracking partner location
+- ETA calculations
+- Geofencing for service areas
+
+### 5. Payment Integration
+- Razorpay/Stripe integration
+- Advance payment support
+- Wallet payments
+- COD handling
+- Automatic invoice generation
+- Partner payout scheduling
+
+### 6. Notification System
+- **Push Notifications** - Firebase Cloud Messaging
+- **SMS** - Twilio integration
+- **Email** - SendGrid/SES
+- **In-app** - Socket.IO
+- Template-based messages
+- Multi-language support
+
+### 7. Background Jobs
+Using BullMQ for:
+- Payment processing
+- Invoice generation
+- Email/SMS sending
+- Report generation
+- Partner assignment algorithm
+- Scheduled reminders
+
+## Express.js Setup Guide
+
+### Package.json Dependencies
+```json
+{
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.6.1",
+    "@prisma/client": "^5.0.0",
+    "ioredis": "^5.3.2",
+    "jsonwebtoken": "^9.0.2",
+    "bcryptjs": "^2.4.3",
+    "passport": "^0.7.0",
+    "passport-jwt": "^4.0.1",
+    "passport-local": "^1.0.0",
+    "express-validator": "^7.0.1",
+    "joi": "^17.11.0",
+    "helmet": "^7.1.0",
+    "cors": "^2.8.5",
+    "express-rate-limit": "^7.1.5",
+    "bullmq": "^5.0.0",
+    "winston": "^3.11.0",
+    "morgan": "^1.10.0",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.0",
+    "dotenv": "^16.3.1",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.6",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.5",
+    "@types/passport": "^1.0.16",
+    "@types/passport-jwt": "^4.0.0",
+    "@types/passport-local": "^1.0.38",
+    "@types/cors": "^2.8.17",
+    "@types/morgan": "^1.9.9",
+    "@types/swagger-jsdoc": "^6.0.4",
+    "@types/swagger-ui-express": "^4.1.6",
+    "@types/multer": "^1.4.11",
+    "prisma": "^5.0.0",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "jest": "^29.7.0",
+    "@types/jest": "^29.5.11",
+    "supertest": "^6.3.3",
+    "@types/supertest": "^6.0.2"
+  }
+}
+```
+
+### Server Setup (server.ts)
+```typescript
+import express from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import rateLimit from 'express-rate-limit';
+import routes from './routes';
+import { errorMiddleware } from './middleware/error.middleware';
+import { initializeSocketIO } from './socket/socket.server';
+import { logger } from './utils/logger';
+
+const app = express();
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: {
+    origin: process.env.CORS_ORIGINS?.split(',') || 'http://localhost:3000',
+    credentials: true
+  }
+});
+
+// Middleware
+app.use(helmet());
+app.use(cors({ origin: process.env.CORS_ORIGINS?.split(','), credentials: true }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(morgan('combined', { stream: { write: msg => logger.info(msg.trim()) } }));
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100 // limit each IP to 100 requests per windowMs
+});
+app.use('/api/', limiter);
+
+// Routes
+app.use('/api/v1', routes);
+
+// Socket.IO
+initializeSocketIO(io);
+
+// Error handling
+app.use(errorMiddleware);
+
+const PORT = process.env.PORT || 3000;
+
+httpServer.listen(PORT, () => {
+  logger.info(`Server running on port ${PORT}`);
+});
+
+export { io };
+```
+
+### Authentication Middleware (middleware/auth.middleware.ts)
+```typescript
+import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
+import { UnauthorizedError } from '../utils/errors';
+
+interface JWTPayload {
+  userId: string;
+  role: string;
+}
+
+export const authenticateToken = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+      throw new UnauthorizedError('Access token required');
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JWTPayload;
+    req.user = decoded;
+    next();
+  } catch (error) {
+    next(new UnauthorizedError('Invalid or expired token'));
+  }
+};
+
+export const authorizeRoles = (...roles: string[]) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      throw new UnauthorizedError('Access denied');
+    }
+    next();
+  };
+};
+```
+
+### Route Example (routes/booking.routes.ts)
+```typescript
+import { Router } from 'express';
+import { BookingController } from '../controllers/booking.controller';
+import { authenticateToken, authorizeRoles } from '../middleware/auth.middleware';
+import { validate } from '../middleware/validate.middleware';
+import { createBookingSchema, updateBookingStatusSchema } from '../validators/booking.validator';
+
+const router = Router();
+const bookingController = new BookingController();
+
+// All routes require authentication
+router.use(authenticateToken);
+
+router.get('/', bookingController.getAll);
+router.post('/', validate(createBookingSchema), bookingController.create);
+router.get('/:id', bookingController.getById);
+router.patch('/:id/status', 
+  validate(updateBookingStatusSchema),
+  bookingController.updateStatus
+);
+router.post('/:id/assign', 
+  authorizeRoles('ADMIN', 'BUSINESS_PARTNER'),
+  bookingController.assignPartner
+);
+
+export default router;
+```
+
+### Controller Example (controllers/booking.controller.ts)
+```typescript
+import { Request, Response, NextFunction } from 'express';
+import { BookingService } from '../services/booking.service';
+import { successResponse } from '../utils/response';
+
+export class BookingController {
+  private bookingService: BookingService;
+
+  constructor() {
+    this.bookingService = new BookingService();
+  }
+
+  getAll = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { page = 1, limit = 10, status } = req.query;
+      const bookings = await this.bookingService.getAllBookings({
+        page: Number(page),
+        limit: Number(limit),
+        status: status as string
+      });
+      res.json(successResponse(bookings, 'Bookings retrieved successfully'));
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  create = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const booking = await this.bookingService.createBooking(req.body, req.user!.userId);
+      res.status(201).json(successResponse(booking, 'Booking created successfully'));
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  // ... other methods
+}
+```
+
+### Socket.IO Setup (socket/socket.server.ts)
+```typescript
+import { Server, Socket } from 'socket.io';
+import jwt from 'jsonwebtoken';
+import { BookingHandler } from './handlers/booking.handler';
+import { MessageHandler } from './handlers/message.handler';
+import { logger } from '../utils/logger';
+
+interface SocketUser {
+  userId: string;
+  role: string;
+}
+
+export const initializeSocketIO = (io: Server) => {
+  // Authentication middleware
+  io.use((socket: Socket, next) => {
+    const token = socket.handshake.auth.token;
+    if (!token) {
+      return next(new Error('Authentication error'));
+    }
+
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET!) as SocketUser;
+      socket.data.user = decoded;
+      next();
+    } catch (error) {
+      next(new Error('Authentication error'));
+    }
+  });
+
+  const bookingHandler = new BookingHandler(io);
+  const messageHandler = new MessageHandler(io);
+
+  io.on('connection', (socket: Socket) => {
+    const user = socket.data.user as SocketUser;
+    logger.info(`User connected: ${user.userId}`);
+
+    // Join user-specific room
+    socket.join(`user:${user.userId}`);
+
+    // Initialize handlers
+    bookingHandler.handleEvents(socket);
+    messageHandler.handleEvents(socket);
+
+    socket.on('disconnect', () => {
+      logger.info(`User disconnected: ${user.userId}`);
+    });
+  });
+};
+```
+
+## Development Guidelines
+
+### Code Quality
+- Follow SOLID principles
+- Implement repository pattern for data access
+- Use dependency injection where possible
+- Write unit tests (Jest)
+- Write e2e tests (Supertest)
+- Maintain >80% code coverage
+- Use TypeScript strict mode
+
+### Error Handling
+```typescript
+// utils/errors.ts
+export class AppError extends Error {
+  constructor(
+    public statusCode: number,
+    public message: string,
+    public isOperational = true
+  ) {
+    super(message);
+    Object.setPrototypeOf(this, AppError.prototype);
+  }
+}
+
+export class BadRequestError extends AppError {
+  constructor(message = 'Bad Request') {
+    super(400, message);
+  }
+}
+
+export class UnauthorizedError extends AppError {
+  constructor(message = 'Unauthorized') {
+    super(401, message);
+  }
+}
+
+// middleware/error.middleware.ts
+export const errorMiddleware = (
+  err: AppError,
+  req: Request,
+  res: Response,
+  next: NextFunction
+) => {
+  const statusCode = err.statusCode || 500;
+  const message = err.message || 'Internal Server Error';
+  
+  logger.error(`${statusCode} - ${message} - ${req.originalUrl} - ${req.method}`);
+  
+  res.status(statusCode).json({
+    success: false,
+    message,
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  });
+};
+```
+
+### Performance
+- Database query optimization with Prisma
+- Redis caching strategy
+- Pagination for large datasets
+- Lazy loading relations
+- Connection pooling
+- Compression middleware
+
+### Documentation
+- Swagger/OpenAPI documentation for all endpoints
+- JSDoc comments for complex functions
+- README with setup instructions
+- Architecture documentation
+- Socket.IO event documentation
+
+## Environment Configuration
+
+```env
+# Database
+DATABASE_URL="postgresql://postgres:GmKubfKHJxqQlSQHFJbcXurTixBjcEpV@nozomi.proxy.rlwy.net:49086/railway"
+
+# Redis
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+
+# JWT
+JWT_SECRET=
+JWT_EXPIRY=15m
+REFRESH_TOKEN_EXPIRY=7d
+
+# Socket.IO
+SOCKET_PORT=3001
+SOCKET_CORS_ORIGIN=http://localhost:3000
+
+# Payment Gateways
+RAZORPAY_KEY_ID=
+RAZORPAY_KEY_SECRET=
+STRIPE_SECRET_KEY=
+
+# Notifications
+FCM_SERVER_KEY=
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+SENDGRID_API_KEY=
+
+# AWS/Storage
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+S3_BUCKET_NAME=
+
+# Admin
+ADMIN_EMAIL=
+ADMIN_PASSWORD=
+```
+
+## Deployment Requirements
+
+### Docker Support
+- Dockerfile for application
+- docker-compose.yml with:
+  - NestJS application
+  - PostgreSQL
+  - Redis
+  - Nginx (reverse proxy)
+
+### CI/CD
+- GitHub Actions workflow
+- Automated testing
+- Docker image building
+- Deployment to staging/production
+
+### Production Checklist
+- Environment variables secured
+- HTTPS enforced
+- Rate limiting enabled
+- Database backups configured
+- Logging aggregation (ELK/CloudWatch)
+- Health check endpoints
+- Graceful shutdown handling
+
+## Frontend Integration
+
+### Socket.IO Client Setup
+Provide Socket.IO client implementation examples for:
+- React
+- React Native
+- Next.js
+
+With authentication, reconnection logic, and event handling.
+
+### API Client
+- Axios instance with interceptors
+- Token refresh logic
+- Request/response transformers
+- Error handling
+
+## Deliverables
+
+1. **Complete NestJS Backend**
+   - All modules implemented
+   - Socket.IO fully integrated
+   - Prisma schema and migrations
+   - Seeder scripts with test data
+
+2. **API Documentation**
+   - Swagger UI accessible at `/api/docs`
+   - Postman collection
+   - Socket.IO event documentation
+
+3. **Testing**
+   - Unit tests for services
+   - E2E tests for critical flows
+   - Socket.IO event tests
+
+4. **Deployment**
+   - Docker setup
+   - Environment configuration guide
+   - Deployment scripts
+
+5. **Documentation**
+   - README.md with setup instructions
+   - Architecture diagram
+   - Database schema diagram
+   - API integration guide
+
+## Success Criteria
+
+- ✅ Single unified backend serving all frontend applications
+- ✅ All user roles supported with proper authorization
+- ✅ Real-time features working via Socket.IO
+- ✅ Complete CRUD operations for all entities
+- ✅ Payment integration functional
+- ✅ Notification system operational
+- ✅ Background jobs processing correctly
+- ✅ >80% test coverage
+- ✅ API documentation complete
+- ✅ Production-ready with Docker deployment
+
+
+
+---
+
+## Start Building
+
+Use this prompt as your complete specification to build a unified, production-grade backend system that consolidates all separate backends into one cohesive application with comprehensive real-time capabilities.

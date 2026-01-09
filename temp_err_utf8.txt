@@ -1,0 +1,101 @@
+﻿node.exe : Error: 
+Cannot find module 
+'../middleware/auth'
+At line:1 char:1
++ & "C:\Program Files
+\nodejs/node.exe" 
+"C:\Program 
+Files\nodejs/node_mo 
+...
++ ~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~
+    + CategoryInfo   
+           : NotSpe  
+  cified: (Error:    
+ Cannot f...iddle    
+ware/auth':Strin    
+g) [], RemoteExc    
+eption
+    + FullyQualified 
+   ErrorId : Native  
+  CommandError
+ 
+Require stack:
+- C:\AJ\snearal_dev\b
+ackend\src\routes\tea
+m-management.routes.t
+s
+- C:\AJ\snearal_dev\b
+ackend\src\routes\ind
+ex.ts
+- C:\AJ\snearal_dev\b
+ackend\src\app.ts
+- C:\AJ\snearal_dev\b
+ackend\src\server.ts
+    at 
+Module.<anonymous> (n
+ode:internal/modules/
+cjs/loader:1421:15)
+    at Module._resolv
+eFilename.sharedData.
+moduleResolveFilename
+Hook.installedValue 
+[as 
+_resolveFilename] (C:
+\AJ\snearal_dev\backe
+nd\node_modules\@cspo
+tcode\source-map-supp
+ort\source-map-suppor
+t.js:811:30)
+    at 
+defaultResolveImpl (n
+ode:internal/modules/
+cjs/loader:1059:19)
+    at resolveForCJSW
+ithHooks (node:intern
+al/modules/cjs/loader
+:1064:22)
+    at Module._load (
+node:internal/modules
+/cjs/loader:1227:37)
+    at TracingChannel
+.traceSync (node:diag
+nostics_channel:328:1
+4)
+    at 
+wrapModuleLoad (node:
+internal/modules/cjs/
+loader:245:24)
+    at 
+Module.require (node:
+internal/modules/cjs/
+loader:1504:12)
+    at require (node:
+internal/modules/help
+ers:152:16)
+    at 
+Object.<anonymous> (C
+:\AJ\snearal_dev\back
+end\src\routes\team-m
+anagement.routes.ts:3
+:1) {
+  code: 
+'MODULE_NOT_FOUND',
+  requireStack: [
+    'C:\\AJ\\snearal_
+dev\\backend\\src\\ro
+utes\\team-management
+.routes.ts',
+    'C:\\AJ\\snearal_
+dev\\backend\\src\\ro
+utes\\index.ts',
+    'C:\\AJ\\snearal_
+dev\\backend\\src\\ap
+p.ts',
+    'C:\\AJ\\snearal_
+dev\\backend\\src\\se
+rver.ts'
+  ]
+}
