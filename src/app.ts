@@ -9,6 +9,11 @@ import routes from './routes';
 
 const app: Application = express();
 
+app.use((req, _res, next) => {
+    console.log(`[REQ] ${req.method} ${req.url}`);
+    next();
+});
+
 // Enhanced Security middleware
 app.use(
     helmet({
@@ -37,10 +42,31 @@ app.use(
 );
 
 // CORS configuration
+const allowedOrigins = process.env.CORS_ORIGINS?.split(',') || [
+    'http://localhost:3000', // User Frontend
+    'http://localhost:3001', // Admin Dashboard
+    'http://localhost:3002', // Business Partner
+    'http://localhost:3003', // Service Partner
+];
+
 app.use(
     cors({
-        origin: process.env.CORS_ORIGINS?.split(',') || 'http://localhost:3000',
+        origin: (origin, callback) => {
+            // Allow requests with no origin (like mobile apps or curl requests)
+            if (!origin) return callback(null, true);
+
+            // Check if origin is in allowed list or is a localhost variant
+            if (allowedOrigins.indexOf(origin) !== -1 || origin.startsWith('http://localhost:')) {
+                callback(null, true);
+            } else {
+                callback(new Error('Not allowed by CORS'));
+            }
+        },
         credentials: true,
+        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+        exposedHeaders: ['Content-Range', 'X-Content-Range'],
+        maxAge: 86400, // 24 hours
     })
 );
 
@@ -56,9 +82,10 @@ app.use(loggerMiddleware);
 
 // Rate limiting
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // limit each IP to 100 requests per windowMs
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 10000, // practically unlimited for dev
     message: 'Too many requests from this IP, please try again later.',
+    skip: (req) => req.ip === '::1' || req.ip === '127.0.0.1', // skip for localhost
 });
 app.use('/api/', limiter);
 

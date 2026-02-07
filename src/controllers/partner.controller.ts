@@ -47,9 +47,9 @@ export class PartnerController {
                 req.user!.userId,
                 req.user!.role
             );
-            res.status(201).json(successResponse(partner, partner.message));
+            res.status(201).json(successResponse(partner, (partner as any).message || 'Partner created successfully'));
         } catch (error) {
-            next(error);
+            return next(error);
         }
     };
 
@@ -63,7 +63,7 @@ export class PartnerController {
             );
             res.json(successResponse(partner, 'Partner updated successfully'));
         } catch (error) {
-            next(error);
+            return next(error);
         }
     };
 
@@ -86,7 +86,7 @@ export class PartnerController {
             );
             res.json(successResponse(result, 'Availability updated successfully'));
         } catch (error) {
-            next(error);
+            return next(error);
         }
     };
 
@@ -95,7 +95,7 @@ export class PartnerController {
             const services = await this.partnerService.getPartnerServices(req.params.id);
             res.json(successResponse(services, 'Partner services retrieved successfully'));
         } catch (error) {
-            next(error);
+            return next(error);
         }
     };
 
@@ -107,7 +107,7 @@ export class PartnerController {
             );
             res.json(successResponse(service, 'Service updated successfully'));
         } catch (error) {
-            next(error);
+            return next(error);
         }
     };
 
@@ -116,7 +116,7 @@ export class PartnerController {
             const earnings = await this.partnerService.getPartnerEarnings(req.params.id);
             res.json(successResponse(earnings, 'Earnings retrieved successfully'));
         } catch (error) {
-            next(error);
+            return next(error);
         }
     };
 
@@ -141,7 +141,7 @@ export class PartnerController {
                 )
             );
         } catch (error) {
-            next(error);
+            return next(error);
         }
     };
 
@@ -175,7 +175,7 @@ export class PartnerController {
                 req.body.servicePartnerId,
                 req.user!.userId
             );
-            res.status(201).json(successResponse(result, result.message));
+            res.status(201).json(successResponse(result, (result as any).message || 'Operation successful'));
         } catch (error) {
             next(error);
         }
@@ -188,7 +188,7 @@ export class PartnerController {
                 req.params.memberId,
                 req.user!.userId
             );
-            res.json(successResponse(result, result.message));
+            res.json(successResponse(result, (result as any).message || 'Operation successful'));
         } catch (error) {
             next(error);
         }
@@ -220,7 +220,7 @@ export class PartnerController {
                 req.body.serviceId,
                 req.body.options
             );
-            res.status(201).json(successResponse(result, result.message));
+            res.status(201).json(successResponse(result, (result as any).message || 'Operation successful'));
         } catch (error) {
             next(error);
         }
@@ -234,7 +234,7 @@ export class PartnerController {
                 req.body.rate,
                 req.user!.userId
             );
-            res.json(successResponse(result, result.message));
+            res.json(successResponse(result, (result as any).message || 'Operation successful'));
         } catch (error) {
             next(error);
         }
@@ -256,7 +256,7 @@ export class PartnerController {
                 req.body.partnerIds,
                 req.body.serviceIds
             );
-            res.json(successResponse(result, result.message));
+            res.json(successResponse(result, (result as any).message || 'Operation successful'));
         } catch (error) {
             next(error);
         }
@@ -312,7 +312,7 @@ export class PartnerController {
             const report = await this.partnerService.getCommissionReport(dateRange);
             res.json(successResponse(report, 'Commission report retrieved successfully'));
         } catch (error) {
-            next(error);
+            return next(error);
         }
     };
 
@@ -340,9 +340,44 @@ export class PartnerController {
                 (period as 'daily' | 'weekly' | 'monthly') || 'weekly'
             );
 
-            res.json(successResponse(trends, 'Trends retrieved successfully'));
+            return res.json(successResponse(trends, 'Trends retrieved successfully'));
         } catch (error) {
-            next(error);
+            return next(error);
+        }
+    };
+    // ================
+    // BOOKING ACTIONS (Service Partner)
+    // ================
+
+    /**
+     * Accept a booking (Ola-like flow - first come first served)
+     */
+    acceptBooking = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const booking = await this.partnerService.acceptBookingByPartner(
+                req.params.bookingId,
+                req.user!.userId
+            );
+            res.json(successResponse(booking, 'Booking accepted successfully'));
+        } catch (error) {
+            return next(error);
+        }
+    };
+
+    /**
+     * Reject a booking
+     */
+    rejectBooking = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { reason } = req.body;
+            await this.partnerService.rejectBookingByPartner(
+                req.params.bookingId,
+                req.user!.userId,
+                reason
+            );
+            res.json(successResponse(null, 'Booking rejected successfully'));
+        } catch (error) {
+            return next(error);
         }
     };
 }

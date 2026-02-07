@@ -1,3 +1,5 @@
+
+
 import prisma from '../config/database';
 import { BadRequestError } from '../utils/errors';
 import Razorpay from 'razorpay';
@@ -63,7 +65,7 @@ export class PaymentService {
             await prisma.booking.update({
                 where: { id: data.bookingId },
                 data: {
-                    payment_status: data.type === 'FULL' ? 'COMPLETED' : 'PARTIAL',
+                    payment_status: (data.type === 'FULL' ? 'COMPLETED' : 'PARTIAL') as any,
                 },
             });
 
@@ -118,7 +120,7 @@ export class PaymentService {
         }
     }
 
-    async verifyPayment(paymentId: string, orderId: string, signature: string, userId: string) {
+    async verifyPayment(paymentId: string, razorpayOrderId: string, razorpayPaymentId: string, signature: string, userId: string) {
         if (!razorpay) {
             throw new BadRequestError('Razorpay not configured');
         }
@@ -129,7 +131,7 @@ export class PaymentService {
         });
 
         if (!payment) {
-            throw new BadRequestError('Payment not found');
+            throw new BadRequestError('Payment record not found');
         }
 
         if (payment.user_id !== userId) {
@@ -139,7 +141,7 @@ export class PaymentService {
         // Verify signature
         const generatedSignature = crypto
             .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET!)
-            .update(`${orderId}|${paymentId}`)
+            .update(`${razorpayOrderId}|${razorpayPaymentId}`)
             .digest('hex');
 
         if (generatedSignature !== signature) {
@@ -158,8 +160,9 @@ export class PaymentService {
                 where: { id: paymentId },
                 data: {
                     payment_status: 'COMPLETED',
-                    razorpay_payment_id: paymentId,
+                    razorpay_payment_id: razorpayPaymentId,
                     razorpay_signature: signature,
+                    paid_at: new Date(),
                 },
             });
 
@@ -167,9 +170,9 @@ export class PaymentService {
             await tx.booking.update({
                 where: { id: payment.booking_id },
                 data: {
-                    payment_status: payment.amount === payment.booking.total_amount
+                    payment_status: (payment.amount === (payment.booking as any).total_amount
                         ? 'COMPLETED'
-                        : 'PARTIAL',
+                        : 'PARTIAL') as any,
                 },
             });
 
@@ -194,7 +197,7 @@ export class PaymentService {
         };
     }
 
-    async processRefund(bookingId: string, amount: number, reason: string, adminId: string) {
+    async processRefund(bookingId: string, amount: number, _reason: string, _adminId: string) {
         const booking = await prisma.booking.findUnique({
             where: { id: bookingId },
             include: {
@@ -242,8 +245,9 @@ export class PaymentService {
         await prisma.booking.update({
             where: { id: bookingId },
             data: {
-                refund_amount: { increment: amount },
-            },
+                refund_amount: { increment: amount } as any,
+                payment_status: 'REFUNDED' as any
+            } as any,
         });
 
         // TODO: Send notification to customer
@@ -271,7 +275,7 @@ export class PaymentService {
             prisma.payment.findMany({
                 where,
                 skip,
-                take: parseInt(limit),
+                take: Number(limit),
                 include: {
                     booking: {
                         select: {
@@ -296,8 +300,8 @@ export class PaymentService {
                 createdAt: p.created_at,
             })),
             pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
+                page: Number(page),
+                limit: Number(limit),
                 total,
             },
         };
@@ -323,7 +327,6 @@ export class PaymentService {
 
         if (event === 'payment.captured' || event === 'payment.authorized') {
             const orderId = paymentData.order_id;
-            const paymentId = paymentData.id;
 
             // Find payment record
             const payment = await prisma.payment.findFirst({
@@ -334,7 +337,13 @@ export class PaymentService {
             if (payment && payment.payment_status === 'PENDING') {
                 // Process payment success (reusing logic or calling verify internally)
                 // Actually, webhooks are a fallback for verify.
-                await this.verifyPayment(payment.id, orderId, 'WEBHOOK_VERIFIED', payment.user_id!);
+                await this.verifyPayment(
+                    payment.id,
+                    orderId,
+                    paymentData.id, // razorpayPaymentId from webhook
+                    'WEBHOOK_VERIFIED', // signature placeholder for webhook
+                    payment.user_id!
+                );
             }
         } else if (event === 'payment.failed') {
             const orderId = paymentData.order_id;

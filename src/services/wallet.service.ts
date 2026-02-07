@@ -28,11 +28,24 @@ export class WalletService {
             });
         }
 
+        const transactions = await prisma.transaction.findMany({
+            where: { user_id: userId },
+            take: 10,
+            orderBy: { created_at: 'desc' },
+        });
+
         return {
             balance: wallet.balance,
             currency: 'INR',
             lockedBalance: wallet.locked_balance,
             availableBalance: wallet.balance - wallet.locked_balance,
+            transactions: transactions.map(t => ({
+                id: t.id,
+                type: t.type,
+                amount: t.amount,
+                description: t.description,
+                createdAt: t.created_at,
+            })),
         };
     }
 
@@ -170,7 +183,7 @@ export class WalletService {
             prisma.transaction.findMany({
                 where,
                 skip,
-                take: parseInt(limit),
+                take: Number(limit),
                 orderBy: { created_at: 'desc' },
             }),
             prisma.transaction.count({ where }),
@@ -187,8 +200,8 @@ export class WalletService {
                 createdAt: t.created_at,
             })),
             pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
+                page: Number(page),
+                limit: Number(limit),
                 total,
             },
         };
@@ -270,5 +283,17 @@ export class WalletService {
         });
 
         return result.transaction;
+    }
+
+    async creditPlatformCommission(bookingId: string, amount: number) {
+        // Find a super admin to credit platform commission
+        const superAdmin = await prisma.user.findFirst({
+            where: { role: 'SUPER_ADMIN' }
+        });
+
+        if (superAdmin) {
+            return await this.creditPartnerEarnings(superAdmin.id, bookingId, amount);
+        }
+        return null;
     }
 }

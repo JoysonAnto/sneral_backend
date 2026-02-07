@@ -31,7 +31,7 @@ if (REDIS_ENABLED) {
 
     redisClient.on('error', (err) => {
         // Only log once, not continuously
-        if (err.code === 'ECONNREFUSED') {
+        if ((err as any).code === 'ECONNREFUSED') {
             logger.warn('⚠️ Redis not available - running without cache (graceful degradation)');
         } else {
             logger.error('Redis connection error:', err);

@@ -18,7 +18,7 @@ export class NotificationService {
             prisma.notification.findMany({
                 where,
                 skip,
-                take: parseInt(limit),
+                take: Number(limit),
                 orderBy: { created_at: 'desc' },
             }),
             prisma.notification.count({ where }),
@@ -39,8 +39,8 @@ export class NotificationService {
             })),
             unreadCount,
             pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
+                page: Number(page),
+                limit: Number(limit),
                 total,
             },
         };

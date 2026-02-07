@@ -11,7 +11,7 @@ interface CreateAdminData {
 
 export class UserService {
     async getAllUsers(filters: any) {
-        const { role, search, page = 1, limit = 20, isActive } = filters;
+        const { role, search, page = 1, limit = 20, isActive: _isActive } = filters;
 
         const skip = (page - 1) * limit;
 
@@ -34,7 +34,7 @@ export class UserService {
             prisma.user.findMany({
                 where,
                 skip,
-                take: parseInt(limit),
+                take: Number(limit),
                 select: {
                     id: true,
                     email: true,
@@ -60,8 +60,8 @@ export class UserService {
                 createdAt: u.created_at,
             })),
             pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
+                page: Number(page),
+                limit: Number(limit),
                 total,
             },
         };
@@ -82,7 +82,7 @@ export class UserService {
             throw new NotFoundError('User not found');
         }
 
-        const { password: _password, verification_otp: _verification_otp, otp_expiry: _otp_expiry, reset_token: _reset_token, reset_token_expiry: _reset_token_expiry, ...userWithoutSensitive } = user;
+        const { password: _password, verification_otp: _verification_otp, otp_expires_at: _otp_expires_at, reset_otp: _reset_otp, reset_otp_expiry: _reset_otp_expiry, ...userWithoutSensitive } = user as any;
 
         return userWithoutSensitive;
     }

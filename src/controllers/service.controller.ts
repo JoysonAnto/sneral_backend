@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { ServiceService } from '../services/service.service';
 import { successResponse } from '../utils/response';
+import CloudinaryService from '../services/cloudinary.service';
 
 export class ServiceController {
     private serviceService: ServiceService;
@@ -36,7 +37,22 @@ export class ServiceController {
 
     createService = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const service = await this.serviceService.createService(req.body);
+            let imageUrl = req.body.imageUrl;
+
+            // If file uploaded, upload to Cloudinary
+            if (req.file) {
+                imageUrl = await CloudinaryService.uploadServiceImage(
+                    req.file.buffer,
+                    req.body.name
+                );
+            }
+
+            const serviceData = {
+                ...req.body,
+                imageUrl,
+            };
+
+            const service = await this.serviceService.createService(serviceData);
             res.status(201).json(successResponse(service, 'Service created successfully'));
         } catch (error) {
             next(error);
@@ -45,9 +61,30 @@ export class ServiceController {
 
     updateService = async (req: Request, res: Response, next: NextFunction) => {
         try {
+            let imageUrl = req.body.imageUrl;
+
+            // If file uploaded, upload to Cloudinary
+            if (req.file) {
+                imageUrl = await CloudinaryService.uploadServiceImage(
+                    req.file.buffer,
+                    req.body.name || 'service_update'
+                );
+            }
+
+            const updateData = {
+                ...req.body,
+                ...(imageUrl && { imageUrl }),
+                // Ensure numeric fields are converted (FormData sends everything as strings)
+                ...(req.body.basePrice && { basePrice: parseFloat(req.body.basePrice) }),
+                ...(req.body.duration && { duration: parseInt(req.body.duration) }),
+                ...(req.body.isActive !== undefined && {
+                    isActive: req.body.isActive === 'true' || req.body.isActive === true
+                }),
+            };
+
             const service = await this.serviceService.updateService(
                 req.params.id,
-                req.body
+                updateData
             );
             res.json(successResponse(service, 'Service updated successfully'));
         } catch (error) {
@@ -58,14 +95,14 @@ export class ServiceController {
     deleteService = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const result = await this.serviceService.deleteService(req.params.id);
-            res.json(successResponse(result, result.message));
+            res.json(successResponse(result, (result as any).message || 'Operation successful'));
         } catch (error) {
             next(error);
         }
     };
 
     // Categories
-    getAllCategories = async (req: Request, res: Response, next: NextFunction) => {
+    getAllCategories = async (_req: Request, res: Response, next: NextFunction) => {
         try {
             const categories = await this.serviceService.getAllCategories();
             res.json(successResponse(categories, 'Categories retrieved successfully'));
@@ -76,7 +113,22 @@ export class ServiceController {
 
     createCategory = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const category = await this.serviceService.createCategory(req.body);
+            let iconUrl = req.body.iconUrl;
+
+            // If file uploaded, upload to Cloudinary
+            if (req.file) {
+                iconUrl = await CloudinaryService.uploadCategoryIcon(
+                    req.file.buffer,
+                    req.body.name
+                );
+            }
+
+            const categoryData = {
+                ...req.body,
+                iconUrl,
+            };
+
+            const category = await this.serviceService.createCategory(categoryData);
             res.status(201).json(successResponse(category, 'Category created successfully'));
         } catch (error) {
             next(error);
@@ -123,7 +175,7 @@ export class ServiceController {
                 req.params.id,
                 req.params.pricingId
             );
-            res.json(successResponse(result, result.message));
+            res.json(successResponse(result, (result as any).message || 'Operation successful'));
         } catch (error) {
             next(error);
         }

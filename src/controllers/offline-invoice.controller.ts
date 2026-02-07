@@ -21,7 +21,7 @@ export class OfflineInvoiceController {
                 successResponse(
                     result.invoices,
                     'Invoices retrieved successfully',
-                    result.pagination
+                    result.pagination as any
                 )
             );
         } catch (error) {
@@ -103,7 +103,7 @@ export class OfflineInvoiceController {
     deleteInvoice = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const result = await this.invoiceService.deleteInvoice(req.params.id);
-            res.json(successResponse(result, result.message));
+            res.json(successResponse(result, (result as any).message || 'Invoice deleted successfully'));
         } catch (error) {
             next(error);
         }
@@ -130,7 +130,7 @@ export class OfflineInvoiceController {
         }
     };
 
-    markOverdueInvoices = async (req: Request, res: Response, next: NextFunction) => {
+    markOverdueInvoices = async (_req: Request, res: Response, next: NextFunction) => {
         try {
             const result = await this.invoiceService.markOverdueInvoices();
             res.json(successResponse(result, 'Overdue invoices updated successfully'));

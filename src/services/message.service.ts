@@ -81,7 +81,7 @@ export class MessageService {
                     ],
                 },
                 skip,
-                take: parseInt(limit),
+                take: Number(limit),
                 orderBy: { created_at: 'asc' },
             }),
             prisma.message.count({
@@ -116,8 +116,8 @@ export class MessageService {
                 read: m.is_read,
             })),
             pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
+                page: Number(page),
+                limit: Number(limit),
                 total,
             },
         };

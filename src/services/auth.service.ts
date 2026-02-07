@@ -122,6 +122,7 @@ export class AuthService {
         });
 
         if (!user) {
+            console.log(`[AUTH DEBUG] User not found for identifier: ${identifier}`);
             throw new UnauthorizedError('Invalid credentials');
         }
 
@@ -132,8 +133,14 @@ export class AuthService {
             }
 
             // Verify password
+            console.log(`[AUTH DEBUG] Comparing password for user: ${user.email}`);
+            console.log(`[AUTH DEBUG] Provided password: ${password}`);
+            console.log(`[AUTH DEBUG] Hashed password in DB: ${user.password}`);
             const isValidPassword = await comparePassword(password, user.password);
+            console.log(`[AUTH DEBUG] Is valid password? ${isValidPassword}`);
+
             if (!isValidPassword) {
+                console.log(`[AUTH DEBUG] Login failed: Invalid password for ${identifier}`);
                 throw new UnauthorizedError('Invalid credentials');
             }
 
@@ -411,7 +418,7 @@ export class AuthService {
         }
 
         const u = user as any;
-        const { password, verification_otp, otp_expires_at, reset_otp, ...userWithoutSensitive } = u;
+        const { password: _password, verification_otp: _verification_otp, otp_expires_at: _otp_expires_at, reset_otp: _reset_otp, ...userWithoutSensitive } = u;
 
         return userWithoutSensitive;
     }
@@ -426,7 +433,7 @@ export class AuthService {
         }
 
         // Update user
-        const updatedUser = await prisma.user.update({
+        await prisma.user.update({
             where: { id: userId },
             data: {
                 full_name: data.fullName || user.full_name,
@@ -435,7 +442,7 @@ export class AuthService {
         });
 
         // Update or create profile
-        if (data.address || data.city || data.state) {
+        if (data.address || data.city || data.state || data.bio) {
             await prisma.profile.upsert({
                 where: { user_id: userId },
                 update: {
@@ -444,6 +451,7 @@ export class AuthService {
                     state: data.state,
                     postal_code: data.postalCode,
                     avatar_url: data.avatarUrl,
+                    bio: data.bio,
                 },
                 create: {
                     user_id: userId,
@@ -452,6 +460,7 @@ export class AuthService {
                     state: data.state,
                     postal_code: data.postalCode,
                     avatar_url: data.avatarUrl,
+                    bio: data.bio,
                 },
             });
         }

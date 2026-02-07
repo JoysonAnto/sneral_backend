@@ -227,7 +227,7 @@ export class PayoutService {
                 },
                 orderBy: { created_at: 'desc' },
                 skip,
-                take: parseInt(limit),
+                take: Number(limit),
             }),
             prisma.withdrawalRequest.count({ where }),
         ]);
@@ -236,8 +236,8 @@ export class PayoutService {
             requests,
             pagination: {
                 total,
-                page: parseInt(page),
-                limit: parseInt(limit),
+                page: Number(page),
+                limit: Number(limit),
                 pages: Math.ceil(total / limit),
             },
         };

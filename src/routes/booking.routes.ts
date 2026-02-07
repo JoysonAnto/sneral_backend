@@ -82,4 +82,58 @@ router.post(
     bookingController.rate
 );
 
+// Service Progress & Completion Routes
+import { beforeServicePhotos, afterServicePhotos } from '../middleware/upload.middleware';
+
+// Mark arrival at service location (service partner only)
+router.post(
+    '/:id/arrive',
+    authorize('SERVICE_PARTNER'),
+    bookingController.arriveAtLocation
+);
+
+// Upload before-service photos (service partner only)
+router.post(
+    '/:id/before-photos',
+    authorize('SERVICE_PARTNER'),
+    beforeServicePhotos,
+    bookingController.uploadBeforePhotos
+);
+
+// Upload after-service photos (service partner only)
+router.post(
+    '/:id/after-photos',
+    authorize('SERVICE_PARTNER'),
+    afterServicePhotos,
+    bookingController.uploadAfterPhotos
+);
+
+// Generate start OTP (customer only)
+router.post(
+    '/:id/generate-start-otp',
+    authorize('CUSTOMER'),
+    bookingController.generateStartOTP
+);
+
+// Generate completion OTP (customer only)
+router.post(
+    '/:id/generate-otp',
+    authorize('CUSTOMER'),
+    bookingController.generateCompletionOTP
+);
+
+// Verify OTP and complete service (service partner only)
+router.post(
+    '/:id/verify-otp',
+    authorize('SERVICE_PARTNER'),
+    bookingController.verifyCompletionOTP
+);
+
+// Update partner location (service partner only)
+router.post(
+    '/partner/update-location',
+    authorize('SERVICE_PARTNER'),
+    bookingController.updatePartnerLocation
+);
+
 export default router;

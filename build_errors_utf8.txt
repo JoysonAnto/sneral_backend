@@ -1,0 +1,7 @@
+﻿
+> unified-backend@1.0.0 build
+> tsc
+
+src/app.ts(12,15): error TS6133: 'res' is declared but its value is never read.
+src/controllers/location-tracking.controller.ts(145,34): error TS7030: Not all code paths return a value.
+src/services/booking.service.ts(22,13): error TS6133: 'locationService' is declared but its value is never read.

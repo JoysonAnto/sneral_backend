@@ -20,10 +20,11 @@ export class PaymentController {
 
     verifyPayment = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const { paymentId, orderId, signature } = req.body;
+            const { paymentId, razorpayOrderId, razorpayPaymentId, signature } = req.body;
             const result = await this.paymentService.verifyPayment(
                 paymentId,
-                orderId,
+                razorpayOrderId,
+                razorpayPaymentId,
                 signature,
                 req.user!.userId
             );

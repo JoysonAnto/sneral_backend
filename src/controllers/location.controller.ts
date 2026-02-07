@@ -56,7 +56,8 @@ export class LocationController {
     getAllDistricts = asyncHandler(async (req: Request, res: Response) => {
         const stateId = req.query.stateId as string | undefined;
         const includeInactive = req.query.includeInactive === 'true';
-        const districts = await LocationService.getAllDistricts(stateId, includeInactive);
+        const hasServicesOnly = req.query.hasServicesOnly === 'true';
+        const districts = await LocationService.getAllDistricts(stateId, includeInactive, hasServicesOnly);
 
         res.status(200).json({
             success: true,
@@ -147,7 +148,7 @@ export class LocationController {
     // HIERARCHY ENDPOINT
     // ====================
 
-    getLocationHierarchy = asyncHandler(async (req: Request, res: Response) => {
+    getLocationHierarchy = asyncHandler(async (_req: Request, res: Response) => {
         const hierarchy = await LocationService.getLocationHierarchy();
 
         res.status(200).json({

@@ -19,7 +19,11 @@ interface CreateCategoryData {
 
 export class ServiceService {
     async getAllServices(filters: any) {
-        const { category, search, active = 'true', page = 1, limit = 20 } = filters;
+        const category = filters.category;
+        const search = filters.search;
+        const active = filters.active || 'true';
+        const page = parseInt(filters.page as string) || 1;
+        const limit = parseInt(filters.limit as string) || 20;
 
         const skip = (page - 1) * limit;
 
@@ -47,7 +51,7 @@ export class ServiceService {
             prisma.service.findMany({
                 where,
                 skip,
-                take: parseInt(limit),
+                take: limit,
                 include: {
                     category: {
                         select: {
@@ -75,7 +79,7 @@ export class ServiceService {
             basePrice: service.base_price,
             currency: 'INR',
             unit: 'per service',
-            estimatedTime: service.duration,
+            duration: service.duration,
             imageUrl: service.image_url,
             isActive: service.is_active,
             avgRating: 4.5, // TODO: Calculate from actual ratings
@@ -86,8 +90,8 @@ export class ServiceService {
         return {
             services: servicesWithRatings,
             pagination: {
-                page: parseInt(page),
-                limit: parseInt(limit),
+                page: page,
+                limit: limit,
                 total,
             },
         };
@@ -125,7 +129,7 @@ export class ServiceService {
             basePrice: service.base_price,
             currency: 'INR',
             unit: 'per service',
-            estimatedTime: service.duration,
+            duration: service.duration,
             imageUrl: service.image_url,
             isActive: service.is_active,
             avgRating: 4.5, // TODO: Calculate from actual ratings

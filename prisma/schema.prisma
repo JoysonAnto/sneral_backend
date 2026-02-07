@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,6 +5,820 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+model User {
+  id                      String              @id @default(uuid())
+  email                   String              @unique
+  password                String
+  full_name               String
+  phone_number            String?
+  role                    UserRole
+  email_verified          Boolean             @default(false)
+  phone_verified          Boolean             @default(false)
+  verification_otp        String?
+  reset_otp               String?
+  otp_expires_at          DateTime?
+  marketing_consent       Boolean             @default(false)
+  data_processing_consent Boolean             @default(true)
+  cookie_consent          Boolean             @default(false)
+  consent_updated_at      DateTime?
+  is_deleted              Boolean             @default(false)
+  deleted_at              DateTime?
+  created_at              DateTime            @default(now())
+  updated_at              DateTime            @updatedAt
+  is_active               Boolean             @default(true)
+  audit_logs              AuditLog[]
+  bookings                Booking[]           @relation("CustomerBookings")
+  business_partner        BusinessPartner?
+  messages_received       Message[]           @relation("MessageReceiver")
+  messages_sent           Message[]           @relation("MessageSender")
+  notifications           Notification[]
+  payments                Payment[]
+  profile                 Profile?
+  ratings_received        Rating[]            @relation("RatingReceiver")
+  ratings_given           Rating[]            @relation("RatingGiver")
+  service_partner         ServicePartner?
+  transactions            Transaction[]
+  wallet                  Wallet?
+  withdrawals             WithdrawalRequest[]
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+model Profile {
+  id            String    @id @default(uuid())
+  user_id       String    @unique
+  avatar_url    String?
+  address       String?
+  city          String?
+  state         String?
+  postal_code   String?
+  country       String    @default("India")
+  latitude      Float?
+  longitude     Float?
+  date_of_birth DateTime?
+  gender        String?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+  bio           String?
+  user          User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("profiles")
+}
+
+model ServicePartner {
+  id                   String                   @id @default(uuid())
+  user_id              String                   @unique
+  business_partner_id  String?
+  availability_status  PartnerAvailability      @default(OFFLINE)
+  current_latitude     Float?
+  current_longitude    Float?
+  service_radius       Float                    @default(5)
+  avg_rating           Float                    @default(0)
+  total_ratings        Int                      @default(0)
+  completion_rate      Float                    @default(0)
+  total_bookings       Int                      @default(0)
+  completed_bookings   Int                      @default(0)
+  kyc_status           KycStatus                @default(PENDING)
+  kyc_verified_at      DateTime?
+  kyc_verified_by      String?
+  bank_account_number  String?
+  bank_ifsc_code       String?
+  bank_account_name    String?
+  created_at           DateTime                 @default(now())
+  updated_at           DateTime                 @updatedAt
+  category_id          String?
+  kyc_rejection_reason String?
+  last_location_update DateTime?
+  availability_slots   AvailabilitySlot[]
+  bookings             Booking[]                @relation("PartnerBookings")
+  business_hours       BusinessHours[]
+  kyc_documents        KycDocument[]
+  team_associations    PartnerAssociation[]     @relation("ServicePartnerTeam")
+  location_history     PartnerLocationHistory[]
+  services             PartnerService[]
+  business_partner     BusinessPartner?         @relation(fields: [business_partner_id], references: [id])
+  category             Category?                @relation(fields: [category_id], references: [id])
+  user                 User                     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([availability_status])
+  @@index([kyc_status])
+  @@map("service_partners")
+}
+
+model BusinessPartner {
+  id                      String               @id @default(uuid())
+  user_id                 String               @unique
+  business_name           String
+  business_type           String?
+  business_license        String?
+  gst_number              String?
+  kyc_status              KycStatus            @default(PENDING)
+  kyc_verified_at         DateTime?
+  commission_rate         Float                @default(0.10)
+  bank_account_number     String?
+  bank_ifsc_code          String?
+  bank_account_name       String?
+  created_at              DateTime             @default(now())
+  updated_at              DateTime             @updatedAt
+  team_management_enabled Boolean              @default(false)
+  category_id             String?
+  kyc_rejection_reason    String?
+  address                 String?
+  city                    String?
+  logo_url                String?
+  postal_code             String?
+  state                   String?
+  availability_slots      AvailabilitySlot[]
+  bookings                Booking[]            @relation("BusinessPartnerBookings")
+  business_hours          BusinessHours[]
+  category                Category?            @relation(fields: [category_id], references: [id])
+  user                    User                 @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  kyc_documents           KycDocument[]
+  offline_customers       OfflineCustomer[]
+  offline_invoices        OfflineInvoice[]
+  team_associations       PartnerAssociation[] @relation("BusinessPartnerTeam")
+  partner_services        PartnerService[]
+  recurring_invoices      RecurringInvoice[]   @relation("BusinessPartnerRecurringInvoices")
+  service_partners        ServicePartner[]
+
+  @@index([kyc_status])
+  @@map("business_partners")
+}
+
+model Category {
+  id                String            @id @default(uuid())
+  name              String            @unique
+  description       String?
+  icon_url          String?
+  is_active         Boolean           @default(true)
+  display_order     Int               @default(0)
+  created_at        DateTime          @default(now())
+  updated_at        DateTime          @updatedAt
+  business_partners BusinessPartner[]
+  service_partners  ServicePartner[]
+  services          Service[]
+
+  @@map("categories")
+}
+
+model Service {
+  id                      String                   @id @default(uuid())
+  category_id             String
+  name                    String
+  description             String?
+  base_price              Float
+  duration                Int
+  image_url               String?
+  is_active               Boolean                  @default(true)
+  created_at              DateTime                 @default(now())
+  updated_at              DateTime                 @updatedAt
+  booking_items           BookingItem[]
+  offline_invoice_items   OfflineInvoiceItem[]
+  partner_services        PartnerService[]
+  recurring_invoice_items RecurringInvoiceItem[]
+  location_pricing        ServiceLocationPricing[]
+  category                Category                 @relation(fields: [category_id], references: [id])
+
+  @@index([category_id])
+  @@index([is_active])
+  @@map("services")
+}
+
+model PartnerService {
+  id                  String           @id @default(uuid())
+  service_id          String
+  partner_id          String?
+  business_partner_id String?
+  custom_price        Float?
+  is_available        Boolean          @default(true)
+  created_at          DateTime         @default(now())
+  updated_at          DateTime         @updatedAt
+  business_partner    BusinessPartner? @relation(fields: [business_partner_id], references: [id])
+  partner             ServicePartner?  @relation(fields: [partner_id], references: [id])
+  service             Service          @relation(fields: [service_id], references: [id])
+
+  @@unique([service_id, partner_id])
+  @@index([partner_id])
+  @@index([business_partner_id])
+  @@map("partner_services")
+}
+
+model State {
+  id              String                   @id @default(uuid())
+  name            String                   @unique
+  code            String                   @unique
+  is_active       Boolean                  @default(true)
+  created_at      DateTime                 @default(now())
+  updated_at      DateTime                 @updatedAt
+  latitude        Float?
+  longitude       Float?
+  place_id        String?
+  districts       District[]
+  service_pricing ServiceLocationPricing[]
+
+  @@map("states")
+}
+
+model District {
+  id              String                   @id @default(uuid())
+  state_id        String
+  name            String
+  is_active       Boolean                  @default(true)
+  created_at      DateTime                 @default(now())
+  updated_at      DateTime                 @updatedAt
+  latitude        Float?
+  longitude       Float?
+  place_id        String?
+  areas           Area[]
+  state           State                    @relation(fields: [state_id], references: [id], onDelete: Cascade)
+  service_pricing ServiceLocationPricing[]
+
+  @@unique([state_id, name])
+  @@index([state_id])
+  @@map("districts")
+}
+
+model Area {
+  id              String                   @id @default(uuid())
+  district_id     String
+  name            String
+  pincode         String?
+  is_active       Boolean                  @default(true)
+  created_at      DateTime                 @default(now())
+  updated_at      DateTime                 @updatedAt
+  latitude        Float?
+  longitude       Float?
+  place_id        String?
+  district        District                 @relation(fields: [district_id], references: [id], onDelete: Cascade)
+  service_pricing ServiceLocationPricing[]
+
+  @@unique([district_id, name])
+  @@index([district_id])
+  @@map("areas")
+}
+
+model ServiceLocationPricing {
+  id          String    @id @default(uuid())
+  service_id  String
+  state_id    String?
+  district_id String?
+  area_id     String?
+  price       Float
+  is_active   Boolean   @default(true)
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+  area        Area?     @relation(fields: [area_id], references: [id], onDelete: Cascade)
+  district    District? @relation(fields: [district_id], references: [id], onDelete: Cascade)
+  service     Service   @relation(fields: [service_id], references: [id], onDelete: Cascade)
+  state       State?    @relation(fields: [state_id], references: [id], onDelete: Cascade)
+
+  @@unique([service_id, state_id, district_id, area_id])
+  @@index([service_id])
+  @@index([state_id])
+  @@index([district_id])
+  @@index([area_id])
+  @@map("service_location_pricing")
+}
+
+model Booking {
+  id                    String                   @id @default(uuid())
+  booking_number        String                   @unique
+  customer_id           String
+  partner_id            String?
+  status                BookingStatus            @default(PENDING)
+  scheduled_date        DateTime
+  scheduled_time        String
+  service_address       String
+  service_latitude      Float
+  service_longitude     Float
+  total_amount          Float
+  advance_amount        Float                    @default(0)
+  remaining_amount      Float
+  payment_method        PaymentMethod?
+  payment_status        PaymentStatus            @default(PENDING)
+  special_instructions  String?
+  partner_assigned_at   DateTime?
+  partner_accepted_at   DateTime?
+  started_at            DateTime?
+  completed_at          DateTime?
+  cancelled_at          DateTime?
+  cancellation_reason   String?
+  cancelled_by          String?
+  created_at            DateTime                 @default(now())
+  updated_at            DateTime                 @updatedAt
+  business_partner_id   String?
+  commission_amount     Float                    @default(0)
+  platform_fee          Float                    @default(0)
+  refund_amount         Float                    @default(0)
+  after_service_images  String[]                 @default([])
+  before_service_images String[]                 @default([])
+  completion_otp        String?
+  start_otp             String?
+  customer_signature    String?
+  service_notes         String?
+  dynamic_multiplier    Float                    @default(1.0)
+  overtime_charge       Float                    @default(0)
+  estimated_duration    Int                      @default(0)
+  actual_duration       Int?
+  activity_logs         BookingActivityLog[]
+  items                 BookingItem[]
+  status_history        BookingStatusHistory[]
+  business_partner      BusinessPartner?         @relation("BusinessPartnerBookings", fields: [business_partner_id], references: [id])
+  customer              User                     @relation("CustomerBookings", fields: [customer_id], references: [id])
+  partner               ServicePartner?          @relation("PartnerBookings", fields: [partner_id], references: [id])
+  invoice               Invoice?
+  messages              Message[]
+  location_history      PartnerLocationHistory[]
+  payments              Payment[]
+  rating                Rating?
+
+  @@index([customer_id])
+  @@index([partner_id])
+  @@index([status])
+  @@index([scheduled_date])
+  @@map("bookings")
+}
+
+model BookingItem {
+  id          String   @id @default(uuid())
+  booking_id  String
+  service_id  String
+  quantity    Int      @default(1)
+  unit_price  Float
+  total_price Float
+  created_at  DateTime @default(now())
+  booking     Booking  @relation(fields: [booking_id], references: [id], onDelete: Cascade)
+  service     Service  @relation(fields: [service_id], references: [id])
+
+  @@index([booking_id])
+  @@map("booking_items")
+}
+
+model BookingStatusHistory {
+  id         String        @id @default(uuid())
+  booking_id String
+  status     BookingStatus
+  changed_by String?
+  notes      String?
+  created_at DateTime      @default(now())
+  booking    Booking       @relation(fields: [booking_id], references: [id], onDelete: Cascade)
+
+  @@index([booking_id])
+  @@map("booking_status_history")
+}
+
+model BusinessHours {
+  id                  String           @id @default(uuid())
+  business_partner_id String?
+  service_partner_id  String?
+  day_of_week         Int
+  open_time           String
+  close_time          String
+  is_closed           Boolean          @default(false)
+  business_partner    BusinessPartner? @relation(fields: [business_partner_id], references: [id])
+  service_partner     ServicePartner?  @relation(fields: [service_partner_id], references: [id])
+
+  @@unique([business_partner_id, service_partner_id, day_of_week])
+  @@map("business_hours")
+}
+
+model AvailabilitySlot {
+  id                  String           @id @default(uuid())
+  business_partner_id String?
+  service_partner_id  String?
+  date                DateTime
+  start_time          String
+  end_time            String
+  max_bookings        Int              @default(1)
+  current_bookings    Int              @default(0)
+  is_available        Boolean          @default(true)
+  created_at          DateTime         @default(now())
+  updated_at          DateTime         @updatedAt
+  business_partner    BusinessPartner? @relation(fields: [business_partner_id], references: [id])
+  service_partner     ServicePartner?  @relation(fields: [service_partner_id], references: [id])
+
+  @@index([date])
+  @@index([business_partner_id])
+  @@index([service_partner_id])
+  @@map("availability_slots")
+}
+
+model Wallet {
+  id             String   @id @default(uuid())
+  user_id        String   @unique
+  balance        Float    @default(0)
+  locked_balance Float    @default(0)
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+  user           User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("wallets")
+}
+
+model Transaction {
+  id             String          @id @default(uuid())
+  user_id        String
+  type           TransactionType
+  amount         Float
+  description    String?
+  booking_id     String?
+  payment_id     String?
+  balance_before Float
+  balance_after  Float
+  created_at     DateTime        @default(now())
+  user           User            @relation(fields: [user_id], references: [id])
+
+  @@index([user_id])
+  @@index([type])
+  @@index([created_at])
+  @@map("transactions")
+}
+
+model Payment {
+  id                       String        @id @default(uuid())
+  booking_id               String
+  amount                   Float
+  payment_method           PaymentMethod
+  payment_status           PaymentStatus @default(PENDING)
+  transaction_id           String?       @unique
+  gateway_response         Json?
+  paid_at                  DateTime?
+  refunded_at              DateTime?
+  refund_amount            Float?
+  refund_reason            String?
+  created_at               DateTime      @default(now())
+  updated_at               DateTime      @updatedAt
+  razorpay_order_id        String?       @unique
+  razorpay_payment_id      String?       @unique
+  razorpay_signature       String?
+  stripe_payment_intent_id String?       @unique
+  user_id                  String
+  booking                  Booking       @relation(fields: [booking_id], references: [id])
+  user                     User          @relation(fields: [user_id], references: [id])
+
+  @@index([booking_id])
+  @@index([payment_status])
+  @@map("payments")
+}
+
+model Invoice {
+  id              String   @id @default(uuid())
+  invoice_number  String   @unique
+  booking_id      String   @unique
+  subtotal        Float
+  tax_amount      Float
+  discount_amount Float    @default(0)
+  total_amount    Float
+  issued_at       DateTime @default(now())
+  booking         Booking  @relation(fields: [booking_id], references: [id])
+
+  @@map("invoices")
+}
+
+model Message {
+  id           String    @id @default(uuid())
+  sender_id    String
+  receiver_id  String
+  booking_id   String?
+  content      String
+  content_type String    @default("text")
+  file_url     String?
+  is_read      Boolean   @default(false)
+  read_at      DateTime?
+  created_at   DateTime  @default(now())
+  booking      Booking?  @relation(fields: [booking_id], references: [id])
+  receiver     User      @relation("MessageReceiver", fields: [receiver_id], references: [id])
+  sender       User      @relation("MessageSender", fields: [sender_id], references: [id])
+
+  @@index([sender_id])
+  @@index([receiver_id])
+  @@index([booking_id])
+  @@map("messages")
+}
+
+model Notification {
+  id         String           @id @default(uuid())
+  user_id    String
+  type       NotificationType
+  title      String
+  message    String
+  data       Json?
+  is_read    Boolean          @default(false)
+  read_at    DateTime?
+  created_at DateTime         @default(now())
+  user       User             @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([is_read])
+  @@map("notifications")
+}
+
+model KycDocument {
+  id                  String           @id @default(uuid())
+  service_partner_id  String?
+  business_partner_id String?
+  document_type       String
+  document_number     String?
+  document_url        String
+  status              KycStatus        @default(PENDING_VERIFICATION)
+  verified_at         DateTime?
+  verified_by         String?
+  rejection_reason    String?
+  created_at          DateTime         @default(now())
+  updated_at          DateTime         @updatedAt
+  business_partner    BusinessPartner? @relation(fields: [business_partner_id], references: [id])
+  service_partner     ServicePartner?  @relation(fields: [service_partner_id], references: [id])
+
+  @@index([service_partner_id])
+  @@index([business_partner_id])
+  @@index([status])
+  @@map("kyc_documents")
+}
+
+model Rating {
+  id         String   @id @default(uuid())
+  booking_id String   @unique
+  rater_id   String
+  rated_id   String
+  rating     Int
+  review     String?
+  created_at DateTime @default(now())
+  booking    Booking  @relation(fields: [booking_id], references: [id])
+  rated      User     @relation("RatingReceiver", fields: [rated_id], references: [id])
+  rater      User     @relation("RatingGiver", fields: [rater_id], references: [id])
+
+  @@index([rater_id])
+  @@index([rated_id])
+  @@map("ratings")
+}
+
+model AuditLog {
+  id            String   @id @default(uuid())
+  user_id       String?
+  action        String
+  resource_type String?
+  resource_id   String?
+  details       Json?
+  ip_address    String?
+  user_agent    String?
+  status        String   @default("SUCCESS")
+  timestamp     DateTime @default(now())
+  created_at    DateTime @default(now())
+  user          User?    @relation(fields: [user_id], references: [id])
+
+  @@index([user_id])
+  @@index([action])
+  @@index([timestamp])
+  @@index([resource_type])
+  @@map("audit_logs")
+}
+
+model WithdrawalRequest {
+  id                String           @id @default(uuid())
+  user_id           String
+  amount            Float
+  bank_account      Json
+  status            WithdrawalStatus @default(PENDING)
+  transaction_id    String?          @unique
+  gateway_payout_id String?
+  admin_notes       String?
+  processed_at      DateTime?
+  processed_by      String?
+  created_at        DateTime         @default(now())
+  updated_at        DateTime         @updatedAt
+  user              User             @relation(fields: [user_id], references: [id])
+
+  @@index([user_id])
+  @@index([status])
+  @@map("withdrawal_requests")
+}
+
+model OfflineCustomer {
+  id                  String             @id @default(uuid())
+  business_partner_id String
+  name                String
+  email               String?
+  phone_number        String
+  alternate_phone     String?
+  address             String?
+  city                String?
+  state               String?
+  postal_code         String?
+  company_name        String?
+  gst_number          String?
+  total_invoices      Int                @default(0)
+  total_revenue       Float              @default(0)
+  outstanding_amount  Float              @default(0)
+  notes               String?
+  is_active           Boolean            @default(true)
+  created_at          DateTime           @default(now())
+  updated_at          DateTime           @updatedAt
+  business_partner    BusinessPartner    @relation(fields: [business_partner_id], references: [id], onDelete: Cascade)
+  invoices            OfflineInvoice[]   @relation("CustomerInvoices")
+  recurring_invoices  RecurringInvoice[] @relation("CustomerRecurringInvoices")
+
+  @@unique([business_partner_id, phone_number])
+  @@index([business_partner_id])
+  @@index([phone_number])
+  @@index([email])
+  @@map("offline_customers")
+}
+
+model OfflineInvoice {
+  id                   String               @id @default(uuid())
+  invoice_number       String               @unique
+  business_partner_id  String
+  customer_id          String
+  status               InvoiceStatus        @default(DRAFT)
+  invoice_date         DateTime
+  due_date             DateTime
+  subtotal             Float
+  tax_rate             Float                @default(0)
+  tax_amount           Float                @default(0)
+  discount_amount      Float                @default(0)
+  total_amount         Float
+  paid_amount          Float                @default(0)
+  balance_amount       Float
+  notes                String?
+  terms_conditions     String?
+  payment_instructions String?
+  sent_at              DateTime?
+  paid_at              DateTime?
+  cancelled_at         DateTime?
+  cancellation_reason  String?
+  created_at           DateTime             @default(now())
+  updated_at           DateTime             @updatedAt
+  recurring_invoice_id String?
+  items                OfflineInvoiceItem[]
+  business_partner     BusinessPartner      @relation(fields: [business_partner_id], references: [id], onDelete: Cascade)
+  customer             OfflineCustomer      @relation("CustomerInvoices", fields: [customer_id], references: [id], onDelete: Cascade)
+  recurring_invoice    RecurringInvoice?    @relation("GeneratedFromRecurring", fields: [recurring_invoice_id], references: [id])
+  payments             OfflinePayment[]
+
+  @@index([business_partner_id])
+  @@index([customer_id])
+  @@index([status])
+  @@index([invoice_date])
+  @@index([due_date])
+  @@index([invoice_number])
+  @@index([recurring_invoice_id])
+  @@map("offline_invoices")
+}
+
+model OfflineInvoiceItem {
+  id          String         @id @default(uuid())
+  invoice_id  String
+  service_id  String?
+  description String
+  quantity    Float          @default(1)
+  unit_price  Float
+  total_price Float
+  created_at  DateTime       @default(now())
+  invoice     OfflineInvoice @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
+  service     Service?       @relation(fields: [service_id], references: [id])
+
+  @@index([invoice_id])
+  @@index([service_id])
+  @@map("offline_invoice_items")
+}
+
+model OfflinePayment {
+  id               String         @id @default(uuid())
+  invoice_id       String
+  amount           Float
+  payment_method   PaymentMethod
+  payment_date     DateTime
+  reference_number String?
+  notes            String?
+  created_at       DateTime       @default(now())
+  created_by       String
+  invoice          OfflineInvoice @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
+
+  @@index([invoice_id])
+  @@index([payment_date])
+  @@map("offline_payments")
+}
+
+model PartnerAssociation {
+  id                  String           @id @default(uuid())
+  business_partner_id String
+  service_partner_id  String
+  role                TeamMemberRole   @default(MEMBER)
+  status              TeamMemberStatus @default(PENDING)
+  commission_split    Float            @default(0)
+  invited_at          DateTime         @default(now())
+  joined_at           DateTime?
+  left_at             DateTime?
+  notes               String?
+  invitation_message  String?
+  created_at          DateTime         @default(now())
+  updated_at          DateTime         @updatedAt
+  business_partner    BusinessPartner  @relation("BusinessPartnerTeam", fields: [business_partner_id], references: [id], onDelete: Cascade)
+  service_partner     ServicePartner   @relation("ServicePartnerTeam", fields: [service_partner_id], references: [id], onDelete: Cascade)
+
+  @@unique([business_partner_id, service_partner_id])
+  @@index([business_partner_id])
+  @@index([service_partner_id])
+  @@index([status])
+  @@map("partner_associations")
+}
+
+model RecurringInvoice {
+  id                   String                 @id @default(uuid())
+  business_partner_id  String
+  customer_id          String
+  frequency            RecurringFrequency
+  interval             Int                    @default(1)
+  next_invoice_date    DateTime
+  last_generated_date  DateTime?
+  template_name        String
+  description          String?
+  notes                String?
+  terms_conditions     String?
+  payment_instructions String?
+  subtotal             Float
+  tax_rate             Float                  @default(0)
+  tax_amount           Float                  @default(0)
+  discount_amount      Float                  @default(0)
+  total_amount         Float
+  status               RecurringStatus        @default(ACTIVE)
+  start_date           DateTime
+  end_date             DateTime?
+  max_occurrences      Int?
+  occurrences_count    Int                    @default(0)
+  created_at           DateTime               @default(now())
+  updated_at           DateTime               @updatedAt
+  created_by           String
+  generated_invoices   OfflineInvoice[]       @relation("GeneratedFromRecurring")
+  items                RecurringInvoiceItem[]
+  business_partner     BusinessPartner        @relation("BusinessPartnerRecurringInvoices", fields: [business_partner_id], references: [id], onDelete: Cascade)
+  customer             OfflineCustomer        @relation("CustomerRecurringInvoices", fields: [customer_id], references: [id], onDelete: Cascade)
+
+  @@index([business_partner_id])
+  @@index([customer_id])
+  @@index([status])
+  @@index([next_invoice_date])
+  @@map("recurring_invoices")
+}
+
+model RecurringInvoiceItem {
+  id                   String           @id @default(uuid())
+  recurring_invoice_id String
+  service_id           String?
+  description          String
+  quantity             Int              @default(1)
+  unit_price           Float
+  total_price          Float
+  recurring_invoice    RecurringInvoice @relation(fields: [recurring_invoice_id], references: [id], onDelete: Cascade)
+  service              Service?         @relation(fields: [service_id], references: [id])
+
+  @@index([recurring_invoice_id])
+  @@map("recurring_invoice_items")
+}
+
+model PartnerLocationHistory {
+  id          String         @id @default(uuid())
+  partner_id  String
+  latitude    Float
+  longitude   Float
+  accuracy    Float?
+  recorded_at DateTime       @default(now())
+  is_online   Boolean        @default(true)
+  booking_id  String?
+  address     String?
+  booking     Booking?       @relation(fields: [booking_id], references: [id])
+  partner     ServicePartner @relation(fields: [partner_id], references: [id], onDelete: Cascade)
+
+  @@index([partner_id, recorded_at])
+  @@index([booking_id])
+  @@index([recorded_at])
+  @@map("partner_location_history")
+}
+
+model BookingActivityLog {
+  id              String         @id @default(uuid())
+  booking_id      String
+  actor_type      String
+  actor_id        String
+  action          String
+  previous_status BookingStatus?
+  new_status      BookingStatus?
+  location_lat    Float?
+  location_lng    Float?
+  details         Json?
+  ip_address      String?
+  user_agent      String?
+  created_at      DateTime       @default(now())
+  booking         Booking        @relation(fields: [booking_id], references: [id], onDelete: Cascade)
+
+  @@index([booking_id, created_at])
+  @@index([actor_id])
+  @@index([created_at])
+  @@map("booking_activity_logs")
 }
 
 enum UserRole {
@@ -27,6 +838,9 @@ enum BookingStatus {
   COMPLETED
   CANCELLED
   RATED
+  PARTNER_NOT_FOUND
+  PENDING_ASSIGNMENT
+  ARRIVED
 }
 
 enum PaymentStatus {
@@ -35,6 +849,7 @@ enum PaymentStatus {
   COMPLETED
   FAILED
   REFUNDED
+  PARTIAL
 }
 
 enum PaymentMethod {
@@ -83,23 +898,23 @@ enum NotificationType {
   PAYMENT_RECEIVED
   KYC_APPROVED
   KYC_REJECTED
-  KYC_ACTION_REQUIRED
   MESSAGE_RECEIVED
   GENERAL
+  KYC_ACTION_REQUIRED
 }
 
 enum TeamMemberRole {
-  LEAD          // Team lead/supervisor
-  MEMBER        // Regular team member
-  TRAINEE       // New member in training
-  SPECIALIST    // Expert in specific area
+  LEAD
+  MEMBER
+  TRAINEE
+  SPECIALIST
 }
 
 enum TeamMemberStatus {
-  PENDING       // Invitation sent, not accepted
-  ACTIVE        // Currently working
-  INACTIVE      // Temporarily inactive
-  LEFT          // No longer part of team
+  PENDING
+  ACTIVE
+  INACTIVE
+  LEFT
 }
 
 enum InvoiceStatus {
@@ -110,843 +925,6 @@ enum InvoiceStatus {
   OVERDUE
   CANCELLED
 }
-
-
-// ====================
-// USER MANAGEMENT
-// ====================
-
-model User {
-  id                      String              @id @default(uuid())
-  email                   String              @unique
-  password                String
-  full_name               String
-  phone_number            String?
-  role                    UserRole
-  email_verified          Boolean             @default(false)
-  phone_verified          Boolean             @default(false)
-  verification_otp        String?
-  reset_otp               String?
-  otp_expires_at          DateTime?
-  is_active               Boolean             @default(true)
-  
-  // GDPR Compliance fields
-  marketing_consent       Boolean             @default(false)
-  data_processing_consent Boolean             @default(true)
-  cookie_consent          Boolean             @default(false)
-  consent_updated_at      DateTime?
-  is_deleted              Boolean             @default(false)
-  deleted_at              DateTime?
-  
-  created_at              DateTime            @default(now())
-  updated_at              DateTime            @updatedAt
-
-  // Relations
-  profile                 Profile?
-  business_partner        BusinessPartner?
-  service_partner         ServicePartner?
-  bookings                Booking[]           @relation("CustomerBookings")
-  messages_sent           Message[]           @relation("MessageSender")
-  messages_received       Message[]           @relation("MessageReceiver")
-  notifications           Notification[]
-  ratings_given           Rating[]            @relation("RatingGiver")
-  ratings_received        Rating[]            @relation("RatingReceiver")
-  wallet                  Wallet?
-  transactions            Transaction[]
-  withdrawals             WithdrawalRequest[]
-  payments                Payment[]
-  audit_logs              AuditLog[]
-
-  @@index([email])
-  @@index([role])
-  @@map("users")
-}
-
-model Profile {
-  id            String    @id @default(uuid())
-  user_id       String    @unique
-  user          User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  avatar_url    String?
-  address       String?
-  city          String?
-  state         String?
-  postal_code   String?
-  country       String    @default("India")
-  latitude      Float?
-  longitude     Float?
-  date_of_birth DateTime?
-  gender        String?
-  created_at    DateTime  @default(now())
-  updated_at    DateTime  @updatedAt
-
-  @@map("profiles")
-}
-
-model ServicePartner {
-  id                  String              @id @default(uuid())
-  user_id             String              @unique
-  user                User                @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  business_partner_id String?
-  business_partner    BusinessPartner?    @relation(fields: [business_partner_id], references: [id])
-  
-  category_id         String?
-  category            Category?           @relation(fields: [category_id], references: [id])
-  
-  availability_status PartnerAvailability @default(OFFLINE)
-  current_latitude    Float?
-  current_longitude   Float?
-  service_radius      Float               @default(5) // km
-  
-  avg_rating          Float               @default(0)
-  total_ratings       Int                 @default(0)
-  completion_rate     Float               @default(0)
-  total_bookings      Int                 @default(0)
-  completed_bookings  Int                 @default(0)
-  
-  kyc_status          KycStatus           @default(PENDING)
-  kyc_verified_at     DateTime?
-  kyc_verified_by     String?
-  kyc_rejection_reason String?
-  
-  bank_account_number String?
-  bank_ifsc_code      String?
-  bank_account_name   String?
-  
-  created_at          DateTime            @default(now())
-  updated_at          DateTime            @updatedAt
-
-  // Relations
-  services            PartnerService[]
-  bookings            Booking[]           @relation("PartnerBookings")
-  kyc_documents       KycDocument[]
-  team_associations   PartnerAssociation[] @relation("ServicePartnerTeam")
-
-  @@index([availability_status])
-  @@index([kyc_status])
-  @@map("service_partners")
-}
-
-model BusinessPartner {
-  id                  String            @id @default(uuid())
-  user_id             String            @unique
-  user                User              @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  
-  business_name       String
-  category_id         String?
-  category            Category?         @relation(fields: [category_id], references: [id])
-  business_type       String?           // Keeping as optional string for legacy
-  business_license    String?
-  gst_number          String?
-  
-  kyc_status          KycStatus         @default(PENDING)
-  kyc_verified_at     DateTime?
-  kyc_rejection_reason String?
-  
-  logo_url            String?
-  address             String?
-  city                String?
-  state               String?
-  postal_code         String?
-  
-  commission_rate     Float             @default(0.10) // 10%
-  
-  // Team Management (Optional Feature)
-  team_management_enabled Boolean         @default(false)
-  
-  bank_account_number String?
-  bank_ifsc_code      String?
-  bank_account_name   String?
-  
-  created_at          DateTime          @default(now())
-  updated_at          DateTime          @updatedAt
-
-  // Relations
-  service_partners    ServicePartner[]
-  team_associations   PartnerAssociation[] @relation("BusinessPartnerTeam")
-  partner_services    PartnerService[]
-  kyc_documents       KycDocument[]
-  offline_customers   OfflineCustomer[]
-  offline_invoices    OfflineInvoice[]
-  recurring_invoices  RecurringInvoice[] @relation("BusinessPartnerRecurringInvoices")
-
-  @@index([kyc_status])
-  @@map("business_partners")
-}
-
-// ====================
-// SERVICE CATALOG
-// ====================
-
-model Category {
-  id          String    @id @default(uuid())
-  name        String    @unique
-  description String?
-  icon_url    String?
-  is_active   Boolean   @default(true)
-  display_order Int     @default(0)
-  created_at  DateTime  @default(now())
-  updated_at  DateTime  @updatedAt
-
-  // Relations
-  services          Service[]
-  business_partners BusinessPartner[]
-  service_partners  ServicePartner[]
-
-  @@map("categories")
-}
-
-model Service {
-  id            String    @id @default(uuid())
-  category_id   String
-  category      Category  @relation(fields: [category_id], references: [id])
-  
-  name          String
-  description   String?
-  base_price    Float
-  duration      Int       // minutes
-  
-  image_url     String?
-  is_active     Boolean   @default(true)
-  
-  created_at    DateTime  @default(now())
-  updated_at    DateTime  @updatedAt
-
-  // Relations
-  partner_services PartnerService[]
-  booking_items    BookingItem[]
-  location_pricing ServiceLocationPricing[]
-  offline_invoice_items OfflineInvoiceItem[]
-  recurring_invoice_items RecurringInvoiceItem[]
-
-  @@index([category_id])
-  @@index([is_active])
-  @@map("services")
-}
-
-model PartnerService {
-  id                  String           @id @default(uuid())
-  service_id          String
-  service             Service          @relation(fields: [service_id], references: [id])
-  partner_id          String?
-  partner             ServicePartner?  @relation(fields: [partner_id], references: [id])
-  business_partner_id String?
-  business_partner    BusinessPartner? @relation(fields: [business_partner_id], references: [id])
-  
-  custom_price        Float?           // Override base price
-  is_available        Boolean          @default(true)
-  
-  created_at          DateTime         @default(now())
-  updated_at          DateTime         @updatedAt
-
-  @@unique([service_id, partner_id])
-  @@index([partner_id])
-  @@index([business_partner_id])
-  @@map("partner_services")
-}
-
-// ====================
-// LOCATION-BASED PRICING
-// ====================
-
-model State {
-  id         String     @id @default(uuid())
-  name       String     @unique
-  code       String     @unique // e.g., "MH", "DL", "KA"
-  is_active  Boolean    @default(true)
-  created_at DateTime   @default(now())
-  updated_at DateTime   @updatedAt
-  
-  // Relations
-  districts       District[]
-  service_pricing ServiceLocationPricing[]
-  
-  @@map("states")
-}
-
-model District {
-  id         String     @id @default(uuid())
-  state_id   String
-  state      State      @relation(fields: [state_id], references: [id], onDelete: Cascade)
-  name       String
-  is_active  Boolean    @default(true)
-  created_at DateTime   @default(now())
-  updated_at DateTime   @updatedAt
-  
-  // Relations
-  areas           Area[]
-  service_pricing ServiceLocationPricing[]
-  
-  @@unique([state_id, name])
-  @@index([state_id])
-  @@map("districts")
-}
-
-model Area {
-  id          String     @id @default(uuid())
-  district_id String
-  district    District   @relation(fields: [district_id], references: [id], onDelete: Cascade)
-  name        String
-  pincode     String?
-  is_active   Boolean    @default(true)
-  created_at  DateTime   @default(now())
-  updated_at  DateTime   @updatedAt
-  
-  // Relations
-  service_pricing ServiceLocationPricing[]
-  
-  @@unique([district_id, name])
-  @@index([district_id])
-  @@map("areas")
-}
-
-model ServiceLocationPricing {
-  id          String    @id @default(uuid())
-  service_id  String
-  service     Service   @relation(fields: [service_id], references: [id], onDelete: Cascade)
-  
-  // Location - at least one must be set
-  state_id    String?
-  state       State?    @relation(fields: [state_id], references: [id], onDelete: Cascade)
-  
-  district_id String?
-  district    District? @relation(fields: [district_id], references: [id], onDelete: Cascade)
-  
-  area_id     String?
-  area        Area?     @relation(fields: [area_id], references: [id], onDelete: Cascade)
-  
-  price       Float
-  is_active   Boolean   @default(true)
-  created_at  DateTime  @default(now())
-  updated_at  DateTime  @updatedAt
-  
-  @@unique([service_id, state_id, district_id, area_id])
-  @@index([service_id])
-  @@index([state_id])
-  @@index([district_id])
-  @@index([area_id])
-  @@map("service_location_pricing")
-}
-
-// ====================
-// BOOKING SYSTEM
-// ====================
-
-model Booking {
-  id                  String        @id @default(uuid())
-  booking_number      String        @unique
-  
-  customer_id         String
-  customer            User          @relation("CustomerBookings", fields: [customer_id], references: [id])
-  
-  partner_id          String?
-  partner             ServicePartner? @relation("PartnerBookings", fields: [partner_id], references: [id])
-  
-  status              BookingStatus @default(PENDING)
-  
-  scheduled_date      DateTime
-  scheduled_time      String
-  
-  service_address     String
-  service_latitude    Float
-  service_longitude   Float
-  
-  total_amount        Float
-  advance_amount      Float         @default(0)
-  remaining_amount    Float
-  
-  payment_method      PaymentMethod?
-  payment_status      PaymentStatus @default(PENDING)
-  
-  special_instructions String?
-  
-  partner_assigned_at DateTime?
-  partner_accepted_at DateTime?
-  started_at          DateTime?
-  completed_at        DateTime?
-  cancelled_at        DateTime?
-  cancellation_reason String?
-  cancelled_by        String?       // user_id
-  
-  created_at          DateTime      @default(now())
-  updated_at          DateTime      @updatedAt
-
-  // Relations
-  items               BookingItem[]
-  payments            Payment[]
-  messages            Message[]
-  rating              Rating?
-  invoice             Invoice?
-  status_history      BookingStatusHistory[]
-
-  @@index([customer_id])
-  @@index([partner_id])
-  @@index([status])
-  @@index([scheduled_date])
-  @@map("bookings")
-}
-
-model BookingItem {
-  id          String   @id @default(uuid())
-  booking_id  String
-  booking     Booking  @relation(fields: [booking_id], references: [id], onDelete: Cascade)
-  
-  service_id  String
-  service     Service  @relation(fields: [service_id], references: [id])
-  
-  quantity    Int      @default(1)
-  unit_price  Float
-  total_price Float
-  
-  created_at  DateTime @default(now())
-
-  @@index([booking_id])
-  @@map("booking_items")
-}
-
-model BookingStatusHistory {
-  id          String        @id @default(uuid())
-  booking_id  String
-  booking     Booking       @relation(fields: [booking_id], references: [id], onDelete: Cascade)
-  
-  status      BookingStatus
-  changed_by  String?       // user_id
-  notes       String?
-  
-  created_at  DateTime      @default(now())
-
-  @@index([booking_id])
-  @@map("booking_status_history")
-}
-
-// ====================
-// FINANCIAL
-// ====================
-
-model Wallet {
-  id              String   @id @default(uuid())
-  user_id         String   @unique
-  user            User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  
-  balance         Float    @default(0)
-  locked_balance  Float    @default(0) // For pending transactions
-  
-  created_at      DateTime @default(now())
-  updated_at      DateTime @updatedAt
-
-  @@map("wallets")
-}
-
-model Transaction {
-  id              String          @id @default(uuid())
-  user_id         String
-  user            User            @relation(fields: [user_id], references: [id])
-  
-  type            TransactionType
-  amount          Float
-  description     String?
-  
-  booking_id      String?
-  payment_id      String?
-  
-  balance_before  Float
-  balance_after   Float
-  
-  created_at      DateTime        @default(now())
-
-  @@index([user_id])
-  @@index([type])
-  @@index([created_at])
-  @@map("transactions")
-}
-
-model Payment {
-  id                    String        @id @default(uuid())
-  booking_id            String
-  booking               Booking       @relation(fields: [booking_id], references: [id])
-  
-  user_id               String
-  user                  User          @relation(fields: [user_id], references: [id])
-  
-  amount                Float
-  payment_method        PaymentMethod
-  payment_status        PaymentStatus @default(PENDING)
-  
-  transaction_id        String?       @unique // External payment gateway ID
-  gateway_response      Json?
-  
-  razorpay_order_id     String?       @unique
-  razorpay_payment_id   String?       @unique
-  razorpay_signature     String?
-  
-  stripe_payment_intent_id String?     @unique
-  
-  paid_at               DateTime?
-  refunded_at           DateTime?
-  refund_amount         Float?
-  refund_reason         String?
-  
-  created_at            DateTime      @default(now())
-  updated_at            DateTime      @updatedAt
-
-  @@index([booking_id])
-  @@index([payment_status])
-  @@map("payments")
-}
-
-model Invoice {
-  id              String   @id @default(uuid())
-  invoice_number  String   @unique
-  booking_id      String   @unique
-  booking         Booking  @relation(fields: [booking_id], references: [id])
-  
-  subtotal        Float
-  tax_amount      Float
-  discount_amount Float    @default(0)
-  total_amount    Float
-  
-  issued_at       DateTime @default(now())
-  
-  @@map("invoices")
-}
-
-// ====================
-// COMMUNICATION
-// ====================
-
-model Message {
-  id          String   @id @default(uuid())
-  sender_id   String
-  sender      User     @relation("MessageSender", fields: [sender_id], references: [id])
-  
-  receiver_id String
-  receiver    User     @relation("MessageReceiver", fields: [receiver_id], references: [id])
-  
-  booking_id  String?
-  booking     Booking? @relation(fields: [booking_id], references: [id])
-  
-  content     String
-  content_type String  @default("text") // text, image, file
-  file_url    String?
-  
-  is_read     Boolean  @default(false)
-  read_at     DateTime?
-  
-  created_at  DateTime @default(now())
-
-  @@index([sender_id])
-  @@index([receiver_id])
-  @@index([booking_id])
-  @@map("messages")
-}
-
-model Notification {
-  id          String           @id @default(uuid())
-  user_id     String
-  user        User             @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  
-  type        NotificationType
-  title       String
-  message     String
-  data        Json?            // Additional data
-  
-  is_read     Boolean          @default(false)
-  read_at     DateTime?
-  
-  created_at  DateTime         @default(now())
-
-  @@index([user_id])
-  @@index([is_read])
-  @@map("notifications")
-}
-
-// ====================
-// COMPLIANCE
-// ====================
-
-model KycDocument {
-  id                  String           @id @default(uuid())
-  service_partner_id  String?
-  service_partner     ServicePartner?  @relation(fields: [service_partner_id], references: [id])
-  
-  business_partner_id String?
-  business_partner    BusinessPartner? @relation(fields: [business_partner_id], references: [id])
-  
-  document_type       String           // AADHAAR, PAN, LICENSE, etc.
-  document_number     String?
-  document_url        String
-  
-  status              KycStatus        @default(PENDING_VERIFICATION)
-  verified_at         DateTime?
-  verified_by         String?          // admin user_id
-  rejection_reason    String?
-  
-  created_at          DateTime         @default(now())
-  updated_at          DateTime         @updatedAt
-
-  @@index([service_partner_id])
-  @@index([business_partner_id])
-  @@index([status])
-  @@map("kyc_documents")
-}
-
-model Rating {
-  id          String   @id @default(uuid())
-  booking_id  String   @unique
-  booking     Booking  @relation(fields: [booking_id], references: [id])
-  
-  rater_id    String
-  rater       User     @relation("RatingGiver", fields: [rater_id], references: [id])
-  
-  rated_id    String
-  rated       User     @relation("RatingReceiver", fields: [rated_id], references: [id])
-  
-  rating      Int      // 1-5
-  review      String?
-  
-  created_at  DateTime @default(now())
-
-  @@index([rater_id])
-  @@index([rated_id])
-  @@map("ratings")
-}
-
-model AuditLog {
-  id            String   @id @default(uuid())
-  user_id       String?
-  user          User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
-  
-  action        String
-  resource_type String?
-  resource_id   String?
-  details       Json?
-  
-  ip_address    String?
-  user_agent    String?
-  status        String   @default("SUCCESS")
-  
-  timestamp     DateTime @default(now())
-  created_at    DateTime @default(now())
-
-  @@index([user_id])
-  @@index([action])
-  @@index([timestamp])
-  @@index([resource_type])
-  @@map("audit_logs")
-}
-
-model WithdrawalRequest {
-  id                String           @id @default(uuid())
-  user_id           String
-  user              User             @relation(fields: [user_id], references: [id])
-  
-  amount            Float
-  bank_account      Json             // snapshot of bank details at time of request
-  
-  status            WithdrawalStatus @default(PENDING)
-  
-  transaction_id    String?          @unique // Internal transaction ID
-  gateway_payout_id String?        // External payout ID (Stripe/Razorpay)
-  
-  admin_notes       String?
-  processed_at      DateTime?
-  processed_by      String?          // admin user_id
-  
-  created_at        DateTime         @default(now())
-  updated_at        DateTime         @updatedAt
-
-  @@index([user_id])
-  @@index([status])
-  @@map("withdrawal_requests")
-}
-
-// ====================
-// OFFLINE BILLING SYSTEM
-// ====================
-
-model OfflineCustomer {
-  id                    String   @id @default(uuid())
-  business_partner_id   String
-  business_partner      BusinessPartner @relation(fields: [business_partner_id], references: [id], onDelete: Cascade)
-  
-  // Customer Details
-  name                  String
-  email                 String?
-  phone_number          String
-  alternate_phone       String?
-  
-  // Address
-  address               String?
-  city                  String?
-  state                 String?
-  postal_code           String?
-  
-  // Business Info (for B2B customers)
-  company_name          String?
-  gst_number            String?
-  
-  // Stats
-  total_invoices        Int      @default(0)
-  total_revenue         Float    @default(0)
-  outstanding_amount    Float    @default(0)
-  
-  // Meta
-  notes                 String?
-  is_active             Boolean  @default(true)
-  created_at            DateTime @default(now())
-  updated_at            DateTime @updatedAt
-  
-  // Relations
-  invoices              OfflineInvoice[]        @relation("CustomerInvoices")
-  recurring_invoices    RecurringInvoice[]      @relation("CustomerRecurringInvoices")
-  
-  @@unique([business_partner_id, phone_number])
-  @@index([business_partner_id])
-  @@index([phone_number])
-  @@index([email])
-  @@map("offline_customers")
-}
-
-model OfflineInvoice {
-  id                    String         @id @default(uuid())
-  invoice_number        String         @unique
-  
-  business_partner_id   String
-  business_partner      BusinessPartner @relation(fields: [business_partner_id], references: [id], onDelete: Cascade)
-  
-  customer_id           String
-  customer              OfflineCustomer @relation("CustomerInvoices", fields: [customer_id], references: [id], onDelete: Cascade)
-  
-  status                InvoiceStatus  @default(DRAFT)
-  
-  // Dates
-  invoice_date          DateTime
-  due_date              DateTime
-  
-  // Amounts
-  subtotal              Float
-  tax_rate              Float          @default(0)   // Percentage
-  tax_amount            Float          @default(0)
-  discount_amount       Float          @default(0)
-  total_amount          Float
-  paid_amount           Float          @default(0)
-  balance_amount        Float          // total - paid
-  
-  // Additional Info
-  notes                 String?
-  terms_conditions      String?
-  payment_instructions  String?
-  
-  // Metadata
-  sent_at               DateTime?
-  paid_at               DateTime?
-  cancelled_at          DateTime?
-  cancellation_reason   String?
-  
-  created_at            DateTime       @default(now())
-  updated_at            DateTime       @updatedAt
-  
-  // Relations
-  items                 OfflineInvoiceItem[]
-  payments              OfflinePayment[]
-  recurring_invoice_id  String?
-  recurring_invoice     RecurringInvoice?    @relation("GeneratedFromRecurring", fields: [recurring_invoice_id], references: [id], onDelete: SetNull)
-  
-  @@index([business_partner_id])
-  @@index([customer_id])
-  @@index([status])
-  @@index([invoice_date])
-  @@index([due_date])
-  @@index([invoice_number])
-  @@index([recurring_invoice_id])
-  @@map("offline_invoices")
-}
-
-model OfflineInvoiceItem {
-  id              String          @id @default(uuid())
-  invoice_id      String
-  invoice         OfflineInvoice  @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
-  
-  // Can link to service catalog or be custom
-  service_id      String?
-  service         Service?        @relation(fields: [service_id], references: [id])
-  
-  description     String
-  quantity        Float           @default(1)
-  unit_price      Float
-  total_price     Float           // quantity * unit_price
-  
-  created_at      DateTime        @default(now())
-  
-  @@index([invoice_id])
-  @@index([service_id])
-  @@map("offline_invoice_items")
-}
-
-model OfflinePayment {
-  id              String          @id @default(uuid())
-  invoice_id      String
-  invoice         OfflineInvoice  @relation(fields: [invoice_id], references: [id], onDelete: Cascade)
-  
-  amount          Float
-  payment_method  PaymentMethod
-  payment_date    DateTime
-  
-  reference_number String?        // Check number, transaction ID, etc.
-  notes           String?
-  
-  created_at      DateTime        @default(now())
-  created_by      String          // User who recorded the payment
-  
-  @@index([invoice_id])
-  @@index([payment_date])
-  @@map("offline_payments")
-}
-
-// ====================
-// TEAM MANAGEMENT
-// ====================
-
-model PartnerAssociation {
-  id                    String             @id @default(uuid())
-  
-  // Business Partner (team owner)
-  business_partner_id   String
-  business_partner      BusinessPartner    @relation("BusinessPartnerTeam", fields: [business_partner_id], references: [id], onDelete: Cascade)
-  
-  // Service Partner (team member)
-  service_partner_id    String
-  service_partner       ServicePartner     @relation("ServicePartnerTeam", fields: [service_partner_id], references: [id], onDelete: Cascade)
-  
-  // Team Details
-  role                  TeamMemberRole     @default(MEMBER)
-  status                TeamMemberStatus   @default(PENDING)
-  
-  // Financial
-  commission_split      Float              @default(0)  // % of earnings that go to business partner (0-100)
-  
-  // Dates
-  invited_at            DateTime           @default(now())
-  joined_at             DateTime?          // When partner accepted invitation
-  left_at               DateTime?          // When partner left the team
-  
-  // Additional Info
-  notes                 String?            // Internal notes about team member
-  invitation_message    String?            // Message sent with invitation
-  
-  // Metadata
-  created_at            DateTime           @default(now())
-  updated_at            DateTime           @updatedAt
-  
-  @@unique([business_partner_id, service_partner_id])
-  @@index([business_partner_id])
-  @@index([service_partner_id])
-  @@index([status])
-  @@map("partner_associations")
-}
-
-// ====================
-// RECURRING INVOICES
-// ====================
 
 enum RecurringFrequency {
   DAILY
@@ -962,78 +940,3 @@ enum RecurringStatus {
   CANCELLED
   EXPIRED
 }
-
-model RecurringInvoice {
-  id                    String                  @id @default(uuid())
-  
-  // Business Partner
-  business_partner_id   String
-  business_partner      BusinessPartner         @relation("BusinessPartnerRecurringInvoices", fields: [business_partner_id], references: [id], onDelete: Cascade)
-  
-  // Customer
-  customer_id           String
-  customer              OfflineCustomer         @relation("CustomerRecurringInvoices", fields: [customer_id], references: [id], onDelete: Cascade)
-  
-  // Recurrence Settings
-  frequency             RecurringFrequency
-  interval              Int                     @default(1)  // Every X days/weeks/months
-  next_invoice_date     DateTime
-  last_generated_date   DateTime?
-  
-  // Invoice Template
-  template_name         String
-  description           String?
-  notes                 String?
-  terms_conditions      String?
-  payment_instructions  String?
-  
-  // Pricing
-  subtotal              Float
-  tax_rate              Float                   @default(0)
-  tax_amount            Float                   @default(0)
-  discount_amount       Float                   @default(0)
-  total_amount          Float
-  
-  // Status & Limits
-  status                RecurringStatus         @default(ACTIVE)
-  start_date            DateTime
-  end_date              DateTime?               // Optional expiry date
-  max_occurrences       Int?                    // Optional max number of invoices
-  occurrences_count     Int                     @default(0)
-  
-  // Line Items Template
-  items                 RecurringInvoiceItem[]
-  
-  // Generated Invoices
-  generated_invoices    OfflineInvoice[]        @relation("GeneratedFromRecurring")
-  
-  // Metadata
-  created_at            DateTime                @default(now())
-  updated_at            DateTime                @updatedAt
-  created_by            String
-  
-  @@index([business_partner_id])
-  @@index([customer_id])
-  @@index([status])
-  @@index([next_invoice_date])
-  @@map("recurring_invoices")
-}
-
-model RecurringInvoiceItem {
-  id                      String            @id @default(uuid())
-  
-  recurring_invoice_id    String
-  recurring_invoice       RecurringInvoice  @relation(fields: [recurring_invoice_id], references: [id], onDelete: Cascade)
-  
-  service_id              String?
-  service                 Service?          @relation(fields: [service_id], references: [id], onDelete: SetNull)
-  
-  description             String
-  quantity                Int               @default(1)
-  unit_price              Float
-  total_price             Float
-  
-  @@index([recurring_invoice_id])
-  @@map("recurring_invoice_items")
-}
-

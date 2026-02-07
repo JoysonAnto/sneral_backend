@@ -28,6 +28,7 @@ router.post('/refresh-token', validate(refreshTokenValidator), authController.re
 // Protected routes
 router.post('/logout', authenticateToken, authController.logout);
 router.get('/profile', authenticateToken, authController.getProfile);
+router.get('/me', authenticateToken, authController.getProfile); // Alias for profile
 router.patch('/profile', authenticateToken, authController.updateProfile);
 router.post('/change-password', authenticateToken, validate(changePasswordValidator), authController.changePassword);
 

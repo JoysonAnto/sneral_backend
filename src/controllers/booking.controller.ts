@@ -23,11 +23,13 @@ export class BookingController {
 
     getAll = async (req: Request, res: Response, next: NextFunction) => {
         try {
+            console.log(`🔍 [BOOKING DEBUG] getAll called by user: ${req.user?.userId}, role: ${req.user?.role}`);
             const result = await this.bookingService.getAllBookings(
                 req.query,
                 req.user!.userId,
                 req.user!.role
             );
+            console.log(`🔍 [BOOKING DEBUG] Found ${result.bookings.length} bookings`);
             res.json(
                 successResponse(
                     result.bookings,
@@ -82,6 +84,7 @@ export class BookingController {
 
     acceptBooking = async (req: Request, res: Response, next: NextFunction) => {
         try {
+            console.log(`🔍 [ACCEPT DEBUG] Partner ${req.user?.userId} attempting to accept booking ${req.params.id}`);
             const partner = await import('../config/database').then(m =>
                 m.default.servicePartner.findUnique({
                     where: { user_id: req.user!.userId }
@@ -89,15 +92,19 @@ export class BookingController {
             );
 
             if (!partner) {
+                console.log(`❌ [ACCEPT DEBUG] Partner profile not found for user ${req.user?.userId}`);
                 throw new Error('Service partner profile not found');
             }
 
+            console.log(`🔍 [ACCEPT DEBUG] Found partner ${partner.id}. Calling service...`);
             const booking = await this.bookingService.acceptBooking(
                 req.params.id,
                 partner.id
             );
+            console.log(`✅ [ACCEPT DEBUG] Successfully accepted booking ${req.params.id}`);
             res.json(successResponse(booking, 'Booking accepted successfully'));
-        } catch (error) {
+        } catch (error: any) {
+            console.error(`❌ [ACCEPT DEBUG] Error:`, error);
             next(error);
         }
     };
@@ -116,7 +123,8 @@ export class BookingController {
 
             const booking = await this.bookingService.startBooking(
                 req.params.id,
-                partner.id
+                partner.id,
+                req.body.otp
             );
             res.json(successResponse(booking, 'Booking started successfully'));
         } catch (error) {
@@ -167,7 +175,158 @@ export class BookingController {
                 req.body.rating,
                 req.body.review
             );
-            res.json(successResponse(result, result.message));
+            res.json(successResponse(result, 'Rating submitted successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    // New methods for service progress and completion
+    arriveAtLocation = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const partner = await import('../config/database').then(m =>
+                m.default.servicePartner.findUnique({
+                    where: { user_id: req.user!.userId }
+                })
+            );
+
+            if (!partner) {
+                throw new Error('Service partner profile not found');
+            }
+
+            const { latitude, longitude } = req.body;
+            const booking = await this.bookingService.arriveAtLocation(
+                req.params.id,
+                partner.id,
+                latitude,
+                longitude
+            );
+            res.json(successResponse(booking, 'Arrival confirmed successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    uploadBeforePhotos = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const partner = await import('../config/database').then(m =>
+                m.default.servicePartner.findUnique({
+                    where: { user_id: req.user!.userId }
+                })
+            );
+
+            if (!partner) {
+                throw new Error('Service partner profile not found');
+            }
+
+            const files = req.files as Express.Multer.File[];
+            if (!files || files.length === 0) {
+                throw new Error('No images uploaded');
+            }
+
+            const imageUrls = files.map(file => `/uploads/service-photos/${file.filename}`);
+            const result = await this.bookingService.uploadBeforeServicePhotos(
+                req.params.id,
+                partner.id,
+                imageUrls
+            );
+            res.json(successResponse(result, 'Before-service photos uploaded successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    uploadAfterPhotos = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const partner = await import('../config/database').then(m =>
+                m.default.servicePartner.findUnique({
+                    where: { user_id: req.user!.userId }
+                })
+            );
+
+            if (!partner) {
+                throw new Error('Service partner profile not found');
+            }
+
+            const files = req.files as Express.Multer.File[];
+            if (!files || files.length === 0) {
+                throw new Error('No images uploaded');
+            }
+
+            const imageUrls = files.map(file => `/uploads/service-photos/${file.filename}`);
+            const result = await this.bookingService.uploadAfterServicePhotos(
+                req.params.id,
+                partner.id,
+                imageUrls
+            );
+            res.json(successResponse(result, 'After-service photos uploaded successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    generateStartOTP = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const otp = await this.bookingService.generateStartOTP(req.params.id);
+            res.json(successResponse({ otp }, 'Start OTP generated successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    generateCompletionOTP = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const otp = await this.bookingService.generateCompletionOTP(req.params.id);
+            res.json(successResponse({ otp }, 'OTP generated successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    verifyCompletionOTP = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const partner = await import('../config/database').then(m =>
+                m.default.servicePartner.findUnique({
+                    where: { user_id: req.user!.userId }
+                })
+            );
+
+            if (!partner) {
+                throw new Error('Service partner profile not found');
+            }
+
+            const { otp, serviceNotes } = req.body;
+            const result = await this.bookingService.verifyCompletionOTP(
+                req.params.id,
+                partner.id,
+                otp,
+                serviceNotes
+            );
+            res.json(successResponse(result, 'Service completed successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    updatePartnerLocation = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const partner = await import('../config/database').then(m =>
+                m.default.servicePartner.findUnique({
+                    where: { user_id: req.user!.userId }
+                })
+            );
+
+            if (!partner) {
+                throw new Error('Service partner profile not found');
+            }
+
+            const { latitude, longitude } = req.body;
+            const result = await this.bookingService.updatePartnerLocation(
+                partner.id,
+                latitude,
+                longitude
+            );
+            res.json(successResponse(result, 'Location updated successfully'));
         } catch (error) {
             next(error);
         }

@@ -31,8 +31,9 @@ router.post(
     '/verify',
     authorize('CUSTOMER'),
     validate([
-        body('paymentId').notEmpty(),
-        body('orderId').notEmpty(),
+        body('paymentId').notEmpty().isUUID(),
+        body('razorpayOrderId').notEmpty(),
+        body('razorpayPaymentId').notEmpty(),
         body('signature').notEmpty(),
     ]),
     paymentController.verifyPayment

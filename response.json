@@ -1,0 +1,75 @@
+﻿
+
+success    : True
+data       : {@{id=c45cfe43-
+             5c4a-44ee-a962-
+             35c6f45f8d15; b
+             ooking_number=B
+             K17693966585469
+             09; customer_id
+             =b543ceb1-4f15-
+             491f-96d7-c1ee0
+             a643995; 
+             partner_id=; st
+             atus=SEARCHING_
+             PARTNER; schedu
+             led_date=2026-0
+             1-26T03:30:00.0
+             00Z; scheduled_
+             time=09:00; ser
+             vice_address=4/
+             1,MURASOLIMARAN
+              STREET,JOTHI 
+             RAMALINGA 
+             NAGAR, 
+             jafferkhan 
+             pet; service_la
+             titude=0; servi
+             ce_longitude=0;
+              total_amount=1
+             999; advance_am
+             ount=599.699999
+             9999999; remain
+             ing_amount=1399
+             .3; payment_met
+             hod=CASH; payme
+             nt_status=PENDI
+             NG; special_ins
+             tructions=Booki
+             ng from user 
+             frontend; partn
+             er_assigned_at=
+             ; partner_accep
+             ted_at=; 
+             started_at=; 
+             completed_at=; 
+             cancelled_at=; 
+             cancellation_re
+             ason=; 
+             cancelled_by=; 
+             created_at=2026
+             -01-26T03:04:18
+             .562Z; updated_
+             at=2026-01-26T0
+             3:04:18.665Z; b
+             usiness_partner
+             _id=; commissio
+             n_amount=0; pla
+             tform_fee=0; re
+             fund_amount=0; 
+             items=System.Ob
+             ject[]; 
+             customer=; 
+             partner=}}
+timestamp  : 2026-02-05T10:0
+             9:48.614Z
+message    : Bookings 
+             retrieved 
+             successfully
+pagination : @{page=1; 
+             limit=10; 
+             total=1; 
+             totalPages=1}
+
+
+

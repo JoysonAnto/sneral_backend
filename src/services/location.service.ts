@@ -104,7 +104,7 @@ class LocationService {
     // DISTRICT MANAGEMENT
     // ==================
 
-    async getAllDistricts(stateId?: string, includeInactive = false) {
+    async getAllDistricts(stateId?: string, includeInactive = false, hasServicesOnly = false) {
         const where: any = {};
 
         if (stateId) {
@@ -113,6 +113,14 @@ class LocationService {
 
         if (!includeInactive) {
             where.is_active = true;
+        }
+
+        if (hasServicesOnly) {
+            where.service_pricing = {
+                some: {
+                    is_active: true
+                }
+            };
         }
 
         const districts = await prisma.district.findMany({

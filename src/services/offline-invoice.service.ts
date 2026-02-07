@@ -113,8 +113,8 @@ export class OfflineInvoiceService {
                     },
                 },
                 orderBy: { created_at: 'desc' },
-                take: parseInt(limit),
-                skip: parseInt(offset),
+                take: Number(limit),
+                skip: Number(offset),
             }),
             prisma.offlineInvoice.count({ where }),
         ]);
@@ -123,9 +123,9 @@ export class OfflineInvoiceService {
             invoices,
             pagination: {
                 total,
-                limit: parseInt(limit),
-                offset: parseInt(offset),
-                hasMore: total > parseInt(offset) + parseInt(limit),
+                limit: Number(limit),
+                offset: Number(offset),
+                hasMore: total > Number(offset) + Number(limit),
             },
         };
     }

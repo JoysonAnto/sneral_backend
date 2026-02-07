@@ -27,7 +27,7 @@ export class AdminService {
             prisma.booking.count({
                 where: {
                     status: {
-                        in: ['SEARCHING_PARTNER', 'PARTNER_ASSIGNED', 'PARTNER_ACCEPTED', 'IN_PROGRESS'],
+                        in: ['SEARCHING_PARTNER', 'PARTNER_ASSIGNED', 'PARTNER_ACCEPTED', 'IN_PROGRESS', 'PENDING_ASSIGNMENT', 'PARTNER_NOT_FOUND'] as any[],
                     },
                 },
             }),
@@ -68,6 +68,9 @@ export class AdminService {
             _count: {
                 service_id: true,
             },
+            _sum: {
+                total_price: true,
+            },
             orderBy: {
                 _count: {
                     service_id: 'desc',
@@ -85,6 +88,7 @@ export class AdminService {
                 return {
                     name: service?.name || 'Unknown',
                     bookings: item._count.service_id,
+                    revenue: item._sum.total_price || 0,
                 };
             })
         );

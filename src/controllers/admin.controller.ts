@@ -35,7 +35,7 @@ export class AdminController {
         }
     };
 
-    getPendingPartners = async (req: Request, res: Response, next: NextFunction) => {
+    getPendingPartners = async (_req: Request, res: Response, next: NextFunction) => {
         try {
             const partners = await this.adminService.getPendingPartners();
             res.json(successResponse(partners, 'Pending partners retrieved successfully'));

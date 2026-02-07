@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { ServiceController } from '../controllers/service.controller';
 import { authenticateToken, authorize } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validate.middleware';
+import { serviceImageUpload, categoryIconUpload } from '../middleware/image-upload.middleware';
 import {
     createServiceValidator,
     updateServiceValidator,
@@ -21,6 +22,7 @@ router.post(
     '/',
     authenticateToken,
     authorize('ADMIN', 'SUPER_ADMIN'),
+    serviceImageUpload,
     validate(createServiceValidator),
     serviceController.createService
 );
@@ -29,6 +31,7 @@ router.patch(
     '/:id',
     authenticateToken,
     authorize('ADMIN', 'SUPER_ADMIN', 'BUSINESS_PARTNER'),
+    serviceImageUpload,
     validate(updateServiceValidator),
     serviceController.updateService
 );
@@ -45,6 +48,7 @@ router.post(
     '/categories',
     authenticateToken,
     authorize('ADMIN', 'SUPER_ADMIN'),
+    categoryIconUpload,
     validate(createCategoryValidator),
     serviceController.createCategory
 );

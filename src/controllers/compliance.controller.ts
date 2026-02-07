@@ -45,7 +45,7 @@ export const exportUserData = async (req: Request, res: Response, next: NextFunc
                 notifications: true,
                 conversations_as_user1: true,
                 conversations_as_user2: true,
-            },
+            } as any,
         });
 
         if (!user) {
@@ -53,7 +53,7 @@ export const exportUserData = async (req: Request, res: Response, next: NextFunc
         }
 
         // Remove sensitive fields
-        const { password, verification_otp, reset_otp, ...userData } = user;
+        const { password: _password, verification_otp: _verification_otp, reset_otp: _reset_otp, ...userData } = user as any;
 
         const exportData = {
             exported_at: new Date().toISOString(),
@@ -214,14 +214,14 @@ export const downloadUserData = async (req: Request, res: Response, next: NextFu
                         transactions: true,
                     },
                 },
-            },
+            } as any,
         });
 
         if (!user) {
             throw new NotFoundError('User not found');
         }
 
-        const { password, verification_otp, reset_otp, ...userData } = user;
+        const { password: _password, verification_otp: _verification_otp, reset_otp: _reset_otp, ...userData } = user as any;
 
         // Set headers for file download
         res.setHeader('Content-Type', 'application/json');

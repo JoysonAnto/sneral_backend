@@ -18,6 +18,9 @@ import offlineInvoiceRoutes from './offline-invoice.routes';
 import recurringInvoiceRoutes from './recurring-invoice.routes';
 import teamManagementRoutes from './team-management.routes';
 import payoutRoutes from './payout.routes';
+import publicLocationRoutes from './public-location.routes';
+import businessPartnerRoutes from './business-partner.routes';
+import locationTrackingRoutes from './location-tracking.routes';
 
 const router = Router();
 
@@ -41,11 +44,19 @@ router.use('/users', userRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/messages', messageRoutes);
 router.use('/admin', adminRoutes);
-router.use('/admin', adminRoutes);
+router.use('/business-partners', businessPartnerRoutes);
 router.use('/kyc', kycRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/locations', locationRoutes);
+router.use('/public/locations', publicLocationRoutes);
 router.use('/payouts', payoutRoutes);
+
+// Service Partner Routes (for mobile app)
+import servicePartnerRoutes from './service-partner.routes';
+router.use('/partner', servicePartnerRoutes);
+
+// Jobs endpoint (alias for bookings for service partner app)
+router.use('/jobs', bookingRoutes);
 
 // Offline Billing Routes
 router.use(offlineCustomerRoutes);
@@ -54,6 +65,9 @@ router.use(recurringInvoiceRoutes);
 
 // Team Management Routes
 router.use(teamManagementRoutes);
+
+// Location Tracking Routes
+router.use('/tracking', locationTrackingRoutes);
 
 export default router;
 

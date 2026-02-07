@@ -39,7 +39,9 @@ export const authenticateToken = async (
 
 export const authorize = (...allowedRoles: UserRole[]) => {
     return async (req: Request, _res: Response, next: NextFunction) => {
+        console.log(`🔍 [AUTH DEBUG] User: ${req.user?.userId}, Role: ${req.user?.role}, Allowed: ${allowedRoles.join('|')}, URL: ${req.originalUrl}`);
         if (!req.user || !allowedRoles.includes(req.user.role)) {
+            console.log(`❌ [AUTH DEBUG] Access denied!`);
             throw new UnauthorizedError('Access denied - insufficient permissions');
         }
         next();

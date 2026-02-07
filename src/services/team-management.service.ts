@@ -2,9 +2,13 @@ import prisma from '../config/database';
 import { TeamMemberRole, TeamMemberStatus } from '@prisma/client';
 
 interface CreateAssociationData {
-    service_partner_id: string;
+    service_partner_id?: string;
+    email?: string;
+    phone_number?: string;
+    phoneNumber?: string; // For frontend compatibility
     role?: TeamMemberRole;
     commission_split?: number;
+    commissionSplit?: number; // For frontend compatibility
     notes?: string;
     invitation_message?: string;
 }
@@ -140,9 +144,44 @@ export class TeamManagementService {
             throw new Error('Team management is not enabled for this business partner');
         }
 
-        // Check if partner exists
+        let servicePartnerId = data.service_partner_id;
+
+        // If no explicit ID, lookup by email or phone
+        if (!servicePartnerId) {
+            const email = data.email;
+            const phone = data.phone_number || data.phoneNumber;
+
+            if (!email && !phone) {
+                throw new Error('Email or phone number is required to invite a partner');
+            }
+
+            const partnerUser = await prisma.user.findFirst({
+                where: {
+                    OR: [
+                        email ? { email } : {},
+                        phone ? { phone_number: phone } : {},
+                    ].filter(cond => Object.keys(cond).length > 0)
+                },
+                include: {
+                    service_partner: true
+                }
+            });
+
+            if (!partnerUser || !partnerUser.service_partner) {
+                throw new Error('No service partner found with the provided credentials');
+            }
+
+            servicePartnerId = partnerUser.service_partner.id;
+        }
+
+        // Final validation of ID
+        if (!servicePartnerId) {
+            throw new Error('Service partner identification failed');
+        }
+
+        // Check if partner exists (redundant if looked up but good for manual ID entry)
         const servicePartner = await prisma.servicePartner.findUnique({
-            where: { id: data.service_partner_id },
+            where: { id: servicePartnerId },
         });
 
         if (!servicePartner) {
@@ -154,7 +193,7 @@ export class TeamManagementService {
             where: {
                 business_partner_id_service_partner_id: {
                     business_partner_id: businessPartnerId,
-                    service_partner_id: data.service_partner_id,
+                    service_partner_id: servicePartnerId,
                 },
             },
         });
@@ -163,13 +202,15 @@ export class TeamManagementService {
             throw new Error('Partner is already part of your team');
         }
 
+        const commissionSplit = data.commission_split !== undefined ? data.commission_split : data.commissionSplit;
+
         // Create association
         return await prisma.partnerAssociation.create({
             data: {
                 business_partner_id: businessPartnerId,
-                service_partner_id: data.service_partner_id,
+                service_partner_id: servicePartnerId,
                 role: data.role || 'MEMBER',
-                commission_split: data.commission_split || 0,
+                commission_split: commissionSplit || 0,
                 notes: data.notes,
                 invitation_message: data.invitation_message,
                 status: 'PENDING',

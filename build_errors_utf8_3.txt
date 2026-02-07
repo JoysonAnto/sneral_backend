@@ -1,0 +1,5 @@
+﻿
+> unified-backend@1.0.0 build
+> tsc
+
+src/services/booking.service.ts(5,1): error TS6133: 'LocationTrackingService' is declared but its value is never read.

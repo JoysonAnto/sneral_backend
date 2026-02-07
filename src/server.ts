@@ -1,10 +1,6 @@
-import { config } from 'dotenv';
-config();
-
-// Initialize Sentry first for error tracking
+import 'dotenv/config';
 import { initializeSentry } from './config/sentry';
 initializeSentry();
-
 import http from 'http';
 import app from './app';
 import { logger } from './utils/logger';

@@ -159,6 +159,24 @@ router.get(
     partnerController.getAnalyticsTrends
 );
 
+// ================
+// BOOKING ACTIONS (Service Partner)
+// ================
+
+// Accept a booking (Ola-like flow)
+router.post(
+    '/bookings/:bookingId/accept',
+    authorize('SERVICE_PARTNER'),
+    partnerController.acceptBooking
+);
+
+// Reject a booking
+router.post(
+    '/bookings/:bookingId/reject',
+    authorize('SERVICE_PARTNER'),
+    partnerController.rejectBooking
+);
+
 export default router;
 
 

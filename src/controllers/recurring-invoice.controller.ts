@@ -89,13 +89,13 @@ export class RecurringInvoiceController {
     deleteRecurring = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const result = await this.recurringService.deleteRecurringInvoice(req.params.id);
-            res.json(successResponse(result, result.message));
+            res.json(successResponse(result, (result as any).message || 'Recurring invoice deleted successfully'));
         } catch (error) {
             next(error);
         }
     };
 
-    generateInvoices = async (req: Request, res: Response, next: NextFunction) => {
+    generateInvoices = async (_req: Request, res: Response, next: NextFunction) => {
         try {
             const result = await this.recurringService.generateDueInvoices();
             res.json(successResponse(result, 'Invoice generation completed'));

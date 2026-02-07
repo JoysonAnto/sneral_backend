@@ -1,0 +1,5 @@
+﻿src/app.ts(12,15): error TS6133: 'res' is declared but its value is never read.
+src/controllers/location-tracking.controller.ts(72,35): error TS6133: 'req' is declared but its value is never read.
+src/controllers/location-tracking.controller.ts(145,34): error TS7030: Not all code paths return a value.
+src/services/booking.service.ts(22,13): error TS6133: 'locationService' is declared but its value is never read.
+src/services/booking.service.ts(761,37): error TS2339: Property 'user' does not exist on type '{ id: string; created_at: Date; updated_at: Date; user_id: string; availability_status: PartnerAvailability; current_latitude: number | null; current_longitude: number | null; ... 15 more ...; category_id: string | null; }'.

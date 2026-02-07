@@ -1,7 +1,7 @@
 import { Server as SocketIOServer } from 'socket.io';
 import logger from '../../utils/logger';
 
-export const setupNotificationHandlers = (io: SocketIOServer) => {
+export const setupNotificationHandlers = (_io: SocketIOServer) => {
     // No specific listeners needed, just helpers for emitting
     logger.info('Notification handlers ready');
 };

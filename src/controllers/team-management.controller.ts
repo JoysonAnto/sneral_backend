@@ -12,13 +12,13 @@ export class TeamManagementController {
 
             const result = await teamService.toggleTeamManagement(businessPartnerId, enabled);
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
                 message: `Team management ${enabled ? 'enabled' : 'disabled'} successfully`,
                 data: result,
             });
         } catch (error: any) {
-            res.status(500).json({
+            return res.status(500).json({
                 success: false,
                 message: error.message || 'Failed to toggle team management',
             });
@@ -50,13 +50,13 @@ export class TeamManagementController {
 
             const result = await teamService.getTeamMembers(businessPartnerId, filters);
 
-            res.status(200).json({
+            return res.status(200).json({
                 success: true,
                 data: result.associations,
                 pagination: result.pagination,
             });
         } catch (error: any) {
-            res.status(500).json({
+            return res.status(500).json({
                 success: false,
                 message: error.message || 'Failed to fetch team members',
             });
