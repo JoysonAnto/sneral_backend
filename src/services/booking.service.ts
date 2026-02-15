@@ -4,8 +4,13 @@ import { NotificationService } from './notification.service';
 import { getIO } from '../socket/socket.server';
 import logger from '../utils/logger';
 
-interface CreateBookingData {
+interface BookingItemData {
     serviceId: string;
+    quantity: number;
+}
+
+interface CreateBookingData {
+    items: BookingItemData[];
     scheduledDate: string;
     scheduledTime: string;
     serviceAddress: string;
@@ -25,121 +30,138 @@ export class BookingService {
     }
 
     async createBooking(customerId: string, data: CreateBookingData) {
-        // Get service details
-        const service = await prisma.service.findUnique({
-            where: { id: data.serviceId },
-            include: { category: true },
-        });
-
-        if (!service || !service.is_active) {
-            throw new NotFoundError('Service not found or inactive');
+        if (!data.items || data.items.length === 0) {
+            throw new BadRequestError('No items provided');
         }
 
-        // Generate unique booking number
-        const bookingNumber = `BK${Date.now()}${Math.floor(Math.random() * 1000)}`;
-
-        // Calculate amounts (30% advance)
-        const dynamicMultiplier = data.dynamicMultiplier || 1.0;
-        const totalAmount = service.base_price * dynamicMultiplier;
-        const advanceAmount = totalAmount * 0.3;
-        const remainingAmount = totalAmount - advanceAmount;
-
-        // Create booking
-        const booking = await prisma.booking.create({
-            data: {
-                booking_number: bookingNumber,
-                customer_id: customerId,
-                status: 'PENDING',
-                scheduled_date: new Date(data.scheduledDate),
-                scheduled_time: data.scheduledTime,
-                service_address: data.serviceAddress,
-                service_latitude: data.serviceLatitude,
-                service_longitude: data.serviceLongitude,
-                total_amount: totalAmount,
-                advance_amount: advanceAmount,
-                remaining_amount: remainingAmount,
-                payment_method: data.paymentMethod as any,
-                payment_status: data.paymentMethod === 'CASH' ? 'PENDING' : 'PENDING',
-                special_instructions: data.specialInstructions,
-                business_partner_id: data.businessPartnerId,
-                dynamic_multiplier: dynamicMultiplier,
-                estimated_duration: service.duration,
-                items: {
-                    create: {
-                        service_id: service.id,
-                        quantity: 1,
-                        unit_price: service.base_price,
-                        total_price: service.base_price * dynamicMultiplier,
-                    },
-                },
-                status_history: {
-                    create: {
-                        status: 'PENDING',
-                        changed_by: customerId,
-                        notes: data.businessPartnerId
-                            ? `Booking created for Business Partner: ${data.businessPartnerId}`
-                            : 'Booking created',
-                    },
-                },
-            } as any,
-            include: {
-                items: {
-                    include: {
-                        service: {
-                            include: {
-                                category: true,
-                            },
-                        },
-                    },
-                },
-                customer: {
-                    select: {
-                        id: true,
-                        email: true,
-                        full_name: true,
-                        phone_number: true,
-                    },
-                },
-            },
+        // 1. Fetch all services
+        const serviceIds = data.items.map(item => item.serviceId);
+        const services = await prisma.service.findMany({
+            where: { id: { in: serviceIds } },
+            include: { category: true }
         });
 
-        // If it's a direct business partner booking, notify them and set status
-        if (data.businessPartnerId) {
-            logger.info(`Direct booking for Business Partner: ${data.businessPartnerId}`);
-            await this.updateBookingStatus(
-                booking.id,
-                'PENDING_ASSIGNMENT',
-                customerId,
-                'Waiting for Business Partner to assign a technician'
-            );
+        if (services.length !== serviceIds.length) {
+            throw new NotFoundError('One or more services not found');
+        }
 
-            // Notify Business Partner
-            const bp = await prisma.businessPartner.findUnique({
-                where: { id: data.businessPartnerId }
-            });
-            if (bp) {
-                const io = getIO();
-                io.of('/business').to(bp.user_id).emit('new_booking', {
-                    id: booking.id,
-                    bookingNumber: booking.booking_number,
-                    service: service.name,
-                    customer: (booking as any).customer?.full_name || 'Guest'
+        // 2. Group items by Category
+        const itemsByCategory = new Map<string, typeof services>();
+        const serviceMap = new Map(services.map(s => [s.id, s]));
+
+        for (const item of data.items) {
+            const service = serviceMap.get(item.serviceId)!;
+            if (!service.is_active) throw new BadRequestError(`Service ${service.name} is inactive`);
+
+            const categoryId = service.category_id;
+            if (!itemsByCategory.has(categoryId)) {
+                itemsByCategory.set(categoryId, []);
+            }
+            itemsByCategory.get(categoryId)!.push(service);
+        }
+
+        const createdBookings = [];
+        const groupId = itemsByCategory.size > 1 ? `GRP${Date.now()}` : null; // Only group if multiple bookings
+
+        // 3. Create Booking for each Category
+        for (const [categoryId, categoryServices] of itemsByCategory) {
+            // Generate Booking Number
+            const bookingNumber = `BK${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+            // Calculate Totals for this Booking
+            let totalAmount = 0;
+            const bookingItemsData = [];
+
+            for (const service of categoryServices) {
+                const itemData = data.items.find(i => i.serviceId === service.id)!;
+                const dynamicMultiplier = data.dynamicMultiplier || 1.0;
+                const unitPrice = service.base_price;
+                const lineTotal = unitPrice * dynamicMultiplier * itemData.quantity; // Assuming multiplier applies to unit price
+
+                totalAmount += lineTotal;
+                bookingItemsData.push({
+                    service_id: service.id,
+                    quantity: itemData.quantity,
+                    unit_price: unitPrice,
+                    total_price: lineTotal
                 });
             }
-        } else {
-            // Trigger partner assignment algorithm for general booking
-            logger.info(`Triggering partner matching for booking: ${booking.id}`);
 
-            // Update status to SEARCHING_PARTNER
-            await this.updateBookingStatus(booking.id, 'SEARCHING_PARTNER', customerId, 'Finding available partners');
+            const advanceAmount = totalAmount * 0.3;
+            const remainingAmount = totalAmount - advanceAmount;
 
-            // Find and notify available partners (async - don't wait)
-            this.findAndNotifyPartners(booking.id).catch(error => {
-                logger.error('Failed to notify partners:', error);
+            // Create Booking Record
+            const booking = await prisma.booking.create({
+                data: {
+                    booking_number: bookingNumber,
+                    group_id: groupId,
+                    customer_id: customerId,
+                    status: 'PENDING',
+                    scheduled_date: new Date(data.scheduledDate),
+                    scheduled_time: data.scheduledTime,
+                    service_address: data.serviceAddress,
+                    service_latitude: data.serviceLatitude,
+                    service_longitude: data.serviceLongitude,
+                    total_amount: totalAmount,
+                    advance_amount: advanceAmount,
+                    remaining_amount: remainingAmount,
+                    payment_method: data.paymentMethod as any,
+                    payment_status: data.paymentMethod === 'CASH' ? 'PENDING' : 'PENDING', // PENDING for online too until webhook
+                    special_instructions: data.specialInstructions,
+                    business_partner_id: data.businessPartnerId,
+                    dynamic_multiplier: data.dynamicMultiplier || 1.0,
+                    estimated_duration: categoryServices.reduce((acc, s) => acc + s.duration, 0), // Sum of durations
+                    items: {
+                        create: bookingItemsData
+                    },
+                    status_history: {
+                        create: {
+                            status: 'PENDING',
+                            changed_by: customerId,
+                            notes: 'Booking created'
+                        }
+                    }
+                } as any,
+                include: {
+                    items: { include: { service: { include: { category: true } } } },
+                    customer: { select: { id: true, email: true, full_name: true, phone_number: true } }
+                }
             });
+
+            createdBookings.push(booking);
+
+            // Trigger Partner Matching Logic for this booking
+            if (data.businessPartnerId) {
+                await this.assignToBusinessPartner(booking, data.businessPartnerId, customerId);
+            } else {
+                await this.updateBookingStatus(booking.id, 'SEARCHING_PARTNER', customerId, 'Finding available partners');
+                this.findAndNotifyPartners(booking.id).catch(err => logger.error(`Assignment error for ${booking.id}:`, err));
+            }
         }
 
-        return booking;
+        return createdBookings;
+    }
+
+    private async assignToBusinessPartner(booking: any, businessPartnerId: string, customerId: string) {
+        logger.info(`Direct booking for Business Partner: ${businessPartnerId}`);
+        await this.updateBookingStatus(
+            booking.id,
+            'PENDING_ASSIGNMENT',
+            customerId,
+            'Waiting for Business Partner to assign a technician'
+        );
+
+        const bp = await prisma.businessPartner.findUnique({ where: { id: businessPartnerId } });
+        if (bp) {
+            const io = getIO();
+            io.of('/partner').to(bp.user_id).emit('new_booking', {
+                id: booking.id,
+                bookingNumber: booking.booking_number,
+                // Summary of services in this booking
+                service: booking.items.map((i: any) => i.service.name).join(', '),
+                customer: booking.customer?.full_name || 'Guest'
+            });
+        }
     }
 
     /**
@@ -204,8 +226,8 @@ export class BookingService {
 
             for (const partner of partners) {
                 try {
-                    // Send real-time notification via Socket.IO
-                    io.to(partner.user_id).emit('new_job', {
+                    // Send real-time notification via Socket.IO in partner namespace
+                    io.of('/partner').to(partner.user_id).emit('new_job', {
                         id: booking.id,
                         bookingNumber: booking.booking_number,
                         service: {
@@ -483,6 +505,19 @@ export class BookingService {
 
         // Send notifications based on status
         this.sendBookingNotifications(updatedBooking, notes);
+
+        // Trigger Wallet Distribution on Completion
+        if (status === 'COMPLETED') {
+            try {
+                const { WalletService } = await import('./wallet.service');
+                const walletService = new WalletService();
+                await walletService.distributeEarnings(bookingId);
+                logger.info(`Earnings distributed for booking ${bookingId}`);
+            } catch (error) {
+                logger.error(`Failed to distribute earnings for booking ${bookingId}:`, error);
+                // Consider adding a system alert or retry mechanism here
+            }
+        }
 
         return updatedBooking;
     }
@@ -1042,12 +1077,7 @@ export class BookingService {
         const booking = await prisma.booking.findUnique({
             where: { id: bookingId },
             include: {
-                business_partner: true,
-                items: {
-                    include: {
-                        service: true,
-                    },
-                },
+                items: { include: { service: true } },
             } as any,
         });
 
@@ -1096,79 +1126,23 @@ export class BookingService {
             } as any
         });
 
-        // Calculate Financial Split
-        const businessPartnerId = (booking as any).business_partner_id;
-        let platformFee = 0;
-        let partnerEarnings = 0;
+        // ---------------------------------------------------------
+        // Financial Split Logic has been moved to WalletService.distributeEarnings
+        // which is triggered by updateBookingStatus('COMPLETED')
+        // ---------------------------------------------------------
 
-        const { WalletService } = await import('./wallet.service');
-        const walletService = new WalletService();
-
-        if (businessPartnerId) {
-            // Business Partner Booking Split
-            const bp = await prisma.businessPartner.findUnique({
-                where: { id: businessPartnerId },
-                include: { user: true }
-            });
-
-            if (bp) {
-                platformFee = finalTotalAmount * bp.commission_rate;
-                partnerEarnings = finalTotalAmount - platformFee;
-
-                // Credit Business Partner Wallet
-                await walletService.creditPartnerEarnings(bp.user_id, bookingId, partnerEarnings);
-
-                // Credit Platform Commission
-                await walletService.creditPlatformCommission(bookingId, platformFee);
-
-                // Track in booking record
-                await prisma.booking.update({
-                    where: { id: bookingId },
-                    data: {
-                        platform_fee: platformFee,
-                        commission_amount: partnerEarnings
-                    } as any
-                });
-
-                logger.info(`Commission distributed for BP ${bp.business_name}: Platform=${platformFee}, BP=${partnerEarnings}`);
-            }
-        } else {
-            // Independent Service Partner Split (Default 15% platform fee)
-            platformFee = finalTotalAmount * 0.15;
-            partnerEarnings = finalTotalAmount - platformFee;
-
-            const partner = await prisma.servicePartner.findUnique({
-                where: { id: partnerId! }
-            });
-
-            if (partner) {
-                await walletService.creditPartnerEarnings(partner.user_id, bookingId, partnerEarnings);
-
-                // Credit Platform Commission
-                await walletService.creditPlatformCommission(bookingId, platformFee);
-
-                await prisma.booking.update({
-                    where: { id: bookingId },
-                    data: {
-                        platform_fee: platformFee,
-                        commission_amount: partnerEarnings
-                    } as any
-                });
-
-                logger.info(`Commission distributed for Independent Partner ${partner.id}: Platform=${platformFee}, Partner=${partnerEarnings}`);
-            }
-        }
-
-        // Generate invoice
+        // Generate invoice (This could also be moved to distributeEarnings, but keeping here for now as artifact generation)
+        // Actually, distributeEarnings relies on finalized amounts.
+        // Create Invoice Record
         await prisma.invoice.create({
             data: {
                 invoice_number: `INV${Date.now()}`,
                 booking_id: bookingId,
                 subtotal: finalTotalAmount,
-                tax_amount: finalTotalAmount * 0.18, // 18% GST
+                tax_amount: finalTotalAmount * 0.18, // 18% GST (Display purpose on Invoice)
                 discount_amount: 0,
                 total_amount: finalTotalAmount * 1.18,
-            },
+            } as any, // Cast as any because schema might differ slightly or strict checks
         });
 
         // Update partner stats

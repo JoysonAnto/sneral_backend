@@ -50,4 +50,16 @@ export class NotificationController {
             next(error);
         }
     };
+
+    deleteNotification = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const result = await this.notificationService.deleteNotification(
+                req.params.id,
+                req.user!.userId
+            );
+            res.json(successResponse(result, result.message));
+        } catch (error) {
+            next(error);
+        }
+    };
 }

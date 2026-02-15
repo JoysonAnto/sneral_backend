@@ -53,6 +53,7 @@ export const initializeSocket = (server: HTTPServer) => {
     // Namespace-specific connection logging
     io.of('/customer').on('connection', (socket: any) => {
         logger.info(`Customer namespace - User ${socket.userId} connected`);
+        socket.join(socket.userId); // Add simple userId room
         socket.join(`customer:${socket.userId}`);
 
         socket.on('disconnect', (reason: string) => {
@@ -62,6 +63,7 @@ export const initializeSocket = (server: HTTPServer) => {
 
     io.of('/partner').on('connection', (socket: any) => {
         logger.info(`Partner namespace - User ${socket.userId} connected`);
+        socket.join(socket.userId); // Add simple userId room
         socket.join(`partner:${socket.userId}`);
 
         socket.on('disconnect', (reason: string) => {
@@ -72,6 +74,7 @@ export const initializeSocket = (server: HTTPServer) => {
     io.of('/admin').on('connection', (socket: any) => {
         logger.info(`Admin namespace - User ${socket.userId} connected`);
         socket.join('admin');
+        socket.join(socket.userId); // Add simple userId room
         socket.join(`admin:${socket.userId}`);
 
         // Send real-time stats on connection

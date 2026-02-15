@@ -81,6 +81,22 @@ export class NotificationService {
         return { message: 'All notifications marked as read' };
     }
 
+    async deleteNotification(notificationId: string, userId: string) {
+        const notification = await prisma.notification.findUnique({
+            where: { id: notificationId },
+        });
+
+        if (!notification || notification.user_id !== userId) {
+            throw new Error('Notification not found');
+        }
+
+        await prisma.notification.delete({
+            where: { id: notificationId },
+        });
+
+        return { message: 'Notification deleted successfully' };
+    }
+
     // Internal method to create notification
     async createNotification(
         userId: string,

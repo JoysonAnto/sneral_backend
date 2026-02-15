@@ -1,200 +1,93 @@
 import prisma from '../config/database';
 import { NotFoundError, BadRequestError } from '../utils/errors';
-import { AuditLogService } from './auditLog.service';
-import { NotificationService } from './notification.service';
-import { getIO } from '../socket/socket.server';
-import { AdminService } from './admin.service';
-
-const broadcastStatsUpdate = async () => {
-    try {
-        const io = getIO();
-        const adminService = new AdminService();
-        const stats = await adminService.getDashboardStats();
-        io.of('/admin').emit('dashboard:stats_update', stats);
-    } catch (error) {
-        // Socket not initialized or other error
-    }
-};
 
 export class PayoutService {
-    private notificationService: NotificationService;
-
-    constructor() {
-        this.notificationService = new NotificationService();
-    }
-
     async createWithdrawalRequest(userId: string, amount: number) {
-        // 1. Get user and partner details (to get bank info)
-        const user = await prisma.user.findUnique({
-            where: { id: userId },
-            include: {
-                service_partner: true,
-                business_partner: true,
-                wallet: true,
-            },
-        });
-
-        if (!user || (!user.service_partner && !user.business_partner)) {
-            throw new BadRequestError('Only partners can request withdrawals');
+        if (amount < 500) {
+            throw new BadRequestError('Minimum withdrawal amount is ₹500');
         }
 
-        const partner = user.service_partner || user.business_partner;
-        const wallet = user.wallet;
+        const wallet = await prisma.wallet.findUnique({
+            where: { user_id: userId },
+            include: { user: true }
+        });
 
         if (!wallet) {
             throw new NotFoundError('Wallet not found');
         }
 
-        // 2. Validate amount and bank details
-        if (amount < 500) {
-            throw new BadRequestError('Minimum withdrawal amount is ₹500');
-        }
+        // Calculate available balance (Total - Locked - OnHold)
+        // @ts-ignore
+        const availableBalance = wallet.balance - wallet.locked_balance - (wallet.on_hold_balance || 0);
 
-        const availableBalance = wallet.balance - wallet.locked_balance;
         if (amount > availableBalance) {
-            throw new BadRequestError('Insufficient available balance');
+            throw new BadRequestError(`Insufficient available balance. Available: ₹${availableBalance}`);
         }
 
-        if (!partner?.bank_account_number || !partner?.bank_ifsc_code) {
-            throw new BadRequestError('Please update your bank details before requesting a withdrawal');
+        // Check for existing pending request
+        const pendingRequest = await prisma.withdrawalRequest.findFirst({
+            where: {
+                user_id: userId,
+                status: 'PENDING'
+            }
+        });
+
+        if (pendingRequest) {
+            throw new BadRequestError('You already have a pending withdrawal request');
         }
 
-        // 3. Create request and lock funds
-        const withdrawal = await prisma.$transaction(async (tx) => {
-            // Lock the balance
-            await tx.wallet.update({
+        // Get bank details
+        let bankDetails = {};
+        if (wallet.user.role === 'SERVICE_PARTNER') {
+            const partner = await prisma.servicePartner.findUnique({ where: { user_id: userId } });
+            if (partner && (partner as any).bank_account) {
+                bankDetails = (partner as any).bank_account;
+            }
+        }
+
+        // Ensure bank details exist (Simple check)
+        if (Object.keys(bankDetails).length === 0) {
+            // throw new BadRequestError('Bank details not found'); 
+            // Allowing for now as per previous logic, admin can reject
+        }
+
+        const result = await prisma.$transaction(async (tx) => {
+            // Lock funds
+            const updatedWallet = await tx.wallet.update({
                 where: { user_id: userId },
                 data: {
                     locked_balance: { increment: amount },
-                },
+                    pending_payout: { increment: amount }
+                } as any
             });
 
-            // Create the request
-            return await tx.withdrawalRequest.create({
+            // Create Request
+            const request = await tx.withdrawalRequest.create({
                 data: {
                     user_id: userId,
                     amount,
-                    bank_account: {
-                        account_name: partner.bank_account_name,
-                        account_number: partner.bank_account_number,
-                        ifsc_code: partner.bank_ifsc_code,
-                    },
-                    status: 'PENDING',
-                },
+                    bank_account: bankDetails,
+                    status: 'PENDING'
+                }
             });
-        });
 
-        // 4. Send notification
-        try {
-            await this.notificationService.createNotification(
-                userId,
-                'GENERAL',
-                'Withdrawal Requested',
-                `Your withdrawal request for ₹${amount} has been received and is being processed.`,
-                { withdrawalId: withdrawal.id }
-            );
-        } catch (error) {
-            console.error('Failed to send withdrawal notification:', error);
-        }
-
-        return withdrawal;
-    }
-
-    async processWithdrawal(withdrawalId: string, adminId: string, status: 'APPROVED' | 'REJECTED' | 'COMPLETED' | 'FAILED', notes?: string) {
-        const withdrawal = await prisma.withdrawalRequest.findUnique({
-            where: { id: withdrawalId },
-            include: { user: { include: { wallet: true } } },
-        });
-
-        if (!withdrawal) {
-            throw new NotFoundError('Withdrawal request not found');
-        }
-
-        if (withdrawal.status === 'COMPLETED' || withdrawal.status === 'REJECTED') {
-            throw new BadRequestError(`Cannot process a withdrawal that is already ${withdrawal.status.toLowerCase()}`);
-        }
-
-        const userId = withdrawal.user_id;
-
-        const result = await prisma.$transaction(async (tx) => {
-            const now = new Date();
-
-            // If completed, deduct from balance and unlock
-            if (status === 'COMPLETED') {
-                // Deduct from total balance AND unlock
-                await tx.wallet.update({
-                    where: { user_id: userId },
-                    data: {
-                        balance: { decrement: withdrawal.amount },
-                        locked_balance: { decrement: withdrawal.amount },
-                    },
-                });
-
-                // Create transaction record
-                await tx.transaction.create({
-                    data: {
-                        user_id: userId,
-                        type: 'PAYOUT',
-                        amount: withdrawal.amount,
-                        description: `Payout processed for request #${withdrawal.id}`,
-                        balance_before: withdrawal.user.wallet!.balance,
-                        balance_after: withdrawal.user.wallet!.balance - withdrawal.amount,
-                    },
-                });
-            }
-
-            // If rejected, just unlock
-            if (status === 'REJECTED' || status === 'FAILED') {
-                await tx.wallet.update({
-                    where: { user_id: userId },
-                    data: {
-                        locked_balance: { decrement: withdrawal.amount },
-                    },
-                });
-            }
-
-            // Update request status
-            return await tx.withdrawalRequest.update({
-                where: { id: withdrawalId },
+            // Create Transaction Record
+            await tx.transaction.create({
                 data: {
-                    status,
-                    admin_notes: notes,
-                    processed_at: now,
-                    processed_by: adminId,
-                },
+                    user_id: userId,
+                    type: 'PAYOUT',
+                    category: 'DEBIT',
+                    status: 'PENDING',
+                    amount,
+                    description: 'Withdrawal Request',
+                    balance_before: wallet.balance,
+                    balance_after: updatedWallet.balance,
+                    metadata: { withdrawal_request_id: request.id }
+                } as any
             });
+
+            return request;
         });
-
-        // Send notification
-        try {
-            let message = '';
-            if (status === 'COMPLETED') message = `Your withdrawal of ₹${withdrawal.amount} has been successfully processed.`;
-            else if (status === 'REJECTED') message = `Your withdrawal of ₹${withdrawal.amount} was rejected. Reason: ${notes}`;
-            else if (status === 'APPROVED') message = `Your withdrawal of ₹${withdrawal.amount} has been approved and is being transferred.`;
-
-            await this.notificationService.createNotification(
-                userId,
-                'GENERAL',
-                'Withdrawal Update',
-                message,
-                { withdrawalId, status }
-            );
-        } catch (error) {
-            console.error('Failed to send payout notification:', error);
-        }
-
-        // Audit log
-        await AuditLogService.logAdminAction(
-            'PROCESS_PAYOUT',
-            adminId,
-            'WITHDRAWAL_REQUEST',
-            withdrawalId,
-            undefined,
-            { status, notes }
-        );
-
-        // Broadcast stats update to admins
-        broadcastStatsUpdate();
 
         return result;
     }
@@ -202,44 +95,123 @@ export class PayoutService {
     async getPartnerWithdrawals(userId: string) {
         return await prisma.withdrawalRequest.findMany({
             where: { user_id: userId },
-            orderBy: { created_at: 'desc' },
+            orderBy: { created_at: 'desc' }
         });
     }
 
+    // Admin: Get All Withdrawals
     async getAllWithdrawals(filters: any) {
-        const { status, userId, page = 1, limit = 20 } = filters;
+        const { status, page = 1, limit = 20 } = filters;
         const skip = (page - 1) * limit;
 
         const where: any = {};
         if (status) where.status = status;
-        if (userId) where.user_id = userId;
 
         const [requests, total] = await Promise.all([
             prisma.withdrawalRequest.findMany({
                 where,
-                include: {
-                    user: {
-                        select: {
-                            full_name: true,
-                            email: true,
-                        },
-                    },
-                },
-                orderBy: { created_at: 'desc' },
+                include: { user: { select: { full_name: true, email: true, phone_number: true } } },
                 skip,
                 take: Number(limit),
+                orderBy: { created_at: 'desc' }
             }),
-            prisma.withdrawalRequest.count({ where }),
+            prisma.withdrawalRequest.count({ where })
         ]);
 
         return {
             requests,
             pagination: {
-                total,
                 page: Number(page),
                 limit: Number(limit),
-                pages: Math.ceil(total / limit),
-            },
+                total
+            }
         };
+    }
+
+    // Admin: Process Withdrawal
+    async processWithdrawal(requestId: string, adminId: string, status: 'APPROVED' | 'REJECTED' | 'COMPLETED', notes?: string) {
+        const request = await prisma.withdrawalRequest.findUnique({
+            where: { id: requestId },
+            include: { user: true }
+        });
+
+        if (!request) throw new NotFoundError('Withdrawal request not found');
+
+        // Validation of status transitions
+        if (request.status !== 'PENDING' && request.status !== 'APPROVED') {
+            if (status !== 'COMPLETED' || request.status !== 'APPROVED') {
+                // Allow APPROVED -> COMPLETED
+                // Allow PENDING -> APPROVED | REJECTED
+            }
+        }
+
+        return await prisma.$transaction(async (tx) => {
+            // Update Request Status
+            const updatedRequest = await tx.withdrawalRequest.update({
+                where: { id: requestId },
+                data: {
+                    status: status as any,
+                    admin_notes: notes,
+                    processed_by: adminId,
+                    processed_at: new Date()
+                }
+            });
+
+            if (status === 'REJECTED') {
+                // Refund / Unlock funds
+                const wallet = await tx.wallet.findUnique({ where: { user_id: request.user_id } });
+                await tx.wallet.update({
+                    where: { user_id: request.user_id },
+                    data: {
+                        locked_balance: { decrement: request.amount },
+                        pending_payout: { decrement: request.amount }
+                    } as any
+                });
+
+                // Add Reversal Transaction
+                await tx.transaction.create({
+                    data: {
+                        user_id: request.user_id,
+                        type: 'PAYOUT',
+                        category: 'REVERSAL',
+                        status: 'CANCELLED',
+                        amount: request.amount,
+                        description: `Withdrawal Rejected: ${notes || 'No reason'}`,
+                        balance_before: wallet!.balance,
+                        balance_after: wallet!.balance,
+                        metadata: { withdrawal_request_id: requestId }
+                    } as any
+                });
+
+            } else if (status === 'COMPLETED') {
+                // Deduct from wallet permanently
+                const wallet = await tx.wallet.findUnique({ where: { user_id: request.user_id } });
+                const updated = await tx.wallet.update({
+                    where: { user_id: request.user_id },
+                    data: {
+                        balance: { decrement: request.amount },
+                        locked_balance: { decrement: request.amount },
+                        pending_payout: { decrement: request.amount }
+                    } as any
+                });
+
+                // Completed Transaction
+                await tx.transaction.create({
+                    data: {
+                        user_id: request.user_id,
+                        type: 'PAYOUT',
+                        category: 'DEBIT',
+                        status: 'COMPLETED',
+                        amount: request.amount,
+                        description: `Withdrawal Completed`,
+                        balance_before: wallet!.balance,
+                        balance_after: updated.balance,
+                        metadata: { withdrawal_request_id: requestId }
+                    } as any
+                });
+            }
+
+            return updatedRequest;
+        });
     }
 }

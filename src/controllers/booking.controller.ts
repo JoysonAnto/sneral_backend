@@ -11,11 +11,11 @@ export class BookingController {
 
     create = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const booking = await this.bookingService.createBooking(
+            const bookings = await this.bookingService.createBooking(
                 req.user!.userId,
                 req.body
             );
-            res.status(201).json(successResponse(booking, 'Booking created successfully'));
+            res.status(201).json(successResponse(bookings, 'Bookings created successfully'));
         } catch (error) {
             next(error);
         }

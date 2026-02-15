@@ -4,6 +4,7 @@ import { offlineInvoiceService } from './offline-invoice.service';
 import { BookingService } from './booking.service';
 import { logger } from '../utils/logger';
 import prisma from '../config/database';
+import { WalletService } from './wallet.service';
 
 export class CronService {
     private jobs: ScheduledTask[] = [];
@@ -77,6 +78,23 @@ export class CronService {
         });
 
         this.jobs.push(abandonedBookingJob);
+
+        // Run every hour to release held funds (cooling period check)
+        const releaseFundsJob = cron.schedule('0 * * * *', async () => {
+            logger.info('Running release held funds job...');
+            try {
+                const walletService = new WalletService();
+                const count = await walletService.releaseHeldFunds();
+                // @ts-ignore
+                if (count > 0) {
+                    logger.info(`Released funds for ${count} transactions`);
+                }
+            } catch (error) {
+                logger.error('Error releasing held funds:', error);
+            }
+        });
+
+        this.jobs.push(releaseFundsJob);
 
         logger.info('Cron service started with ' + this.jobs.length + ' jobs');
     }
