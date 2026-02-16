@@ -1,11 +1,9 @@
 services:
   - type: web
     name: snearal-backend
-    env: node
+    env: docker
     plan: free
     region: singapore
-    buildCommand: npm install && npx prisma generate && npm run build && npx prisma migrate deploy
-    startCommand: node dist/server.js
     healthCheckPath: /
     envVars:
       - key: PORT

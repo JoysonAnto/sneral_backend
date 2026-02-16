@@ -1,5 +1,8 @@
 # Multi-stage build for optimized production image
-FROM node:18-alpine AS builder
+FROM node:18-slim AS builder
+
+# Install build dependencies for Prisma and native modules
+RUN apt-get update && apt-get install -y openssl python3 make g++ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -7,7 +10,7 @@ WORKDIR /app
 COPY package*.json ./
 COPY prisma ./prisma/
 
-# Install dependencies (including dev dependencies for build)
+# Install dependencies
 RUN npm ci
 
 # Generate Prisma Client
@@ -20,10 +23,27 @@ COPY . .
 RUN npm run build
 
 # Production stage
-FROM node:18-alpine AS production
+FROM node:18-slim AS production
 
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs && adduser -S nodejs -u 1001
+# Install only the necessary libraries for Puppeteer and Chromium
+RUN apt-get update && apt-get install -y \
+  openssl \
+  libnss3 \
+  libatk1.0-0 \
+  libatk-bridge2.0-0 \
+  libcups2 \
+  libdrm2 \
+  libxkbcommon0 \
+  libxcomposite1 \
+  libxdamage1 \
+  libxext6 \
+  libxfixes3 \
+  librandr2 \
+  libgbm1 \
+  libasound2 \
+  libpangocairo-1.0-0 \
+  libpango-1.0-0 \
+  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -36,25 +56,24 @@ RUN npm ci --only=production && npm cache clean --force
 
 # Copy Prisma Client from builder
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
 # Copy built application
 COPY --from=builder /app/dist ./dist
 
-# Copy public assets if any
-COPY --from=builder /app/uploads ./uploads
+# Create uploads directory and set permissions
+RUN mkdir -p uploads && chown -R node:node /app
 
-# Change ownership to nodejs user
-RUN chown -R nodejs:nodejs /app
+# Copy entrypoint script
+COPY entrypoint.sh ./
+USER root
+RUN chmod +x entrypoint.sh && chown node:node entrypoint.sh
+USER node
 
-# Switch to non-root user
-USER nodejs
-
-# Expose port
-EXPOSE 4000
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:4000/', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+# Expose port (Render uses 10000)
+EXPOSE 10000
 
 # Start command
-CMD ["node", "dist/server.js"]
+CMD ["./entrypoint.sh"]
+
+
