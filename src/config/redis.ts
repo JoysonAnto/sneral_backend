@@ -7,10 +7,7 @@ const REDIS_ENABLED = process.env.REDIS_ENABLED !== 'false';
 let redisClient: Redis | null = null;
 
 if (REDIS_ENABLED) {
-    redisClient = new Redis({
-        host: process.env.REDIS_HOST || 'localhost',
-        port: parseInt(process.env.REDIS_PORT || '6379'),
-        password: process.env.REDIS_PASSWORD || undefined,
+    const redisOptions: any = {
         retryStrategy: (times: number) => {
             // Stop retrying after 3 attempts
             if (times > 3) {
@@ -23,7 +20,18 @@ if (REDIS_ENABLED) {
         maxRetriesPerRequest: 3,
         lazyConnect: true, // Don't connect immediately
         enableOfflineQueue: false, // Don't queue commands when offline
-    });
+    };
+
+    if (process.env.REDIS_URL) {
+        redisClient = new Redis(process.env.REDIS_URL, redisOptions);
+    } else {
+        redisClient = new Redis({
+            host: process.env.REDIS_HOST || 'localhost',
+            port: parseInt(process.env.REDIS_PORT || '6379'),
+            password: process.env.REDIS_PASSWORD || undefined,
+            ...redisOptions
+        });
+    }
 
     redisClient.on('connect', () => {
         logger.info('✅ Redis connected successfully');

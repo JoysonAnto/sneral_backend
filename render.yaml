@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: snearal-backend
+    env: node
+    plan: free
+    region: singapore
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: node dist/server.js
+    healthCheckPath: /
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: snearal-db
+          property: connectionString
+      - key: REDIS_URL
+        fromRedis:
+          name: snearal-redis
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 1h
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: 7d
+      - key: CORS_ORIGINS
+        value: "*" # Set this to your frontend URL later
+
+databases:
+  - name: snearal-db
+    plan: free
+    region: singapore
+
+redis:
+  - name: snearal-redis
+    plan: free
+    region: singapore
