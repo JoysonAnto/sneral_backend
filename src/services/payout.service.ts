@@ -138,11 +138,16 @@ export class PayoutService {
         if (!request) throw new NotFoundError('Withdrawal request not found');
 
         // Validation of status transitions
-        if (request.status !== 'PENDING' && request.status !== 'APPROVED') {
-            if (status !== 'COMPLETED' || request.status !== 'APPROVED') {
-                // Allow APPROVED -> COMPLETED
-                // Allow PENDING -> APPROVED | REJECTED
-            }
+        if (request.status === 'REJECTED' || request.status === 'COMPLETED') {
+            throw new BadRequestError('Withdrawal request has already been processed');
+        }
+
+        if (request.status === 'APPROVED' && status !== 'COMPLETED') {
+            throw new BadRequestError('Approved requests can only be marked as COMPLETED');
+        }
+
+        if (request.status === 'PENDING' && status === 'COMPLETED') {
+            throw new BadRequestError('Pending requests must be APPROVED before they can be COMPLETED');
         }
 
         return await prisma.$transaction(async (tx) => {

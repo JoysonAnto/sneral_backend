@@ -257,7 +257,6 @@ export class WalletService {
         let commissionRate = 0.15; // Default 15% for independent partners
         let platformFee = 0;
         let partnerEarnings = 0;
-        let taxAmount = 0;
 
         // Check if associated with Business Partner
         // The booking might have direct relation or via partner
@@ -426,7 +425,7 @@ export class WalletService {
     }
 
     // Deprecated/Legacy method support if needed, or remove
-    async creditPartnerEarnings(userId: string, bookingId: string, amount: number) {
+    async creditPartnerEarnings(_userId: string, bookingId: string, _amount: number) {
         // Redirect to new logic or keep for backward compatibility? 
         // Better to use distributeEarnings but that requires full booking context.
         // For now, let's keep a basic version or throw error to force update.

@@ -64,7 +64,7 @@ export class BookingService {
         const groupId = itemsByCategory.size > 1 ? `GRP${Date.now()}` : null; // Only group if multiple bookings
 
         // 3. Create Booking for each Category
-        for (const [categoryId, categoryServices] of itemsByCategory) {
+        for (const [_categoryId, categoryServices] of itemsByCategory) {
             // Generate Booking Number
             const bookingNumber = `BK${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
