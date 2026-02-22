@@ -8,10 +8,38 @@ const notificationController = new NotificationController();
 // All routes require authentication
 router.use(authenticateToken);
 
-// Get notifications
+/**
+ * @swagger
+ * /notifications:
+ *   get:
+ *     summary: Fetch unread system alerts and job updates
+ *     tags: [Real-time Tracking & Alerts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of notifications
+ */
 router.get('/', notificationController.getNotifications);
 
-// Mark notification as read
+/**
+ * @swagger
+ * /notifications/{id}/read:
+ *   patch:
+ *     summary: Dismiss a notification
+ *     tags: [Real-time Tracking & Alerts]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Notification marked as read
+ */
 router.patch('/:id/read', notificationController.markAsRead);
 
 // Mark all as read

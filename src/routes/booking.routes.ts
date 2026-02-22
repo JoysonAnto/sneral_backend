@@ -16,7 +16,24 @@ const bookingController = new BookingController();
 // All routes require authentication
 router.use(authenticateToken);
 
-// Get all bookings (with filtering)
+/**
+ * @swagger
+ * /jobs:
+ *   get:
+ *     summary: Fetch job history and current tasks
+ *     tags: [Job (Booking) Lifecycle]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *         description: Filter by job status
+ *     responses:
+ *       200:
+ *         description: List of jobs
+ */
 router.get('/', bookingController.getAll);
 
 // Create booking (customers only)
@@ -27,7 +44,25 @@ router.post(
     bookingController.create
 );
 
-// Get booking by ID
+/**
+ * @swagger
+ * /jobs/{id}:
+ *   get:
+ *     summary: Detailed view of a job
+ *     tags: [Job (Booking) Lifecycle]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Job ID
+ *     responses:
+ *       200:
+ *         description: Job details
+ */
 router.get('/:id', bookingController.getById);
 
 // Update booking status
@@ -46,14 +81,48 @@ router.post(
     bookingController.assignPartner
 );
 
-// Accept booking (service partner only)
+/**
+ * @swagger
+ * /jobs/{id}/accept:
+ *   post:
+ *     summary: Accept a nearby job request
+ *     tags: [Job (Booking) Lifecycle]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Job accepted
+ */
 router.post(
     '/:id/accept',
     authorize('SERVICE_PARTNER'),
     bookingController.acceptBooking
 );
 
-// Start booking (service partner only)
+/**
+ * @swagger
+ * /jobs/{id}/start:
+ *   post:
+ *     summary: Move job to IN_PROGRESS (Requires Customer OTP)
+ *     tags: [Job (Booking) Lifecycle]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Job started
+ */
 router.post(
     '/:id/start',
     authorize('SERVICE_PARTNER'),
@@ -85,14 +154,48 @@ router.post(
 // Service Progress & Completion Routes
 import { beforeServicePhotos, afterServicePhotos } from '../middleware/upload.middleware';
 
-// Mark arrival at service location (service partner only)
+/**
+ * @swagger
+ * /jobs/{id}/arrive:
+ *   post:
+ *     summary: Mark arrival at customer location (Check-in)
+ *     tags: [Job (Booking) Lifecycle]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Arrival recorded
+ */
 router.post(
     '/:id/arrive',
     authorize('SERVICE_PARTNER'),
     bookingController.arriveAtLocation
 );
 
-// Upload before-service photos (service partner only)
+/**
+ * @swagger
+ * /jobs/{id}/before-photos:
+ *   post:
+ *     summary: Upload photos before starting work
+ *     tags: [Job (Booking) Lifecycle]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Photos uploaded
+ */
 router.post(
     '/:id/before-photos',
     authorize('SERVICE_PARTNER'),
@@ -100,7 +203,24 @@ router.post(
     bookingController.uploadBeforePhotos
 );
 
-// Upload after-service photos (service partner only)
+/**
+ * @swagger
+ * /jobs/{id}/after-photos:
+ *   post:
+ *     summary: Upload photos of completed work
+ *     tags: [Job (Booking) Lifecycle]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Photos uploaded
+ */
 router.post(
     '/:id/after-photos',
     authorize('SERVICE_PARTNER'),
@@ -122,7 +242,24 @@ router.post(
     bookingController.generateCompletionOTP
 );
 
-// Verify OTP and complete service (service partner only)
+/**
+ * @swagger
+ * /jobs/{id}/verify-otp:
+ *   post:
+ *     summary: Finalize job and trigger payment release via Completion OTP
+ *     tags: [Job (Booking) Lifecycle]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Job completed
+ */
 router.post(
     '/:id/verify-otp',
     authorize('SERVICE_PARTNER'),

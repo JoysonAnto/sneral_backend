@@ -144,11 +144,30 @@ export class AuthService {
                 throw new UnauthorizedError('Invalid credentials');
             }
 
+            // Fetch permissions if dynamic role exists
+            const userWithPermissions = await prisma.user.findUnique({
+                where: { id: user.id },
+                include: {
+                    custom_role: {
+                        include: {
+                            permissions: {
+                                include: {
+                                    permission: true
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            const permissions = userWithPermissions?.custom_role?.permissions.map(p => p.permission.name) || [];
+
             // Generate tokens
             const accessToken = generateAccessToken({
                 userId: user.id,
                 role: user.role,
                 email: user.email,
+                permissions,
             });
             const refreshToken = generateRefreshToken(user.id);
 
@@ -237,11 +256,30 @@ export class AuthService {
             },
         });
 
+        // Fetch permissions if dynamic role exists
+        const userWithPermissions = await prisma.user.findUnique({
+            where: { id: user.id },
+            include: {
+                custom_role: {
+                    include: {
+                        permissions: {
+                            include: {
+                                permission: true
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        const permissions = userWithPermissions?.custom_role?.permissions.map(p => p.permission.name) || [];
+
         // Generate tokens since OTP verification is often the final step of login/register in mobile apps
         const accessToken = generateAccessToken({
             userId: user.id,
             role: user.role,
             email: user.email,
+            permissions,
         });
         const refreshToken = generateRefreshToken(user.id);
 

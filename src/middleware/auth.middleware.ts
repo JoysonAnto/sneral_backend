@@ -11,6 +11,7 @@ declare global {
                 userId: string;
                 role: UserRole;
                 email: string;
+                permissions?: string[];
             };
         }
     }
@@ -45,5 +46,23 @@ export const authorize = (...allowedRoles: UserRole[]) => {
             throw new UnauthorizedError('Access denied - insufficient permissions');
         }
         next();
+    };
+};
+
+export const checkPermission = (permission: string) => {
+    return async (req: Request, _res: Response, next: NextFunction) => {
+        if (!req.user) {
+            throw new UnauthorizedError('Authentication required');
+        }
+
+        const userPermissions = req.user.permissions || [];
+
+        // Super Admin has all permissions by default or if they have the specific permission
+        if (req.user.role === UserRole.SUPER_ADMIN || userPermissions.includes(permission)) {
+            return next();
+        }
+
+        console.log(`❌ [AUTH DEBUG] Permission denied! Required: ${permission}, User has: ${userPermissions.join(', ')}`);
+        throw new UnauthorizedError(`Access denied - missing permission: ${permission}`);
     };
 };

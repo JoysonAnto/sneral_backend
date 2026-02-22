@@ -7,6 +7,7 @@ interface CreateAdminData {
     password: string;
     fullName: string;
     role?: 'ADMIN' | 'SUPER_ADMIN';
+    roleId?: string;
 }
 
 export class UserService {
@@ -35,14 +36,8 @@ export class UserService {
                 where,
                 skip,
                 take: Number(limit),
-                select: {
-                    id: true,
-                    email: true,
-                    full_name: true,
-                    phone_number: true,
-                    role: true,
-                    email_verified: true,
-                    created_at: true,
+                include: {
+                    custom_role: true
                 },
                 orderBy: { created_at: 'desc' },
             }),
@@ -56,6 +51,7 @@ export class UserService {
                 fullName: u.full_name,
                 phoneNumber: u.phone_number,
                 role: u.role,
+                customRole: (u as any).custom_role,
                 emailVerified: u.email_verified,
                 createdAt: u.created_at,
             })),
@@ -112,6 +108,7 @@ export class UserService {
                 password: hashedPassword,
                 full_name: data.fullName,
                 role: data.role || 'ADMIN',
+                role_id: data.roleId,
                 email_verified: true, // Auto-verify admin accounts
             },
         });
@@ -139,24 +136,23 @@ export class UserService {
             data: {
                 ...(data.fullName && { full_name: data.fullName }),
                 ...(data.phoneNumber && { phone_number: data.phoneNumber }),
+                ...(data.roleId && { role_id: data.roleId }),
+                ...(data.role && { role: data.role }),
             },
-            select: {
-                id: true,
-                email: true,
-                full_name: true,
-                phone_number: true,
-                role: true,
-                updated_at: true,
-            },
+            include: {
+                custom_role: true
+            }
         });
 
+        const u = updated as any;
         return {
-            id: updated.id,
-            email: updated.email,
-            fullName: updated.full_name,
-            phoneNumber: updated.phone_number,
-            role: updated.role,
-            updatedAt: updated.updated_at,
+            id: u.id,
+            email: u.email,
+            fullName: u.full_name,
+            phoneNumber: u.phone_number,
+            role: u.role,
+            customRole: u.custom_role,
+            updatedAt: u.updated_at,
         };
     }
 

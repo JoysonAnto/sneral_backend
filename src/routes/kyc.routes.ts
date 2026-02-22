@@ -11,7 +11,36 @@ const kycController = new KYCController();
 // All routes require authentication
 router.use(authenticateToken);
 
-// Submit KYC documents (partners only)
+/**
+ * @swagger
+ * /kyc/submit:
+ *   post:
+ *     summary: Upload Aadhaar, PAN, and Bank details
+ *     tags: [KYC & Onboarding]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               aadhaar_front:
+ *                 type: string
+ *                 format: binary
+ *               aadhaar_back:
+ *                 type: string
+ *                 format: binary
+ *               pan_card:
+ *                 type: string
+ *                 format: binary
+ *               bank_passbook:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: KYC submitted successfully
+ */
 router.post(
     '/submit',
     authorize('SERVICE_PARTNER', 'BUSINESS_PARTNER'),
@@ -19,7 +48,25 @@ router.post(
     kycController.submitKYC
 );
 
-// Get KYC status (self or admin)
+/**
+ * @swagger
+ * /kyc/{partnerId}:
+ *   get:
+ *     summary: Check KYC status
+ *     tags: [KYC & Onboarding]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: partnerId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Partner ID
+ *     responses:
+ *       200:
+ *         description: KYC status returned
+ */
 router.get('/:partnerId', kycController.getKYCStatus);
 
 // Verify KYC (admin only)

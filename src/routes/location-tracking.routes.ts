@@ -12,7 +12,31 @@ router.use(authenticateToken);
 // PARTNER ROUTES
 // ================
 
-// Update current location (called periodically when online)
+/**
+ * @swagger
+ * /tracking/partner/location:
+ *   post:
+ *     summary: Submit GPS coordinates (Every 30-60s) for the live map
+ *     tags: [Real-time Tracking & Alerts]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - lat
+ *               - lng
+ *             properties:
+ *               lat:
+ *                 type: number
+ *               lng:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: Location updated
+ */
 router.post(
     '/partner/location',
     authorize('SERVICE_PARTNER'),

@@ -1,9 +1,24 @@
 import { body, param } from 'express-validator';
 
 export const createBookingValidator = [
-    body('serviceId')
+    body('items')
+        .optional()
+        .isArray({ min: 1 })
+        .withMessage('Items must be an array with at least one service item'),
+    body('items.*.serviceId')
+        .if(body('items').exists())
         .notEmpty()
-        .withMessage('Service ID is required')
+        .withMessage('Service ID is required for each item')
+        .isUUID()
+        .withMessage('Invalid service ID'),
+    body('items.*.quantity')
+        .if(body('items').exists())
+        .isInt({ min: 1 })
+        .withMessage('Quantity must be at least 1'),
+    body('serviceId')
+        .if(body('items').not().exists())
+        .notEmpty()
+        .withMessage('Service ID is required if no items array is provided')
         .isUUID()
         .withMessage('Invalid service ID'),
     body('scheduledDate')
@@ -21,12 +36,12 @@ export const createBookingValidator = [
         .withMessage('Service address is required')
         .trim(),
     body('serviceLatitude')
-        .notEmpty()
+        .exists()
         .withMessage('Service latitude is required')
         .isFloat({ min: -90, max: 90 })
         .withMessage('Invalid latitude'),
     body('serviceLongitude')
-        .notEmpty()
+        .exists()
         .withMessage('Service longitude is required')
         .isFloat({ min: -180, max: 180 })
         .withMessage('Invalid longitude'),

@@ -11,6 +11,14 @@ export class BookingController {
 
     create = async (req: Request, res: Response, next: NextFunction) => {
         try {
+            // Check if serviceId is passed directly at the root (shorthand/legacy)
+            if (req.body.serviceId && (!req.body.items || req.body.items.length === 0)) {
+                req.body.items = [{
+                    serviceId: req.body.serviceId,
+                    quantity: req.body.quantity || 1
+                }];
+            }
+
             const bookings = await this.bookingService.createBooking(
                 req.user!.userId,
                 req.body

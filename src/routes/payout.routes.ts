@@ -9,7 +9,29 @@ const payoutController = new PayoutController();
 
 router.use(authenticateToken);
 
-// Partner routes
+/**
+ * @swagger
+ * /payouts/request:
+ *   post:
+ *     summary: Transfer wallet balance to bank account (Min ₹500)
+ *     tags: [Wallet & Payouts]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - amount
+ *             properties:
+ *               amount:
+ *                 type: number
+ *                 minimum: 500
+ *     responses:
+ *       200:
+ *         description: Payout request submitted
+ */
 router.post(
     '/request',
     authorize('SERVICE_PARTNER', 'BUSINESS_PARTNER'),
@@ -20,6 +42,18 @@ router.post(
     payoutController.requestWithdrawal
 );
 
+/**
+ * @swagger
+ * /payouts/history:
+ *   get:
+ *     summary: Track the status of bank transfers
+ *     tags: [Wallet & Payouts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Payout history
+ */
 router.get(
     '/history',
     authorize('SERVICE_PARTNER', 'BUSINESS_PARTNER'),

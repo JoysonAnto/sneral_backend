@@ -6,6 +6,8 @@ import compression from 'compression';
 import { loggerMiddleware } from './middleware/logger.middleware';
 import { errorHandler } from './middleware/error.middleware';
 import routes from './routes';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from './config/swagger';
 
 const app: Application = express();
 
@@ -88,6 +90,12 @@ const limiter = rateLimit({
     skip: (req) => req.ip === '::1' || req.ip === '127.0.0.1', // skip for localhost
 });
 app.use('/api/', limiter);
+
+// Swagger UI
+app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+    explorer: true,
+    customSiteTitle: 'Snearal API Documentation',
+}));
 
 // API Routes
 app.use('/api/v1', routes);

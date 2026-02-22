@@ -10,7 +10,18 @@ const walletController = new WalletController();
 // All routes require authentication
 router.use(authenticateToken);
 
-// Get wallet balance
+/**
+ * @swagger
+ * /wallet:
+ *   get:
+ *     summary: View current balance, total earnings, and withdrawal limits
+ *     tags: [Wallet & Payouts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Wallet balance returned
+ */
 router.get('/', walletController.getBalance);
 
 // Add money to wallet
@@ -46,7 +57,18 @@ router.post(
     walletController.withdraw
 );
 
-// Get wallet transactions
+/**
+ * @swagger
+ * /wallet/transactions:
+ *   get:
+ *     summary: Detailed ledger of all credits (jobs) and debits (commissions)
+ *     tags: [Wallet & Payouts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Transaction history
+ */
 router.get('/transactions', walletController.getTransactions);
 
 export default router;

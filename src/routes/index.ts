@@ -21,6 +21,7 @@ import payoutRoutes from './payout.routes';
 import publicLocationRoutes from './public-location.routes';
 import businessPartnerRoutes from './business-partner.routes';
 import locationTrackingRoutes from './location-tracking.routes';
+import roleRoutes from './role.routes';
 
 const router = Router();
 
@@ -50,6 +51,7 @@ router.use('/payments', paymentRoutes);
 router.use('/locations', locationRoutes);
 router.use('/public/locations', publicLocationRoutes);
 router.use('/payouts', payoutRoutes);
+router.use('/roles', roleRoutes);
 
 // Service Partner Routes (for mobile app)
 import servicePartnerRoutes from './service-partner.routes';

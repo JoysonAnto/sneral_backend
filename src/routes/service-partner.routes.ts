@@ -10,7 +10,27 @@ const partnerController = new PartnerController();
 // All routes require authentication
 router.use(authenticateToken);
 
-// Current partner availability update (what the app is calling)
+/**
+ * @swagger
+ * /partner/availability:
+ *   patch:
+ *     summary: Set status to ONLINE or OFFLINE
+ *     tags: [Service & Availability]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [ONLINE, OFFLINE]
+ *     responses:
+ *       200:
+ *         description: Availability updated
+ */
 router.patch(
     '/availability',
     authorize('SERVICE_PARTNER'),
@@ -23,7 +43,18 @@ router.patch(
     partnerController.updateAvailability
 );
 
-// Get partner's own services
+/**
+ * @swagger
+ * /partner/services:
+ *   get:
+ *     summary: List services currently offered by the partner
+ *     tags: [Service & Availability]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of partner services
+ */
 router.get(
     '/services',
     authorize('SERVICE_PARTNER'),
@@ -57,7 +88,28 @@ router.get(
     }
 );
 
-// Sync services (update which services the partner offers)
+/**
+ * @swagger
+ * /partner/services/sync:
+ *   post:
+ *     summary: Link new services from the platform to the partner profile
+ *     tags: [Service & Availability]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               serviceIds:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *     responses:
+ *       200:
+ *         description: Services synced
+ */
 router.post(
     '/services/sync',
     authorize('SERVICE_PARTNER'),

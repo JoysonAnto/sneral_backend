@@ -42,10 +42,60 @@ async function main() {
     await prisma.businessPartner.deleteMany();
     await prisma.service.deleteMany();
     await prisma.category.deleteMany();
+    await prisma.rolePermission.deleteMany();
+    await prisma.permission.deleteMany();
+    await prisma.role.deleteMany();
     await prisma.user.deleteMany();
     console.log('✅ Database cleared.\n');
 
     const hashedPassword = await hashPassword('password123');
+
+    // 0. Create Permissions and Roles
+    console.log('🔐 Creating permissions and roles...');
+
+    const permissions = [
+        { name: 'USER_VIEW', description: 'View users' },
+        { name: 'USER_MANAGE', description: 'Create, update, delete users' },
+        { name: 'BOOKING_VIEW', description: 'View bookings' },
+        { name: 'BOOKING_MANAGE', description: 'Manage bookings' },
+        { name: 'ROLE_MANAGE', description: 'Manage roles and permissions' },
+        { name: 'SERVICE_MANAGE', description: 'Manage services and categories' },
+        { name: 'KYC_MANAGE', description: 'Manage KYC verifications' },
+        { name: 'REPORT_VIEW', description: 'View dashboard reports' },
+    ];
+
+    const createdPermissions = await Promise.all(
+        permissions.map((p: { name: string, description: string }) => prisma.permission.create({ data: p }))
+    );
+
+    const superAdminRole = await prisma.role.create({
+        data: {
+            name: 'SUPER_ADMIN',
+            description: 'Full system access',
+            permissions: {
+                create: createdPermissions.map((p: { id: string }) => ({
+                    permission_id: p.id
+                }))
+            }
+        }
+    });
+
+    const adminRole = await prisma.role.create({
+        data: {
+            name: 'ADMIN',
+            description: 'Administrative access',
+            permissions: {
+                create: createdPermissions
+                    .filter((p: { name: string }) => !['ROLE_MANAGE'].includes(p.name))
+                    .map((p: { id: string }) => ({
+                        permission_id: p.id
+                    }))
+            }
+        }
+    });
+
+    console.log('✅ RBAC setup complete.\n');
+
 
     // 1. Create Admin Users
     console.log('👥 Creating admin users...');
@@ -57,6 +107,7 @@ async function main() {
             full_name: 'Super Administrator',
             phone_number: '+919999999999',
             role: UserRole.SUPER_ADMIN,
+            role_id: superAdminRole.id,
             email_verified: true,
             phone_verified: true,
             profile: {
@@ -79,6 +130,7 @@ async function main() {
             full_name: 'John Anderson',
             phone_number: '+919876543210',
             role: UserRole.ADMIN,
+            role_id: adminRole.id,
             email_verified: true,
             phone_verified: true,
             profile: {

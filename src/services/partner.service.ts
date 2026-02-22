@@ -253,12 +253,53 @@ export class PartnerService {
     }
 
     async getPartnerById(id: string, _userId: string, _role: string) {
-        const partner = await prisma.servicePartner.findUnique({
+        // Try to find in servicePartner
+        let partner = await prisma.servicePartner.findUnique({
             where: { id },
             include: { user: true, kyc_documents: true }
-        });
+        }) as any;
+
+        // If not found, try businessPartner
+        if (!partner) {
+            partner = await prisma.businessPartner.findUnique({
+                where: { id },
+                include: { user: true, service_partners: true }
+            });
+        }
+
         if (!partner) throw new NotFoundError('Partner not found');
-        return partner;
+
+        const user = partner.user;
+        return {
+            id: partner.id,
+            userId: user.id,
+            fullName: user.full_name,
+            email: user.email,
+            phoneNumber: user.phone_number,
+            role: user.role,
+            kycStatus: partner.kyc_status,
+            kycVerifiedAt: partner.kyc_verified_at,
+            availabilityStatus: partner.availability_status,
+            serviceRadius: partner.service_radius,
+            commissionRate: partner.commission_rate || 0.1,
+            businessName: partner.business_name,
+            businessType: partner.business_type,
+            gstNumber: partner.gst_number,
+            panNumber: partner.pan_number,
+            bankDetails: partner.bank_details || {
+                accountNumber: partner.bank_account_number,
+                ifscCode: partner.bank_ifsc_code,
+                accountName: partner.bank_account_name,
+            },
+            createdAt: user.created_at,
+            isActive: user.is_active,
+            servicePartnersCount: partner.service_partners?.length,
+            // Metrics
+            totalBookings: partner.total_bookings || 0,
+            completedBookings: partner.completed_bookings || 0,
+            avgRating: partner.avg_rating || 0,
+            completionRate: partner.completion_rate || 0
+        };
     }
 
     async createServicePartner(_data: any, _userId: string, _role: string) {
@@ -285,18 +326,49 @@ export class PartnerService {
     }
 
     async getPartnerServices(id: string) {
-        return await prisma.partnerService.findMany({
+        const services = await prisma.partnerService.findMany({
             where: { partner_id: id } as any,
-            include: { service: true }
+            include: { service: { include: { category: true } } }
         });
+
+        return services.map(ps => ({
+            id: ps.id,
+            serviceId: ps.service_id,
+            serviceName: ps.service.name,
+            category: ps.service.category?.name || 'Uncategorized',
+            basePrice: ps.service.base_price,
+            customPrice: ps.custom_price,
+            duration: ps.service.duration,
+            isAvailable: ps.is_available
+        }));
     }
 
     async updatePartnerService(_id: string, _data: any) {
         return { message: 'Partner service updated' };
     }
 
-    async getPartnerEarnings(_id: string) {
-        return { totalEarnings: 0, pendingPayouts: 0 };
+    async getPartnerEarnings(id: string) {
+        // Try to get wallet for the user associated with this partner
+        const partner = await prisma.servicePartner.findUnique({
+            where: { id },
+            select: { user_id: true }
+        }) || await prisma.businessPartner.findUnique({
+            where: { id },
+            select: { user_id: true }
+        });
+
+        if (!partner) return { totalEarnings: 0, currentBalance: 0, pendingPayouts: 0 };
+
+        const wallet = await prisma.wallet.findUnique({
+            where: { user_id: partner.user_id }
+        });
+
+        return {
+            totalEarnings: wallet?.balance || 0, // Simplified: should be sum of past earned
+            currentBalance: wallet?.balance || 0,
+            pendingPayouts: wallet?.pending_payout || 0,
+            recentTransactions: [] // Front end can handle empty
+        };
     }
 
     async getPartnerPerformance(_id: string, _dateRange?: any) {
