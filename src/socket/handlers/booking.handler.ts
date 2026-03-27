@@ -10,7 +10,7 @@ export const setupBookingHandlers = (io: SocketIOServer) => {
         logger.info(`Customer connected: ${socket.userId}`);
 
         // Join user-specific room
-        socket.join(`user:${socket.userId}`);
+        socket.join(socket.userId);
 
         // Track booking
         socket.on('booking:track', async (bookingId: string) => {
@@ -22,6 +22,7 @@ export const setupBookingHandlers = (io: SocketIOServer) => {
                             include: {
                                 user: {
                                     select: {
+                                        id: true,
                                         full_name: true,
                                         phone_number: true,
                                     },
@@ -55,6 +56,80 @@ export const setupBookingHandlers = (io: SocketIOServer) => {
             }
         });
 
+        // Add bi-directional tracking: Customer updates their live location
+        socket.on('booking:update_location', async (data: { booking_id: string; latitude: number; longitude: number; timestamp?: string }) => {
+            try {
+                // 1. Basic Validation
+                if (!data.booking_id || data.latitude === undefined || data.longitude === undefined) {
+                    return;
+                }
+
+                if (data.latitude < -90 || data.latitude > 90 || data.longitude < -180 || data.longitude > 180) {
+                    return;
+                }
+
+                // 2. Fetch booking to find assigned partner
+                const booking = await prisma.booking.findUnique({
+                    where: { id: data.booking_id },
+                    select: {
+                        customer_id: true,
+                        partner: {
+                            select: {
+                                user: { select: { id: true } }
+                            }
+                        }
+                    }
+                });
+
+                // 3. Authorization check
+                if (!booking || booking.customer_id !== socket.userId) {
+                    return;
+                }
+
+                const updatedAt = data.timestamp || new Date().toISOString();
+
+                // 4. Cache in Redis (TTL 4 hours as requested)
+                try {
+                    const { setRedisValue } = await import('../../config/redis');
+                    await setRedisValue(
+                        `booking:customer_location:${data.booking_id}`,
+                        JSON.stringify({
+                            latitude: data.latitude,
+                            longitude: data.longitude,
+                            updated_at: updatedAt
+                        }),
+                        14400 // 4 hours in seconds
+                    );
+                } catch (redisError) {
+                    // Fail silently for redis
+                }
+
+                // 5. Broadcast to assigned partner's namespace and specific room (userId)
+                if (booking.partner?.user?.id) {
+                    partnerNamespace.to(booking.partner.user.id).emit('customer:location_update', {
+                        booking_id: data.booking_id,
+                        customer_location: {
+                            latitude: data.latitude,
+                            longitude: data.longitude,
+                        },
+                        updated_at: updatedAt
+                    });
+                }
+
+                // 6. Optional: Persist in database for auditing
+                await prisma.profile.update({
+                    where: { user_id: socket.userId },
+                    data: {
+                        latitude: data.latitude,
+                        longitude: data.longitude
+                    }
+                }).catch(() => {/* Ignore persistence error */});
+
+            } catch (error) {
+                logger.error('Error in customer location broadcast:', error);
+            }
+        });
+
         // Stop tracking booking
         socket.on('booking:untrack', (bookingId: string) => {
             socket.leave(`booking:${bookingId}`);
@@ -72,7 +147,7 @@ export const setupBookingHandlers = (io: SocketIOServer) => {
         logger.info(`Partner connected: ${socket.userId}`);
 
         // Join partner-specific room
-        socket.join(`user:${socket.userId}`);
+        socket.join(socket.userId);
 
         // Accept booking
         socket.on('booking:accept', async (bookingId: string) => {
@@ -149,44 +224,51 @@ export const setupBookingHandlers = (io: SocketIOServer) => {
         });
 
         // Update location
-        socket.on('location:update', async (data: { latitude: number; longitude: number }) => {
+        socket.on('location:update', async (data: { latitude: number; longitude: number; bookingId?: string; accuracy?: number }) => {
             try {
+                const { LocationTrackingService } = await import('../../services/location-tracking.service');
+                const locationService = new LocationTrackingService();
+
                 const partner = await prisma.servicePartner.findUnique({
                     where: { user_id: socket.userId },
                 });
 
                 if (partner) {
-                    // Update partner location in database
-                    await prisma.servicePartner.update({
-                        where: { id: partner.id },
-                        data: {
-                            current_latitude: data.latitude,
-                            current_longitude: data.longitude,
-                        },
-                    });
-
-                    // Get active bookings for this partner
-                    const activeBookings = await prisma.booking.findMany({
-                        where: {
-                            partner_id: partner.id,
-                            status: { in: ['PARTNER_ACCEPTED', 'IN_PROGRESS'] },
-                        },
-                    });
-
-                    // Emit location to customers tracking this partner
-                    activeBookings.forEach((booking) => {
-                        customerNamespace.to(`booking:${booking.id}`).emit('partner:location_update', {
-                            bookingId: booking.id,
-                            location: {
-                                latitude: data.latitude,
-                                longitude: data.longitude,
-                            },
-                            timestamp: new Date(),
-                        });
-                    });
+                    await locationService.recordPartnerLocation(
+                        partner.id,
+                        data.latitude,
+                        data.longitude,
+                        data.accuracy || 0,
+                        data.bookingId
+                    );
                 }
             } catch (error) {
-                logger.error('Error updating location:', error);
+                logger.error('Error updating location via socket:', error);
+            }
+        });
+        
+        // Partner tracks a specific booking to get customer's last known location (reconnection support)
+        socket.on('booking:track_customer', async (bookingId: string) => {
+            try {
+                // Verify the partner is indeed assigned to this booking
+                const booking = await prisma.booking.findUnique({
+                    where: { id: bookingId },
+                    select: { partner: { select: { user: { select: { id: true } } } } }
+                });
+
+                if (booking?.partner?.user?.id === socket.userId) {
+                    const { getRedisValue } = await import('../../config/redis');
+                    const lastLocation = await getRedisValue(`booking:customer_location:${bookingId}`);
+                    
+                    if (lastLocation) {
+                        socket.emit('customer:location_update', {
+                            booking_id: bookingId,
+                            ...JSON.parse(lastLocation)
+                        });
+                    }
+                }
+            } catch (error) {
+                logger.error('Error retrieving last known customer location:', error);
             }
         });
 
@@ -229,7 +311,7 @@ export const emitBookingUpdate = (io: SocketIOServer, bookingId: string, status:
 
 // Helper function to notify partner of new booking
 export const notifyPartnerNewBooking = (io: SocketIOServer, partnerId: string, booking: any) => {
-    io.of('/partner').to(`user:${partnerId}`).emit('booking:new_request', {
+    io.of('/partner').to(partnerId).emit('booking:new_request', {
         bookingId: booking.id,
         bookingNumber: booking.booking_number,
         service: booking.items[0]?.service?.name,

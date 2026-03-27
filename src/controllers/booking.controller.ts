@@ -117,6 +117,29 @@ export class BookingController {
         }
     };
 
+    rejectBooking = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const partner = await import('../config/database').then(m =>
+                m.default.servicePartner.findUnique({
+                    where: { user_id: req.user!.userId }
+                })
+            );
+
+            if (!partner) {
+                throw new Error('Service partner profile not found');
+            }
+
+            const booking = await this.bookingService.rejectBooking(
+                req.params.id,
+                partner.id,
+                req.body.reason
+            );
+            res.json(successResponse(booking, 'Booking rejected successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
     startBooking = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const partner = await import('../config/database').then(m =>

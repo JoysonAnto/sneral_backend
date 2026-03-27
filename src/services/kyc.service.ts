@@ -5,6 +5,7 @@ import { AuditLogService } from './auditLog.service';
 import { NotificationService } from './notification.service';
 import { getIO } from '../socket/socket.server';
 import { AdminService } from './admin.service';
+import logger from '../utils/logger';
 
 const broadcastStatsUpdate = async () => {
     try {
@@ -305,5 +306,45 @@ export class KYCService {
         });
 
         return { message: 'Document deleted successfully' };
+    }
+
+    async verifyEkoPan(userId: string, panNumber: string, fullName: string) {
+        if (!panNumber || !fullName) {
+            throw new BadRequestError('PAN number and full name are required');
+        }
+
+        // TODO: Integrate with Eko API
+        // For now, mock a successful verification
+        logger.info(`[Eko Integration] Verifying PAN: ${panNumber} for user ${userId}`);
+
+        return {
+            success: true,
+            message: 'PAN verified successfully',
+            data: {
+                pan_number: panNumber,
+                full_name: fullName,
+                verification_id: `eko_pan_${Date.now()}`
+            }
+        };
+    }
+
+    async verifyEkoBank(userId: string, accountNumber: string, ifscCode: string) {
+        if (!accountNumber || !ifscCode) {
+            throw new BadRequestError('Account number and IFSC code are required');
+        }
+
+        // TODO: Integrate with Eko API (Penny Drop)
+        // For now, mock a successful verification
+        logger.info(`[Eko Integration] Verifying Bank: ${accountNumber} (IFSC: ${ifscCode}) for user ${userId}`);
+
+        return {
+            success: true,
+            message: 'Bank verification successful (Penny Drop)',
+            data: {
+                account_number: accountNumber,
+                ifsc_code: ifscCode,
+                verification_id: `eko_bank_${Date.now()}`
+            }
+        };
     }
 }

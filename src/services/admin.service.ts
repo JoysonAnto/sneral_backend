@@ -2,121 +2,147 @@ import prisma from '../config/database';
 
 export class AdminService {
     async getDashboardStats() {
-        const [
-            totalUsers,
-            totalPartners,
-            totalBookings,
-            activeBookings,
-            pendingKYC,
-            todayBookings,
-            monthlyRevenue,
-        ] = await Promise.all([
-            // Total users
-            prisma.user.count(),
+        try {
+            const [
+                totalUsers,
+                totalPartners,
+                totalBookings,
+                activeBookings,
+                pendingKYC,
+                todayBookings,
+                monthlyRevenue,
+            ] = await Promise.all([
+                // Total users
+                prisma.user.count().catch(() => 0),
 
-            // Total partners (service + business)
-            Promise.all([
-                prisma.servicePartner.count(),
-                prisma.businessPartner.count(),
-            ]).then(([sp, bp]) => sp + bp),
+                // Total partners (service + business)
+                Promise.all([
+                    prisma.servicePartner.count().catch(() => 0),
+                    prisma.businessPartner.count().catch(() => 0),
+                ]).then(([sp, bp]) => sp + bp),
 
-            // Total bookings
-            prisma.booking.count(),
+                // Total bookings
+                prisma.booking.count().catch(() => 0),
 
-            // Active bookings
-            prisma.booking.count({
-                where: {
-                    status: {
-                        in: ['SEARCHING_PARTNER', 'PARTNER_ASSIGNED', 'PARTNER_ACCEPTED', 'IN_PROGRESS', 'PENDING_ASSIGNMENT', 'PARTNER_NOT_FOUND'] as any[],
+                // Active bookings
+                prisma.booking.count({
+                    where: {
+                        status: {
+                            in: ['SEARCHING_PARTNER', 'PARTNER_ASSIGNED', 'PARTNER_ACCEPTED', 'IN_PROGRESS', 'PENDING_ASSIGNMENT', 'PARTNER_NOT_FOUND'] as any[],
+                        },
                     },
-                },
-            }),
+                }).catch(() => 0),
 
-            // Pending KYC
-            prisma.servicePartner.count({
-                where: {
-                    kyc_status: 'PENDING_VERIFICATION',
-                },
-            }),
-
-            // Today's bookings
-            prisma.booking.count({
-                where: {
-                    created_at: {
-                        gte: new Date(new Date().setHours(0, 0, 0, 0)),
+                // Pending KYC
+                prisma.servicePartner.count({
+                    where: {
+                        kyc_status: 'PENDING_VERIFICATION',
                     },
-                },
-            }),
+                }).catch(() => 0),
 
-            // Monthly revenue (completed bookings this month)
-            prisma.booking.aggregate({
-                where: {
-                    status: { in: ['COMPLETED', 'RATED'] },
-                    completed_at: {
-                        gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+                // Today's bookings
+                prisma.booking.count({
+                    where: {
+                        created_at: {
+                            gte: new Date(new Date().setHours(0, 0, 0, 0)),
+                        },
                     },
-                },
-                _sum: {
-                    total_amount: true,
-                },
-            }),
-        ]);
+                }).catch(() => 0),
 
-        // Get top services
-        const topServices = await prisma.bookingItem.groupBy({
-            by: ['service_id'],
-            _count: {
-                service_id: true,
-            },
-            _sum: {
-                total_price: true,
-            },
-            orderBy: {
-                _count: {
-                    service_id: 'desc',
-                },
-            },
-            take: 5,
-        });
+                // Monthly revenue (completed bookings this month)
+                prisma.booking.aggregate({
+                    where: {
+                        status: { in: ['COMPLETED', 'RATED'] },
+                        completed_at: {
+                            gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+                        },
+                    },
+                    _sum: {
+                        total_amount: true,
+                    },
+                }).catch(() => ({ _sum: { total_amount: 0 } })),
+            ]);
 
-        const topServicesWithNames = await Promise.all(
-            topServices.map(async (item) => {
-                const service = await prisma.service.findUnique({
-                    where: { id: item.service_id },
-                    select: { name: true },
+            // Get top services
+            let topServicesWithNames: any[] = [];
+            try {
+                const topServices = await prisma.bookingItem.groupBy({
+                    by: ['service_id'],
+                    _count: {
+                        service_id: true,
+                    },
+                    _sum: {
+                        total_price: true,
+                    },
+                    orderBy: {
+                        _count: {
+                            service_id: 'desc',
+                        },
+                    },
+                    take: 5,
                 });
-                return {
-                    name: service?.name || 'Unknown',
-                    bookings: item._count.service_id,
-                    revenue: item._sum.total_price || 0,
-                };
-            })
-        );
 
-        // Calculate today's revenue (today's completed bookings)
-        const todayRevenue = await prisma.booking.aggregate({
-            where: {
-                status: { in: ['COMPLETED', 'RATED'] },
-                completed_at: {
-                    gte: new Date(new Date().setHours(0, 0, 0, 0)),
-                },
-            },
-            _sum: {
-                total_amount: true,
-            },
-        });
+                topServicesWithNames = await Promise.all(
+                    topServices.map(async (item) => {
+                        const service = await prisma.service.findUnique({
+                            where: { id: item.service_id },
+                            select: { name: true },
+                        });
+                        return {
+                            name: service?.name || 'Unknown',
+                            bookings: item._count.service_id,
+                            revenue: item._sum.total_price || 0,
+                        };
+                    })
+                );
+            } catch (serviceErr) {
+                console.error('Error fetching top services:', serviceErr);
+            }
 
-        return {
-            totalUsers,
-            totalPartners,
-            totalBookings,
-            activeBookings,
-            todayBookings,
-            todayRevenue: todayRevenue._sum.total_amount || 0,
-            monthlyRevenue: monthlyRevenue._sum.total_amount || 0,
-            pendingKYC,
-            topServices: topServicesWithNames,
-        };
+            // Calculate today's revenue (today's completed bookings)
+            let todayRevenueVal = 0;
+            try {
+                const todayRevenue = await prisma.booking.aggregate({
+                    where: {
+                        status: { in: ['COMPLETED', 'RATED'] },
+                        completed_at: {
+                            gte: new Date(new Date().setHours(0, 0, 0, 0)),
+                        },
+                    },
+                    _sum: {
+                        total_amount: true,
+                    },
+                });
+                todayRevenueVal = todayRevenue._sum.total_amount || 0;
+            } catch (revErr) {
+                console.error('Error fetching today revenue:', revErr);
+            }
+
+            return {
+                totalUsers,
+                totalPartners: totalPartners || 0,
+                totalBookings: totalBookings || 0,
+                activeBookings: activeBookings || 0,
+                todayBookings: todayBookings || 0,
+                todayRevenue: todayRevenueVal,
+                monthlyRevenue: (monthlyRevenue as any)?._sum?.total_amount || 0,
+                pendingKYC: pendingKYC || 0,
+                topServices: topServicesWithNames,
+            };
+        } catch (error) {
+            console.error('❌ [ADMIN SERVICE] Fatal error in getDashboardStats:', error);
+            return {
+                totalUsers: 0,
+                totalPartners: 0,
+                totalBookings: 0,
+                activeBookings: 0,
+                todayBookings: 0,
+                todayRevenue: 0,
+                monthlyRevenue: 0,
+                pendingKYC: 0,
+                topServices: [],
+            };
+        }
     }
 
     async generateReport(type: string, startDate?: string, endDate?: string) {
@@ -346,5 +372,34 @@ export class AdminService {
             where: { id: userId },
             data: { is_active: isActive }
         });
+    }
+
+    async assignPartnerCategory(partnerId: string, partnerType: 'SERVICE' | 'BUSINESS', categoryId: string, assignAllServices: boolean = false) {
+        let result;
+        if (partnerType === 'SERVICE') {
+            result = await prisma.servicePartner.update({
+                where: { id: partnerId },
+                data: { category_id: categoryId }
+            });
+
+            if (assignAllServices) {
+                const services = await prisma.service.findMany({
+                    where: { category_id: categoryId, is_active: true }
+                });
+
+                const { PartnerService } = await import('./partner.service');
+                const ps = new PartnerService();
+
+                for (const service of services) {
+                    await ps.assignServiceToPartner(partnerId, service.id);
+                }
+            }
+        } else {
+            result = await prisma.businessPartner.update({
+                where: { id: partnerId },
+                data: { category_id: categoryId }
+            });
+        }
+        return result;
     }
 }

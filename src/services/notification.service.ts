@@ -34,8 +34,9 @@ export class NotificationService {
                 title: n.title,
                 message: n.message,
                 data: n.data,
-                read: n.is_read,
+                isRead: n.is_read,
                 createdAt: n.created_at,
+                time: n.created_at.toISOString() // Client can format this
             })),
             unreadCount,
             pagination: {

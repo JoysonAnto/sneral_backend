@@ -422,11 +422,30 @@ export class AuthService {
                 throw new UnauthorizedError('User not found');
             }
 
+            // Fetch permissions for the new token
+            const userWithPermissions = await prisma.user.findUnique({
+                where: { id: user.id },
+                include: {
+                    custom_role: {
+                        include: {
+                            permissions: {
+                                include: {
+                                    permission: true
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            const permissions = userWithPermissions?.custom_role?.permissions.map(p => p.permission.name) || [];
+
             // Generate new access token
             const newAccessToken = generateAccessToken({
                 userId: user.id,
                 role: user.role,
                 email: user.email,
+                permissions,
             });
 
             return { accessToken: newAccessToken };
@@ -446,8 +465,14 @@ export class AuthService {
             where: { id: userId },
             include: {
                 profile: true,
-                service_partner: true,
-                business_partner: true,
+                service_partner: {
+                    include: { category: true }
+                },
+                business_partner: {
+                    include: { category: true }
+                },
+                custom_role: true,
+                wallet: true,
             },
         });
 
@@ -455,8 +480,53 @@ export class AuthService {
             throw new BadRequestError('User not found');
         }
 
+        // Calculate total earnings from transactions
+        const earningsAggregate = await prisma.transaction.aggregate({
+            where: {
+                user_id: userId,
+                type: 'BOOKING_PAYMENT',
+                category: 'CREDIT',
+                status: 'COMPLETED'
+            },
+            _sum: {
+                amount: true
+            }
+        });
+        const totalEarnings = earningsAggregate._sum.amount || 0;
+
         const u = user as any;
         const { password: _password, verification_otp: _verification_otp, otp_expires_at: _otp_expires_at, reset_otp: _reset_otp, ...userWithoutSensitive } = u;
+
+        // Add profession/category name for dashboard
+        if (user.role === 'SERVICE_PARTNER' && user.service_partner) {
+            userWithoutSensitive.profession = (user.service_partner as any).category?.name || 'Partner';
+
+            // Normalize service_partner object
+            userWithoutSensitive.service_partner = {
+                ...user.service_partner,
+                total_earnings: totalEarnings,
+                totalEarnings: totalEarnings,
+                // Ensure consistency with PartnerService.getPartnerById
+                kycStatus: user.service_partner.kyc_status,
+                availabilityStatus: user.service_partner.availability_status,
+                totalBookings: user.service_partner.total_bookings,
+                completedBookings: user.service_partner.completed_bookings,
+                avgRating: user.service_partner.avg_rating,
+            };
+        } else if (user.role === 'BUSINESS_PARTNER' && user.business_partner) {
+            userWithoutSensitive.profession = (user.business_partner as any).category?.name || 'Business';
+
+            // Normalize business_partner object
+            userWithoutSensitive.business_partner = {
+                ...user.business_partner,
+                total_earnings: totalEarnings,
+                totalEarnings: totalEarnings,
+                kycStatus: user.business_partner.kyc_status,
+                // total_bookings is not a direct field on BusinessPartner model, 
+                // but we can provide it if needed by counting relations. 
+                // For now, let's just match the structure.
+            };
+        }
 
         return userWithoutSensitive;
     }

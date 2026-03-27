@@ -97,7 +97,7 @@ export class PartnerMatchingService {
                 bookings: {
                     none: {
                         status: {
-                            in: ['PARTNER_ASSIGNED', 'PARTNER_ACCEPTED', 'ARRIVED', 'IN_PROGRESS']
+                            in: ['PARTNER_ASSIGNED', 'PARTNER_ACCEPTED', 'PARTNER_ARRIVED', 'IN_PROGRESS']
                         }
                     }
                 }

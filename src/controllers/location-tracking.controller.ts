@@ -201,4 +201,27 @@ export class LocationTrackingController {
             return next(error);
         }
     };
+
+    /**
+     * Public: Get nearby partners for discovery map
+     */
+    getNearbyPartners = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { lat, lng, radius } = req.query;
+
+            if (!lat || !lng) {
+                throw new BadRequestError('Latitude and Longitude are required');
+            }
+
+            const partners = await this.locationService.getPublicNearbyPartners(
+                parseFloat(lat as string),
+                parseFloat(lng as string),
+                radius ? parseFloat(radius as string) : 10
+            );
+
+            res.json(successResponse(partners, 'Nearby partners retrieved'));
+        } catch (error) {
+            next(error);
+        }
+    };
 }

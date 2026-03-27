@@ -380,5 +380,14 @@ export class PartnerController {
             return next(error);
         }
     };
+
+    getDashboardStats = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const stats = await this.partnerService.getDashboardStats(req.user!.userId);
+            res.json(successResponse(stats, 'Dashboard stats retrieved successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
 }
 

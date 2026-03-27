@@ -37,6 +37,17 @@ export class WalletService {
             orderBy: { created_at: 'desc' },
         });
 
+        // Calculate total earnings (sum of all credits)
+        const totalEarnings = await prisma.transaction.aggregate({
+            where: {
+                user_id: userId,
+                category: 'CREDIT'
+            },
+            _sum: {
+                amount: true
+            }
+        });
+
         return {
             balance: wallet.balance,
             currency: 'INR',
@@ -46,6 +57,7 @@ export class WalletService {
             // @ts-ignore: Property 'pending_payout' does not exist on type 'Wallet'
             pendingPayout: wallet.pending_payout || 0,
             availableBalance: wallet.balance - wallet.locked_balance - ((wallet as any).on_hold_balance || 0),
+            totalEarned: totalEarnings._sum.amount || 0,
             transactions: transactions.map(t => ({
                 id: t.id,
                 type: t.type,

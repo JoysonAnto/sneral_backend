@@ -45,6 +45,7 @@ model User {
   wallet                  Wallet?
   withdrawals             WithdrawalRequest[]
 
+
   @@index([email])
   @@index([role])
   @@map("users")
@@ -327,6 +328,9 @@ model Booking {
   overtime_charge       Float                    @default(0)
   start_otp             String?
   group_id              String?
+  is_scheduled          Boolean                  @default(false)
+  booking_type          BookingType              @default(INSTANT)
+  scheduled_date_time   DateTime?
   activity_logs         BookingActivityLog[]
   items                 BookingItem[]
   status_history        BookingStatusHistory[]
@@ -916,7 +920,7 @@ enum BookingStatus {
   RATED
   PARTNER_NOT_FOUND
   PENDING_ASSIGNMENT
-  ARRIVED
+  PARTNER_ARRIVED
 }
 
 enum PaymentStatus {
@@ -1007,3 +1011,9 @@ enum RecurringStatus {
   CANCELLED
   EXPIRED
 }
+
+enum BookingType {
+  INSTANT
+  SCHEDULED
+}
+

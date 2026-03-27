@@ -24,7 +24,32 @@ router.use(authenticateToken);
  */
 router.get('/', walletController.getBalance);
 
-// Add money to wallet
+/**
+ * @swagger
+ * /wallet/stats:
+ *   get:
+ *     summary: Wallet summary (total earned, payouts, balance)
+ *     tags: [Wallet & Payouts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Wallet stats returned
+ */
+router.get('/stats', walletController.getStats);
+
+/**
+ * @swagger
+ * /wallet/add-money:
+ *   post:
+ *     summary: Top up wallet balance
+ *     tags: [Wallet & Payouts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Money added successfully
+ */
 router.post(
     '/add-money',
     validate([
@@ -40,7 +65,18 @@ router.post(
     walletController.addMoney
 );
 
-// Withdraw from wallet (partners only)
+/**
+ * @swagger
+ * /wallet/withdraw:
+ *   post:
+ *     summary: Withdraw from wallet (partners only)
+ *     tags: [Wallet & Payouts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Withdrawal successful
+ */
 router.post(
     '/withdraw',
     authorize('SERVICE_PARTNER', 'BUSINESS_PARTNER'),

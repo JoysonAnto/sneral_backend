@@ -20,6 +20,7 @@ export class LocationTrackingService {
                     current_latitude: latitude,
                     current_longitude: longitude,
                     last_location_update: new Date(),
+                    availability_status: 'AVAILABLE', // Ensure marked as available if updating location
                 },
             });
 
@@ -52,7 +53,12 @@ export class LocationTrackingService {
             if (bookingId) {
                 const booking = await prisma.booking.findUnique({
                     where: { id: bookingId },
-                    select: { customer_id: true },
+                    select: {
+                        customer_id: true,
+                        status: true,
+                        service_latitude: true,
+                        service_longitude: true
+                    },
                 });
 
                 if (booking) {
@@ -64,6 +70,26 @@ export class LocationTrackingService {
                         timestamp: locationRecord.recorded_at,
                         bookingId,
                     });
+
+                    // Proximity Detection: If partner is within 100m of destination
+                    if (booking.status === 'PARTNER_ASSIGNED' || booking.status === 'PARTNER_ACCEPTED') {
+                        if (booking.service_latitude && booking.service_longitude) {
+                            const distance = this.calculateDistance(
+                                latitude,
+                                longitude,
+                                booking.service_latitude,
+                                booking.service_longitude
+                            );
+
+                            // If less than 0.1km (100m)
+                            if (distance <= 0.1) {
+                                io.of('/customer').to(`customer:${booking.customer_id}`).emit('partner:arrived_soon', {
+                                    bookingId,
+                                    distance: Math.round(distance * 1000) // in meters
+                                });
+                            }
+                        }
+                    }
                 }
             }
 
@@ -155,7 +181,7 @@ export class LocationTrackingService {
                 bookings: {
                     where: {
                         status: {
-                            in: ['PARTNER_ACCEPTED', 'ARRIVED', 'IN_PROGRESS'],
+                            in: ['PARTNER_ACCEPTED', 'PARTNER_ARRIVED', 'IN_PROGRESS'],
                         },
                     },
                     select: {
@@ -332,5 +358,61 @@ export class LocationTrackingService {
                 data: { is_online: false },
             });
         }
+    }
+
+    /**
+     * Get publicly accessible nearby partners (anonimized)
+     */
+    async getPublicNearbyPartners(latitude: number, longitude: number, radiusKm: number = 10) {
+        const partners = await prisma.servicePartner.findMany({
+            where: {
+                availability_status: 'AVAILABLE',
+                current_latitude: { not: null },
+                current_longitude: { not: null },
+            },
+            include: {
+                category: {
+                    select: {
+                        name: true,
+                        icon_url: true,
+                    },
+                },
+            },
+        });
+
+        return partners
+            .map(p => {
+                const distance = this.calculateDistance(
+                    latitude,
+                    longitude,
+                    p.current_latitude!,
+                    p.current_longitude!
+                );
+                return {
+                    id: p.id.substring(0, 8), // Obfuscated ID
+                    latitude: p.current_latitude,
+                    longitude: p.current_longitude,
+                    category: p.category?.name || 'Service Partner',
+                    iconUrl: p.category?.icon_url || null,
+                    distance,
+                };
+            })
+            .filter(p => p.distance <= radiusKm)
+            .sort((a, b) => a.distance - b.distance);
+    }
+
+    /**
+     * Haversine formula for distance in KM
+     */
+    private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+        const R = 6371; // Earth's radius in km
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
     }
 }

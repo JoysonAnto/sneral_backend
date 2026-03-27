@@ -37,6 +37,36 @@ router.patch(
     partnerController.updateAvailability
 );
 
+/**
+ * @swagger
+ * /partner/stats:
+ *   get:
+ *     summary: Quick summary for dashboard (Current Job, Today Earnings, Rating)
+ *     tags: [Partner Dashboard]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Dashboard stats returned
+ */
+router.get(
+    '/stats',
+    authorize('SERVICE_PARTNER'),
+    partnerController.getDashboardStats
+);
+
+/**
+ * @swagger
+ * /partner/me/availability:
+ *   patch:
+ *     summary: Set status to ONLINE or OFFLINE (alias)
+ *     tags: [Service & Availability]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Availability updated
+ */
 router.patch(
     '/me/availability',
     authorize('SERVICE_PARTNER'),

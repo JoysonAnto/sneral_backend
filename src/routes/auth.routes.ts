@@ -15,12 +15,19 @@ import {
 const router = Router();
 const authController = new AuthController();
 
+/**
+ * @swagger
+ * tags:
+ *   name: Authentication
+ *   description: User login, registration, and session management
+ */
+
 // Public routes
 /**
  * @swagger
  * /auth/register:
  *   post:
- *     summary: Register a new partner
+ *     summary: Register a new partner or user
  *     tags: [Authentication]
  *     requestBody:
  *       required: true
@@ -31,20 +38,20 @@ const authController = new AuthController();
  *             required:
  *               - email
  *               - password
- *               - name
+ *               - fullName
  *               - phone
  *             properties:
  *               email:
  *                 type: string
  *               password:
  *                 type: string
- *               name:
+ *               fullName:
  *                 type: string
  *               phone:
  *                 type: string
  *     responses:
  *       201:
- *         description: Partner registered successfully
+ *         description: User registered successfully
  */
 router.post('/register', validate(registerValidator), authController.register);
 
@@ -70,30 +77,136 @@ router.post('/register', validate(registerValidator), authController.register);
  *                 type: string
  *     responses:
  *       200:
- *         description: JWT token returned
+ *         description: JWT token and refresh token returned
  */
 router.post('/login', validate(loginValidator), authController.login);
+
+/**
+ * @swagger
+ * /auth/verify-email:
+ *   post:
+ *     summary: Verify email address with token
+ *     tags: [Authentication]
+ *     responses:
+ *       200:
+ *         description: Email verified successfully
+ */
 router.post('/verify-email', validate(verifyEmailValidator), authController.verifyEmail);
+
+/**
+ * @swagger
+ * /auth/verify-otp:
+ *   post:
+ *     summary: Verify OTP for phone/email validation
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - phone
+ *               - otp
+ *             properties:
+ *               phone:
+ *                 type: string
+ *               otp:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: OTP verified
+ */
 router.post('/verify-otp', authController.verifyOtp);
+
+/**
+ * @swagger
+ * /auth/resend-otp:
+ *   post:
+ *     summary: Resend verification OTP
+ *     tags: [Authentication]
+ *     responses:
+ *       200:
+ *         description: OTP resent
+ */
 router.post('/resend-otp', authController.resendVerificationOTP);
+
+/**
+ * @swagger
+ * /auth/forgot-password:
+ *   post:
+ *     summary: Request password reset link/OTP
+ *     tags: [Authentication]
+ *     responses:
+ *       200:
+ *         description: Reset instructions sent
+ */
 router.post('/forgot-password', validate(forgotPasswordValidator), authController.forgotPassword);
+
+/**
+ * @swagger
+ * /auth/reset-password:
+ *   post:
+ *     summary: Reset password using token/OTP
+ *     tags: [Authentication]
+ *     responses:
+ *       200:
+ *         description: Password reset successful
+ */
 router.post('/reset-password', validate(resetPasswordValidator), authController.resetPassword);
+
+/**
+ * @swagger
+ * /auth/refresh-token:
+ *   post:
+ *     summary: Exchange refresh token for new access token
+ *     tags: [Authentication]
+ *     responses:
+ *       200:
+ *         description: New access token issued
+ */
 router.post('/refresh-token', validate(refreshTokenValidator), authController.refreshToken);
 
 // Protected routes
-router.post('/logout', authenticateToken, authController.logout);
-router.get('/profile', authenticateToken, authController.getProfile);
 /**
  * @swagger
- * /auth/me:
- *   get:
- *     summary: Get current partner profile
+ * /auth/logout:
+ *   post:
+ *     summary: Terminate session and invalidate tokens
  *     tags: [Authentication]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: Partner profile data
+ *         description: Logged out successfully
+ */
+router.post('/logout', authenticateToken, authController.logout);
+
+/**
+ * @swagger
+ * /auth/profile:
+ *   get:
+ *     summary: Get profile of authenticated user
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Profile data
+ */
+router.get('/profile', authenticateToken, authController.getProfile);
+
+/**
+ * @swagger
+ * /auth/me:
+ *   get:
+ *     summary: Alias for profile endpoint
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: User profile data
  */
 router.get('/me', authenticateToken, authController.getProfile); // Alias for profile
 
@@ -105,23 +218,24 @@ router.get('/me', authenticateToken, authController.getProfile); // Alias for pr
  *     tags: [Authentication]
  *     security:
  *       - bearerAuth: []
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               name:
- *                 type: string
- *               bio:
- *                 type: string
- *               phone:
- *                 type: string
  *     responses:
  *       200:
- *         description: Profile updated
+ *         description: Profile updated successfully
  */
 router.patch('/profile', authenticateToken, authController.updateProfile);
+
+/**
+ * @swagger
+ * /auth/change-password:
+ *   post:
+ *     summary: Update password (requires current password)
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Password updated
+ */
 router.post('/change-password', authenticateToken, validate(changePasswordValidator), authController.changePassword);
 
 export default router;

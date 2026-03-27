@@ -2,7 +2,6 @@ import express, { Application } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
-import compression from 'compression';
 import { loggerMiddleware } from './middleware/logger.middleware';
 import { errorHandler } from './middleware/error.middleware';
 import routes from './routes';
@@ -16,10 +15,10 @@ app.use((req, _res, next) => {
     next();
 });
 
-// Enhanced Security middleware
+// Enhanced Security middleware for Production
 app.use(
     helmet({
-        contentSecurityPolicy: {
+        contentSecurityPolicy: process.env.NODE_ENV === 'development' ? false : {
             directives: {
                 defaultSrc: ["'self'"],
                 styleSrc: ["'self'", "'unsafe-inline'"],
@@ -49,35 +48,38 @@ const allowedOrigins = process.env.CORS_ORIGINS?.split(',') || [
     'http://localhost:3001', // Admin Dashboard
     'http://localhost:3002', // Business Partner
     'http://localhost:3003', // Service Partner
+    'http://localhost:4000',
+    'https://mortgages-wings-adoption-reel.trycloudflare.com'
 ];
 
-app.use(
-    cors({
-        origin: (origin, callback) => {
-            // Allow requests with no origin (like mobile apps or curl requests)
-            if (!origin) return callback(null, true);
+const corsOptions: cors.CorsOptions = {
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+        // In development, allow all origins for easier debugging (especially with ngrok)
+        if (process.env.NODE_ENV === 'development') {
+            console.log(`🔓 [CORS] Dev mode: Allowing origin ${origin}`);
+            return callback(null, true);
+        }
+        
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            console.log(`❌ [CORS] Origin not allowed: ${origin}`);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning', 'x-requested-with'],
+    credentials: true,
+};
 
-            // Check if origin is in allowed list or is a localhost variant
-            if (allowedOrigins.indexOf(origin) !== -1 || origin.startsWith('http://localhost:')) {
-                callback(null, true);
-            } else {
-                callback(new Error('Not allowed by CORS'));
-            }
-        },
-        credentials: true,
-        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-        exposedHeaders: ['Content-Range', 'X-Content-Range'],
-        maxAge: 86400, // 24 hours
-    })
-);
+app.use(cors(corsOptions));
 
 // Body parsers
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Compression
-app.use(compression());
+// app.use(compression()); // Temporarily disable to see if it helps debugging
 
 // Logging
 app.use(loggerMiddleware);

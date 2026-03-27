@@ -197,5 +197,23 @@ export class ServiceController {
             next(error);
         }
     };
+
+    getFeaturedServices = async (_req: Request, res: Response, next: NextFunction) => {
+        try {
+            const services = await this.serviceService.getFeaturedServices();
+            res.json(successResponse(services, 'Featured services retrieved successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    getPopularServices = async (_req: Request, res: Response, next: NextFunction) => {
+        try {
+            const services = await this.serviceService.getPopularServices();
+            res.json(successResponse(services, 'Popular services retrieved successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
 }
 

@@ -3,6 +3,18 @@ import { BadRequestError, NotFoundError, UnauthorizedError } from '../utils/erro
 import { NotificationService } from './notification.service';
 import { getIO } from '../socket/socket.server';
 import logger from '../utils/logger';
+import { AdminService } from './admin.service';
+
+const broadcastStatsUpdate = async () => {
+    try {
+        const io = getIO();
+        const adminService = new AdminService();
+        const stats = await adminService.getDashboardStats();
+        io.of('/admin').emit('dashboard:stats_update', stats);
+    } catch (error) {
+        // Socket not initialized or other error
+    }
+};
 
 interface BookingItemData {
     serviceId: string;
@@ -20,6 +32,9 @@ interface CreateBookingData {
     specialInstructions?: string;
     businessPartnerId?: string;
     dynamicMultiplier?: number;
+    isScheduled?: boolean;
+    bookingType?: 'instant' | 'scheduled';
+    scheduledDateTime?: string;
 }
 
 export class BookingService {
@@ -110,6 +125,9 @@ export class BookingService {
                     special_instructions: data.specialInstructions,
                     business_partner_id: data.businessPartnerId,
                     dynamic_multiplier: data.dynamicMultiplier || 1.0,
+                    is_scheduled: data.isScheduled === true,
+                    booking_type: data.bookingType === 'scheduled' ? 'SCHEDULED' : 'INSTANT',
+                    scheduled_date_time: data.scheduledDateTime ? new Date(data.scheduledDateTime) : (data.isScheduled ? new Date(data.scheduledDate) : null),
                     estimated_duration: categoryServices.reduce((acc, s) => acc + s.duration, 0), // Sum of durations
                     items: {
                         create: bookingItemsData
@@ -127,6 +145,9 @@ export class BookingService {
                     customer: { select: { id: true, email: true, full_name: true, phone_number: true } }
                 }
             });
+
+            // Explicitly notify all connected admins across all regions immediately
+            this.broadcastBookingCreated(booking);
 
             createdBookings.push(booking);
 
@@ -159,7 +180,10 @@ export class BookingService {
                 bookingNumber: booking.booking_number,
                 // Summary of services in this booking
                 service: booking.items.map((i: any) => i.service.name).join(', '),
-                customer: booking.customer?.full_name || 'Guest'
+                customer: booking.customer?.full_name || 'Guest',
+                isScheduled: (booking as any).is_scheduled,
+                bookingType: (booking as any).booking_type === 'SCHEDULED' ? 'scheduled' : 'instant',
+                scheduledDateTime: (booking as any).scheduled_date_time
             });
         }
     }
@@ -242,6 +266,9 @@ export class BookingService {
                         scheduledDate: booking.scheduled_date,
                         scheduledTime: booking.scheduled_time,
                         distance: partner.distance,
+                        isScheduled: (booking as any).is_scheduled,
+                        bookingType: (booking as any).booking_type === 'SCHEDULED' ? 'scheduled' : 'instant',
+                        scheduledDateTime: (booking as any).scheduled_date_time
                     });
 
                     // Create persistent notification
@@ -315,16 +342,61 @@ export class BookingService {
         }
 
         // Check permissions
-        if (
-            userRole !== 'SUPER_ADMIN' &&
-            userRole !== 'ADMIN' &&
-            booking.customer_id !== userId &&
-            booking.partner?.user_id !== userId
-        ) {
+        const isSelf = booking.customer_id === userId || booking.partner?.user_id === userId;
+        const isAdmin = userRole === 'SUPER_ADMIN' || userRole === 'ADMIN';
+        
+        // Special case for partners viewing broadcasted jobs
+        let isEligiblePartner = false;
+        if (userRole === 'SERVICE_PARTNER' && !isSelf && !isAdmin) {
+            const partner = await prisma.servicePartner.findUnique({
+                where: { user_id: userId },
+                select: { id: true, category_id: true }
+            });
+            
+            if (partner && booking.status === 'SEARCHING_PARTNER') {
+                // Check if any item in booking matches partner category
+                const hasMatchingCategory = booking.items.some(
+                    item => item.service.category_id === partner.category_id
+                );
+                if (hasMatchingCategory) {
+                    isEligiblePartner = true;
+                }
+            }
+        }
+
+        if (!isSelf && !isAdmin && !isEligiblePartner) {
             throw new UnauthorizedError('Access denied');
         }
 
-        return booking;
+        // Normalize response for mobile app consistency
+        const b = booking as any;
+        
+        // CUSTOMER PRIVACY: Only show coordinates after acceptance or for self/admin
+        const showCoordinates = isSelf || isAdmin || (booking.status !== 'SEARCHING_PARTNER' && booking.status !== 'PENDING' && booking.partner_id !== null);
+        
+        if (showCoordinates) {
+            // Add top-level latitude/longitude for navigation screens
+            b.latitude = b.service_latitude;
+            b.longitude = b.service_longitude;
+        } else {
+            // Null or omit coordinates if not assigned
+            b.latitude = null;
+            b.longitude = null;
+        }
+        
+        b.isScheduled = b.is_scheduled;
+        b.bookingType = b.booking_type === 'SCHEDULED' ? 'scheduled' : 'instant';
+        b.scheduledDateTime = b.scheduled_date_time;
+
+        if (b.partner) {
+            b.service_partner = {
+                ...b.partner,
+                kycStatus: b.partner.kyc_status,
+                availabilityStatus: b.partner.availability_status
+            };
+        }
+
+        return b;
     }
 
     async getAllBookings(filters: any, userId: string, userRole: string) {
@@ -335,31 +407,40 @@ export class BookingService {
         const partnerId = filters.partnerId;
         const startDate = filters.startDate;
         const endDate = filters.endDate;
+        const type = filters.type; // 'instant' or 'scheduled'
 
         const skip = (page - 1) * limit;
 
         // Build where clause based on role
         let where: any = {};
+        let currentPartner: any = null;
 
         if (userRole === 'CUSTOMER') {
             where.customer_id = userId;
         } else if (userRole === 'SERVICE_PARTNER') {
-            const partner = await prisma.servicePartner.findUnique({
+            currentPartner = await prisma.servicePartner.findUnique({
                 where: { user_id: userId },
             });
-            if (partner) {
+            if (currentPartner) {
+                // Determine which bookings this partner is eligible to see
                 where = {
                     OR: [
-                        { partner_id: partner.id },
+                        { partner_id: currentPartner.id }, // Bookings already assigned to them
                         {
                             AND: [
-                                { partner_id: null },
+                                { partner_id: null }, // Unassigned bookings
                                 { status: { in: ['SEARCHING_PARTNER', 'PENDING'] } },
-                                { items: { some: { service: { category_id: (partner as any).category_id } } } }
+                                { items: { some: { service: { category_id: currentPartner.category_id } } } },
+                                { kyc_status: 'APPROVED' } // Only approved partners can see broad-casted jobs
                             ]
                         }
                     ]
                 };
+
+                // CRITICAL PRIVACY: If partner is NOT approved, they should ONLY see bookings already assigned to them (if any)
+                if (currentPartner.kyc_status !== 'APPROVED') {
+                    where = { partner_id: currentPartner.id };
+                }
             }
         } else if (userRole === 'BUSINESS_PARTNER') {
             // Business partners can see bookings of their service partners
@@ -380,7 +461,25 @@ export class BookingService {
         }
 
         // Apply additional filters
-        if (status) where.status = status;
+        if (status) {
+            const validStatuses = [
+                'PENDING', 'SEARCHING_PARTNER', 'PARTNER_ASSIGNED', 'PARTNER_ACCEPTED', 
+                'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'RATED', 
+                'PARTNER_NOT_FOUND', 'PENDING_ASSIGNMENT', 'PARTNER_ARRIVED'
+            ];
+
+            if (typeof status === 'string' && status.includes(',')) {
+                const statusArray = status.split(',')
+                    .map(s => s.trim().toUpperCase())
+                    .filter(s => validStatuses.includes(s));
+                
+                if (statusArray.length > 0) {
+                    where.status = { in: statusArray };
+                }
+            } else if (validStatuses.includes(status.toUpperCase())) {
+                where.status = status.toUpperCase();
+            }
+        }
         if (customerId) where.customer_id = customerId;
         if (partnerId) where.partner_id = partnerId;
         if (startDate || endDate) {
@@ -389,45 +488,61 @@ export class BookingService {
             if (endDate) where.scheduled_date.lte = new Date(endDate);
         }
 
-        const [bookings, total] = await Promise.all([
-            prisma.booking.findMany({
-                where,
-                skip,
-                take: limit,
-                orderBy: { created_at: 'desc' },
-                include: {
-                    items: {
-                        include: {
-                            service: {
-                                include: {
-                                    category: true,
-                                },
-                            },
-                        },
+        if (type) {
+            where.booking_type = type.toUpperCase() === 'SCHEDULED' ? 'SCHEDULED' : 'INSTANT';
+        }
+
+        let bookings: any[] = [];
+        let total = 0;
+
+        try {
+            // For Service Partners looking for broad-casted jobs, we ignore pagination temporarily 
+            // if we need to filter by distance in-memory (unless we had PostGIS)
+            const results = await Promise.all([
+                prisma.booking.findMany({
+                    where,
+                    skip: (userRole === 'SERVICE_PARTNER' && status === 'SEARCHING_PARTNER') ? 0 : skip,
+                    take: (userRole === 'SERVICE_PARTNER' && status === 'SEARCHING_PARTNER') ? 100 : limit, // Fetch more for radius filtering
+                    orderBy: { created_at: 'desc' },
+                    include: {
+                        items: { include: { service: { include: { category: true } } } },
+                        customer: { select: { id: true, email: true, full_name: true, phone_number: true, profile: true } },
+                        partner: { include: { user: { select: { id: true, full_name: true, phone_number: true } } } },
                     },
-                    customer: {
-                        select: {
-                            id: true,
-                            email: true,
-                            full_name: true,
-                            phone_number: true,
-                        },
-                    },
-                    partner: {
-                        include: {
-                            user: {
-                                select: {
-                                    id: true,
-                                    full_name: true,
-                                    phone_number: true,
-                                },
-                            },
-                        },
-                    },
-                },
-            }),
-            prisma.booking.count({ where }),
-        ]);
+                }),
+                prisma.booking.count({ where }),
+            ]);
+            bookings = results[0];
+            total = results[1] || 0;
+        } catch (error: any) {
+            console.error('❌ [DATABASE ERROR] findMany bookings failed:', error);
+            return {
+                bookings: [],
+                pagination: { page, limit, total: 0, pages: 0 },
+                error: error.message
+            };
+        }
+
+        // Apply Proximity Filtering for Service Partners
+        if (userRole === 'SERVICE_PARTNER' && currentPartner && currentPartner.current_latitude && currentPartner.current_longitude) {
+            bookings = bookings.map(b => {
+                const distance = this.calculateDistance(
+                    currentPartner.current_latitude,
+                    currentPartner.current_longitude,
+                    b.service_latitude,
+                    b.service_longitude
+                );
+                return { ...b, distance_km: distance };
+            });
+
+            // If they are specifically looking for NEW jobs, filter by their radius
+            if (status === 'SEARCHING_PARTNER') {
+                const radius = currentPartner.service_radius || 10;
+                bookings = bookings.filter(b => b.partner_id === currentPartner.id || (b.distance_km && b.distance_km <= radius));
+                total = bookings.length; // Update total for accurate count in radius
+                bookings = bookings.slice(skip, skip + limit); // Apply pagination after filtering
+            }
+        }
 
         // DEBUG: Log what we're returning
         console.log('🔍 [DEBUG] getAllBookings - userRole:', userRole);
@@ -435,23 +550,58 @@ export class BookingService {
         console.log('🔍 [DEBUG] getAllBookings - where clause:', JSON.stringify(where, null, 2));
         console.log('🔍 [DEBUG] getAllBookings - Found bookings:', bookings.length);
         console.log('🔍 [DEBUG] getAllBookings - Total count:', total);
-        if (bookings.length === 0) {
-            // Check if there are ANY bookings for this customer
-            const allCustomerBookings = await prisma.booking.findMany({
-                where: { customer_id: userId },
-                select: { id: true, booking_number: true, status: true, customer_id: true }
-            });
-            console.log('🔍 [DEBUG] All bookings for customer_id:', userId, ':', allCustomerBookings);
-        }
 
-        return {
-            bookings,
+        const isAdmin = userRole === 'SUPER_ADMIN' || userRole === 'ADMIN';
+
+        const result = {
+            bookings: bookings.map((b: any) => {
+                const isSelf = b.customer_id === userId || b.partner?.user_id === userId;
+                const showCoordinates = isSelf || isAdmin || (b.status !== 'SEARCHING_PARTNER' && b.status !== 'PENDING' && b.partner_id !== null);
+
+                return {
+                    ...b,
+                    latitude: showCoordinates ? b.service_latitude : null,
+                    longitude: showCoordinates ? b.service_longitude : null,
+                    isScheduled: b.is_scheduled,
+                    bookingType: b.booking_type === 'SCHEDULED' ? 'scheduled' : 'instant',
+                    scheduledDateTime: b.scheduled_date_time,
+                    distance: b.distance_km ? `${b.distance_km.toFixed(1)} km` : "Nearby"
+                };
+            }),
             pagination: {
                 page,
                 limit,
                 total,
             },
         };
+
+        // If it's a partner looking for new jobs, further format for the dashboard feed
+        if (userRole === 'SERVICE_PARTNER' && status === 'SEARCHING_PARTNER') {
+            (result as any).bookings = result.bookings.map((b: any) => ({
+                id: b.id,
+                serviceName: b.items[0]?.service?.name || 'Service',
+                category: b.items[0]?.service?.category?.name || 'Category',
+                price: b.total_amount,
+                address: b.service_address,
+                latitude: b.latitude,
+                longitude: b.longitude,
+                serviceLatitude: b.latitude,
+                serviceLongitude: b.longitude,
+                customer: {
+                    name: b.customer?.full_name || 'Customer',
+                    profile_pic: b.customer?.profile?.avatar_url || null,
+                },
+                distance: b.distance,
+                createdAt: b.created_at,
+                scheduledTime: b.scheduled_time,
+                scheduledDate: b.scheduled_date,
+                isScheduled: b.isScheduled,
+                bookingType: b.bookingType,
+                scheduledDateTime: b.scheduledDateTime
+            }));
+        }
+
+        return result;
     }
 
     async updateBookingStatus(
@@ -515,21 +665,53 @@ export class BookingService {
                 logger.info(`Earnings distributed for booking ${bookingId}`);
             } catch (error) {
                 logger.error(`Failed to distribute earnings for booking ${bookingId}:`, error);
-                // Consider adding a system alert or retry mechanism here
             }
         }
 
         return updatedBooking;
     }
 
+    private async broadcastBookingCreated(booking: any) {
+        try {
+            const io = getIO();
+            const b = booking as any;
+            
+            // Broadcast to Admin and specific customer
+            io.of('/admin').emit('booking:created', {
+                id: b.id,
+                bookingNumber: b.booking_number,
+                status: b.status,
+                customerName: b.customer?.full_name || 'Anonymous',
+                serviceName: b.items?.[0]?.service?.name || 'N/A',
+                amount: b.total_amount,
+                createdAt: b.created_at,
+                type: b.booking_type === 'SCHEDULED' ? 'scheduled' : 'instant'
+            });
+
+            io.of('/customer').to(b.customer_id).emit('booking:created', {
+                id: b.id,
+                bookingNumber: b.booking_number
+            });
+        } catch (error) {
+            logger.warn('Failed to broadcast booking creation:', error);
+        }
+        
+        // Parallel update stats for admin dashboard
+        broadcastStatsUpdate();
+    }
+
     private async broadcastBookingUpdate(booking: any) {
         try {
             const io = getIO();
+            const b = booking as any;
             const updateData = {
-                id: booking.id,
-                status: booking.status,
-                bookingNumber: booking.booking_number,
-                updatedAt: booking.updated_at,
+                id: b.id,
+                status: b.status,
+                bookingNumber: b.booking_number,
+                updatedAt: b.updated_at,
+                isScheduled: b.is_scheduled,
+                bookingType: b.booking_type === 'SCHEDULED' ? 'scheduled' : 'instant',
+                scheduledDateTime: b.scheduled_date_time
             };
 
             // Notify Customer
@@ -540,11 +722,27 @@ export class BookingService {
                 io.of('/partner').to(booking.partner.user_id).emit('booking:update', updateData);
             }
 
-            // Notify Admins
-            io.of('/admin').emit('booking:update', updateData);
+            // Notify Admins with extended data for the Operations Radar
+            io.of('/admin').emit('booking:update', {
+                ...updateData,
+                customer: b.customer ? {
+                    full_name: b.customer.full_name,
+                    phone_number: b.customer.phone_number
+                } : null,
+                partner: b.partner ? {
+                    user: {
+                        full_name: b.partner.user?.full_name
+                    }
+                } : null,
+                total_amount: b.total_amount,
+                service_address: b.service_address
+            });
         } catch (error) {
             logger.warn('Failed to broadcast booking update:', error);
         }
+
+        // Project new stats to admin dashboard
+        broadcastStatsUpdate();
     }
 
     private async sendBookingNotifications(booking: any, notes?: string) {
@@ -686,11 +884,15 @@ export class BookingService {
         // Notify partner via Socket.IO
         try {
             const io = getIO();
+            const b = updatedBooking as any;
             io.of('/partner').to(partner.user_id).emit('booking:new_assignment', {
-                id: updatedBooking.id,
-                bookingNumber: updatedBooking.booking_number,
-                totalAmount: updatedBooking.total_amount,
-                serviceAddress: updatedBooking.service_address,
+                id: b.id,
+                bookingNumber: b.booking_number,
+                totalAmount: b.total_amount,
+                serviceAddress: b.service_address,
+                isScheduled: b.is_scheduled,
+                bookingType: b.booking_type === 'SCHEDULED' ? 'scheduled' : 'instant',
+                scheduledDateTime: b.scheduled_date_time
             });
 
             // Also send persistent notification
@@ -712,34 +914,47 @@ export class BookingService {
     }
 
     async acceptBooking(bookingId: string, partnerId: string) {
-        console.log(`🔍 [SERVICE DEBUG] acceptBooking: booking=${bookingId}, partner=${partnerId}`);
         const booking = await prisma.booking.findUnique({
             where: { id: bookingId },
-            include: { partner: true },
+            include: { 
+                partner: { include: { user: true } },
+                items: { include: { service: true } }
+            },
         });
 
         if (!booking) {
-            console.log(`❌ [SERVICE DEBUG] Booking not found: ${bookingId}`);
             throw new NotFoundError('Booking not found');
         }
-
-        console.log(`🔍 [SERVICE DEBUG] Booking current status: ${booking.status}, active partner: ${booking.partner_id}`);
 
         // FIFO Claiming logic: If no partner is assigned, allow claiming
         if (!booking.partner_id) {
             if (booking.status !== 'SEARCHING_PARTNER' && booking.status !== 'PENDING') {
-                console.log(`❌ [SERVICE DEBUG] Not claimable. Status: ${booking.status}`);
                 throw new BadRequestError('Booking is no longer available for claiming');
             }
 
-            // Assign the partner and update status to PARTNER_ACCEPTED directly (claiming)
-            return await prisma.booking.update({
-                where: { id: bookingId },
+            // Assign the partner safely using updateMany to ensure only one partner claims it
+            const updateResult = await prisma.booking.updateMany({
+                where: { 
+                    id: bookingId,
+                    partner_id: null,
+                    status: { in: ['SEARCHING_PARTNER', 'PENDING'] }
+                },
                 data: {
                     partner_id: partnerId,
                     partner_assigned_at: new Date(),
                     partner_accepted_at: new Date(),
                     status: 'PARTNER_ACCEPTED',
+                }
+            });
+
+            if (updateResult.count === 0) {
+                throw new BadRequestError('This booking was just claimed by another partner. Please try another one.');
+            }
+
+            // Fetch the updated booking with history and details
+            const result = await prisma.booking.update({
+                where: { id: bookingId },
+                data: {
                     status_history: {
                         create: {
                             status: 'PARTNER_ACCEPTED',
@@ -755,6 +970,14 @@ export class BookingService {
                     }
                 }
             });
+
+            // BROADCAST: Notify other partners that this job is no longer available
+            const categoryId = booking.items[0]?.service?.category_id;
+            if (categoryId) {
+                this.broadcastJobTaken(bookingId, categoryId);
+            }
+
+            return result;
         }
 
         // Traditional acceptance logic (if already assigned)
@@ -774,6 +997,45 @@ export class BookingService {
         );
     }
 
+    async rejectBooking(bookingId: string, partnerId: string, reason?: string) {
+        const booking = await prisma.booking.findUnique({
+            where: { id: bookingId },
+        });
+
+        if (!booking) {
+            throw new NotFoundError('Booking not found');
+        }
+
+        // Only allowed if job is explicitly assigned to this partner
+        if (booking.partner_id !== partnerId) {
+            throw new UnauthorizedError('You are not assigned to this booking');
+        }
+
+        if (booking.status !== 'PARTNER_ASSIGNED') {
+            throw new BadRequestError('Booking can only be rejected if it is in ASSIGNED status');
+        }
+
+        // Release the partner and put booking back to searching state
+        return await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                partner_id: null,
+                partner_assigned_at: null,
+                status: 'SEARCHING_PARTNER',
+                status_history: {
+                    create: {
+                        status: 'SEARCHING_PARTNER',
+                        changed_by: partnerId,
+                        notes: `Partner rejected the assignment. Reason: ${reason || 'Not specified'}`,
+                    },
+                },
+            },
+            include: {
+                customer: true,
+            }
+        });
+    }
+
     async startBooking(bookingId: string, partnerId: string, otp?: string) {
         const booking = await prisma.booking.findUnique({
             where: { id: bookingId },
@@ -787,7 +1049,7 @@ export class BookingService {
             throw new UnauthorizedError('Not assigned to this booking');
         }
 
-        if (booking.status !== 'PARTNER_ACCEPTED' && booking.status !== 'ARRIVED') {
+        if (booking.status !== 'PARTNER_ACCEPTED' && booking.status !== 'PARTNER_ARRIVED') {
             throw new BadRequestError('Booking must be accepted or arrived before starting');
         }
 
@@ -854,7 +1116,7 @@ export class BookingService {
 
         const updatedBooking = await this.updateBookingStatus(
             bookingId,
-            'ARRIVED',
+            'PARTNER_ARRIVED',
             partnerId,
             'Partner arrived at service location'
         );
@@ -891,7 +1153,7 @@ export class BookingService {
             throw new UnauthorizedError('Not assigned to this booking');
         }
 
-        if (booking.status !== 'ARRIVED' && booking.status !== 'IN_PROGRESS') {
+        if (booking.status !== 'PARTNER_ARRIVED' && booking.status !== 'IN_PROGRESS') {
             throw new BadRequestError('Can only upload photos after arrival');
         }
 
@@ -1031,7 +1293,7 @@ export class BookingService {
             const io = getIO();
             const partner = await prisma.servicePartner.findUnique({
                 where: { id: partnerId },
-                include: { bookings: { where: { status: { in: ['PARTNER_ACCEPTED', 'ARRIVED', 'IN_PROGRESS'] } } } },
+                include: { bookings: { where: { status: { in: ['PARTNER_ACCEPTED', 'PARTNER_ARRIVED', 'IN_PROGRESS'] } } } },
             });
 
             if (partner && partner.bookings.length > 0) {
@@ -1286,5 +1548,25 @@ export class BookingService {
         );
 
         return { message: 'Rating submitted successfully' };
+    }
+
+    /**
+     * Notify all partners that a job has been taken/claimed
+     */
+    private broadcastJobTaken(bookingId: string, categoryId: string) {
+        try {
+            const io = getIO();
+            // In a production environment, you'd use a room based on categoryId 
+            // for more efficient broadcasting. For now, we broadcast to all partners 
+            // and the app will filter by bookingId.
+            io.of('/partner').emit('job_taken', {
+                bookingId,
+                categoryId,
+                timestamp: new Date()
+            });
+            logger.info(`Broadcasted job_taken for booking ${bookingId} to partners`);
+        } catch (error) {
+            logger.warn('Failed to broadcast job_taken event:', error);
+        }
     }
 }

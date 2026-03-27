@@ -104,4 +104,19 @@ export class AdminController {
             next(error);
         }
     };
+
+    assignPartnerCategory = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { partnerId, categoryId, partnerType, assignAllServices } = req.body;
+            const result = await this.adminService.assignPartnerCategory(
+                partnerId,
+                partnerType || 'SERVICE',
+                categoryId,
+                assignAllServices === true
+            );
+            res.json(successResponse(result, 'Partner category assigned successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
 }

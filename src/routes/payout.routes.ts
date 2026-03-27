@@ -7,13 +7,20 @@ import { validate } from '../middleware/validate.middleware';
 const router = Router();
 const payoutController = new PayoutController();
 
+/**
+ * @swagger
+ * tags:
+ *   name: Wallet & Payouts
+ *   description: Partner earnings management and bank transfers
+ */
+
 router.use(authenticateToken);
 
 /**
  * @swagger
  * /payouts/request:
  *   post:
- *     summary: Transfer wallet balance to bank account (Min ₹500)
+ *     summary: Request transfer of wallet balance to linked bank account
  *     tags: [Wallet & Payouts]
  *     security:
  *       - bearerAuth: []
@@ -22,15 +29,12 @@ router.use(authenticateToken);
  *         application/json:
  *           schema:
  *             type: object
- *             required:
- *               - amount
+ *             required: [amount]
  *             properties:
- *               amount:
- *                 type: number
- *                 minimum: 500
+ *               amount: { type: number, minimum: 500 }
  *     responses:
  *       200:
- *         description: Payout request submitted
+ *         description: Payout request submitted successfully
  */
 router.post(
     '/request',
@@ -46,13 +50,13 @@ router.post(
  * @swagger
  * /payouts/history:
  *   get:
- *     summary: Track the status of bank transfers
+ *     summary: Track the status and history of my payout requests
  *     tags: [Wallet & Payouts]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: Payout history
+ *         description: List of previous payouts
  */
 router.get(
     '/history',
@@ -61,12 +65,39 @@ router.get(
 );
 
 // Admin routes
+/**
+ * @swagger
+ * /payouts/all:
+ *   get:
+ *     summary: View all pending and processed payout requests (Admin)
+ *     tags: [Wallet & Payouts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of all system payouts
+ */
 router.get(
     '/all',
     authorize('ADMIN', 'SUPER_ADMIN'),
     payoutController.getAllRequests
 );
 
+/**
+ * @swagger
+ * /payouts/{id}/process:
+ *   post:
+ *     summary: Process (Approve/Reject) a payout request (Admin)
+ *     tags: [Wallet & Payouts]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Payout processed successfully
+ */
 router.post(
     '/:id/process',
     authorize('ADMIN', 'SUPER_ADMIN'),

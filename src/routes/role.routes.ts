@@ -5,9 +5,9 @@ import { authenticateToken, authorize } from '../middleware/auth.middleware';
 const router = Router();
 const roleController = new RoleController();
 
-// All routes require authentication and SUPER_ADMIN access for now
+// All routes require authentication and Admin access
 router.use(authenticateToken);
-router.use(authorize('SUPER_ADMIN'));
+router.use(authorize('SUPER_ADMIN', 'ADMIN'));
 
 // Role Management
 router.get('/', roleController.getAllRoles);

@@ -14,37 +14,79 @@ const router = Router();
 router.use(authenticateToken);
 
 /**
- * @route   GET /api/v1/compliance/export
- * @desc    Export user data (GDPR Right to Access)
- * @access  Private
+ * @swagger
+ * tags:
+ *   name: Compliance & Privacy
+ *   description: GDPR data management and user consent
+ */
+
+/**
+ * @swagger
+ * /compliance/export:
+ *   get:
+ *     summary: Export all user data (GDPR Right to Access)
+ *     tags: [Compliance & Privacy]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: User data export initiated
  */
 router.get('/export', exportUserData);
 
 /**
- * @route   GET /api/v1/compliance/download
- * @desc    Download user data as JSON file (GDPR Data Portability)
- * @access  Private
+ * @swagger
+ * /compliance/download:
+ *   get:
+ *     summary: Download exported data as JSON (GDPR Data Portability)
+ *     tags: [Compliance & Privacy]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: JSON data stream
  */
 router.get('/download', downloadUserData);
 
 /**
- * @route   POST /api/v1/compliance/delete-account
- * @desc    Request account deletion (GDPR Right to Erasure)
- * @access  Private
+ * @swagger
+ * /compliance/delete-account:
+ *   post:
+ *     summary: Request permanent account deletion (GDPR Right to Erasure)
+ *     tags: [Compliance & Privacy]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Deletion request recorded
  */
 router.post('/delete-account', requestDataDeletion);
 
 /**
- * @route   GET /api/v1/compliance/consent
- * @desc    Get user consent preferences
- * @access  Private
+ * @swagger
+ * /compliance/consent:
+ *   get:
+ *     summary: View current data collection consent preferences
+ *     tags: [Compliance & Privacy]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Consent settings retrieved
  */
 router.get('/consent', getConsent);
 
 /**
- * @route   PUT /api/v1/compliance/consent
- * @desc    Update consent preferences
- * @access  Private
+ * @swagger
+ * /compliance/consent:
+ *   put:
+ *     summary: Update data collection consent preferences
+ *     tags: [Compliance & Privacy]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Settings updated
  */
 router.put('/consent', updateConsent);
 

@@ -71,6 +71,7 @@ export class UserService {
                 service_partner: true,
                 business_partner: true,
                 wallet: true,
+                custom_role: true,
             },
         });
 
@@ -118,6 +119,7 @@ export class UserService {
             email: admin.email,
             fullName: admin.full_name,
             role: admin.role,
+            roleId: admin.role_id,
             createdAt: admin.created_at,
         };
     }

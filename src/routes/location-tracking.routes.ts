@@ -8,6 +8,16 @@ const locationController = new LocationTrackingController();
 // All routes require authentication
 router.use(authenticateToken);
 
+/**
+ * @swagger
+ * tags:
+ *   name: Real-time Tracking & Alerts
+ *   description: LIVE GPS tracking for partners and customers
+ */
+
+// All routes require authentication
+router.use(authenticateToken);
+
 // ================
 // PARTNER ROUTES
 // ================
@@ -43,7 +53,18 @@ router.post(
     locationController.updateLocation
 );
 
-// Get own location history
+/**
+ * @swagger
+ * /tracking/partner/location/history:
+ *   get:
+ *     summary: Get my own recent location history
+ *     tags: [Real-time Tracking & Alerts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Location history entries
+ */
 router.get(
     '/partner/location/history',
     authorize('SERVICE_PARTNER'),
@@ -54,35 +75,90 @@ router.get(
 // ADMIN ROUTES
 // ================
 
-// Get all online partners with their locations (for live map view)
+/**
+ * @swagger
+ * /tracking/admin/partners/online:
+ *   get:
+ *     summary: Get all online partners for the Admin Live Map
+ *     tags: [Real-time Tracking & Alerts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of online partners with last known GPS
+ */
 router.get(
     '/admin/partners/online',
     authorize('ADMIN', 'SUPER_ADMIN'),
     locationController.getAllOnlinePartners
 );
 
-// Get location history for specific partner
+/**
+ * @swagger
+ * /tracking/admin/partners/{partnerId}/location-history:
+ *   get:
+ *     summary: Get location audit trail for a specific partner
+ *     tags: [Real-time Tracking & Alerts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Historical breadcrumbs
+ */
 router.get(
     '/admin/partners/:partnerId/location-history',
     authorize('ADMIN', 'SUPER_ADMIN'),
     locationController.getPartnerLocationHistory
 );
 
-// Get location history for a booking
+/**
+ * @swagger
+ * /tracking/admin/bookings/{bookingId}/location-history:
+ *   get:
+ *     summary: Get path taken by partner during a specific booking
+ *     tags: [Real-time Tracking & Alerts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Historical breadcrumbs for the job
+ */
 router.get(
     '/admin/bookings/:bookingId/location-history',
     authorize('ADMIN', 'SUPER_ADMIN'),
-    locationController.getBookingLocationHistory
+    locationController.getPartnerLocationHistory
 );
 
-// Get activity logs for a booking
+/**
+ * @swagger
+ * /tracking/admin/bookings/{bookingId}/activity-logs:
+ *   get:
+ *     summary: Get system events log for a specific booking
+ *     tags: [Real-time Tracking & Alerts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of lifecycle events
+ */
 router.get(
     '/admin/bookings/:bookingId/activity-logs',
     authorize('ADMIN', 'SUPER_ADMIN'),
     locationController.getBookingActivityLogs
 );
 
-// Get all activity logs with filters
+/**
+ * @swagger
+ * /tracking/admin/activity-logs:
+ *   get:
+ *     summary: Global activity log viewer with filters
+ *     tags: [Real-time Tracking & Alerts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Filtered activity logs
+ */
 router.get(
     '/admin/activity-logs',
     authorize('ADMIN', 'SUPER_ADMIN'),
@@ -93,7 +169,18 @@ router.get(
 // CUSTOMER ROUTES
 // ================
 
-// Get tracking info for my booking
+/**
+ * @swagger
+ * /tracking/customer/bookings/{bookingId}/tracking:
+ *   get:
+ *     summary: Live tracking of the assigned partner (Customer View)
+ *     tags: [Real-time Tracking & Alerts]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Current partner location for the booking
+ */
 router.get(
     '/customer/bookings/:bookingId/tracking',
     authorize('CUSTOMER'),

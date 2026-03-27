@@ -62,4 +62,32 @@ export class KYCController {
             next(error);
         }
     };
+
+    verifyEkoPan = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { panNumber, fullName } = req.body;
+            const result = await this.kycService.verifyEkoPan(
+                req.user!.userId,
+                panNumber,
+                fullName
+            );
+            res.json(successResponse(result, 'PAN verification processed'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    verifyEkoBank = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { accountNumber, ifscCode } = req.body;
+            const result = await this.kycService.verifyEkoBank(
+                req.user!.userId,
+                accountNumber,
+                ifscCode
+            );
+            res.json(successResponse(result, 'Bank verification processed (Penny Drop)'));
+        } catch (error) {
+            next(error);
+        }
+    };
 }

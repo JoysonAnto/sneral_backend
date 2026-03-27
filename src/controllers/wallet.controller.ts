@@ -53,4 +53,17 @@ export class WalletController {
             next(error);
         }
     };
+
+    getStats = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const data = await this.walletService.getWalletBalance(req.user!.userId);
+            res.json(successResponse({
+                total_earned: data.totalEarned,
+                payouts: data.pendingPayout,
+                balance: data.balance
+            }, 'Wallet stats retrieved successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
 }

@@ -54,6 +54,18 @@ export const createBookingValidator = [
         .trim()
         .isLength({ max: 500 })
         .withMessage('Special instructions too long (max 500 characters)'),
+    body('isScheduled')
+        .optional()
+        .isBoolean()
+        .withMessage('isScheduled must be a boolean'),
+    body('bookingType')
+        .optional()
+        .isIn(['instant', 'scheduled'])
+        .withMessage('Invalid booking type'),
+    body('scheduledDateTime')
+        .optional()
+        .isISO8601()
+        .withMessage('Invalid scheduled date time format'),
 ];
 
 export const updateBookingStatusValidator = [
@@ -116,4 +128,15 @@ export const rateBookingValidator = [
         .trim()
         .isLength({ max: 1000 })
         .withMessage('Review too long (max 1000 characters)'),
+];
+
+export const rejectBookingValidator = [
+    param('id')
+        .isUUID()
+        .withMessage('Invalid booking ID'),
+    body('reason')
+        .optional()
+        .trim()
+        .isLength({ max: 500 })
+        .withMessage('Reason too long (max 500 characters)'),
 ];

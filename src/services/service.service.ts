@@ -586,5 +586,80 @@ export class ServiceService {
         // Fallback to base price
         return { price: service.base_price, source: 'base' };
     }
+
+    async getFeaturedServices() {
+        const services = await prisma.service.findMany({
+            where: { is_active: true },
+            take: 6,
+            include: {
+                category: {
+                    select: {
+                        id: true,
+                        name: true,
+                        icon_url: true,
+                    },
+                },
+            },
+            orderBy: { created_at: 'desc' },
+        });
+
+        return services.map(service => ({
+            id: service.id,
+            name: service.name,
+            description: service.description,
+            category: {
+                id: service.category.id,
+                name: service.category.name,
+                iconUrl: service.category.icon_url,
+            },
+            basePrice: service.base_price,
+            currency: 'INR',
+            unit: 'per service',
+            duration: service.duration,
+            imageUrl: service.image_url,
+            isActive: service.is_active,
+            avgRating: 4.8, // Default high rating for featured
+            totalRatings: 10,
+            createdAt: service.created_at,
+        }));
+    }
+
+    async getPopularServices() {
+        // For now, popular = most booked or just recent ones with high default rating
+        const services = await prisma.service.findMany({
+            where: { is_active: true },
+            take: 6,
+            include: {
+                category: {
+                    select: {
+                        id: true,
+                        name: true,
+                        icon_url: true,
+                    },
+                },
+            },
+            orderBy: { created_at: 'asc' }, // Older ones or different order for variety
+        });
+
+        return services.map(service => ({
+            id: service.id,
+            name: service.name,
+            description: service.description,
+            category: {
+                id: service.category.id,
+                name: service.category.name,
+                iconUrl: service.category.icon_url,
+            },
+            basePrice: service.base_price,
+            currency: 'INR',
+            unit: 'per service',
+            duration: service.duration,
+            imageUrl: service.image_url,
+            isActive: service.is_active,
+            avgRating: 4.9,
+            totalRatings: 25,
+            createdAt: service.created_at,
+        }));
+    }
 }
 

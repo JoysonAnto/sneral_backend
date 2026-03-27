@@ -66,8 +66,20 @@ export const initializeSocket = (server: HTTPServer) => {
         socket.join(socket.userId); // Add simple userId room
         socket.join(`partner:${socket.userId}`);
 
+        // Notify admins that a partner is online
+        io.of('/admin').to('admin').emit('partner:status_update', {
+            userId: socket.userId,
+            status: 'online',
+            socketId: socket.id
+        });
+
         socket.on('disconnect', (reason: string) => {
             logger.info(`Partner ${socket.userId} disconnected: ${reason}`);
+            // Notify admins that a partner is offline
+            io.of('/admin').to('admin').emit('partner:status_update', {
+                userId: socket.userId,
+                status: 'offline'
+            });
         });
     });
 

@@ -1,34 +1,153 @@
 import { Router } from 'express';
 import { UserController } from '../controllers/user.controller';
-import { authenticateToken, authorize } from '../middleware/auth.middleware';
+import { authenticateToken, checkPermission } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validate.middleware';
 import { createAdminValidator, updateUserValidator } from '../validators/user.validator';
 
 const router = Router();
 const userController = new UserController();
 
-// All routes require authentication and admin access
+/**
+ * @swagger
+ * tags:
+ *   name: Users
+ *   description: User management and administrative operations
+ */
+
+// All routes require authentication
 router.use(authenticateToken);
-router.use(authorize('ADMIN', 'SUPER_ADMIN'));
 
-// List all users
-router.get('/', userController.getAllUsers);
+/**
+ * @swagger
+ * /users:
+ *   get:
+ *     summary: List all users
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: A list of users
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden - Insufficient permissions
+ */
+router.get('/', checkPermission('USER_VIEW'), userController.getAllUsers);
 
-// Get user by ID
-router.get('/:id', userController.getUserById);
+/**
+ * @swagger
+ * /users/{id}:
+ *   get:
+ *     summary: Get user by ID
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: User details
+ *       404:
+ *         description: User not found
+ */
+router.get('/:id', checkPermission('USER_VIEW'), userController.getUserById);
 
-// Create admin (SUPER_ADMIN only)
+/**
+ * @swagger
+ * /users/admin:
+ *   post:
+ *     summary: Create an admin user
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *               - password
+ *               - fullName
+ *               - role
+ *             properties:
+ *               email:
+ *                 type: string
+ *               password:
+ *                 type: string
+ *               fullName:
+ *                 type: string
+ *               role:
+ *                 type: string
+ *                 enum: [ADMIN, SUPER_ADMIN]
+ *     responses:
+ *       201:
+ *         description: Admin user created
+ */
 router.post(
     '/admin',
-    authorize('SUPER_ADMIN'),
+    checkPermission('ROLE_MANAGE'),
     validate(createAdminValidator),
     userController.createAdmin
 );
 
-// Update user
-router.patch('/:id', validate(updateUserValidator), userController.updateUser);
+/**
+ * @swagger
+ * /users/{id}:
+ *   patch:
+ *     summary: Update user details
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               fullName:
+ *                 type: string
+ *               phoneNumber:
+ *                 type: string
+ *               isActive:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: User updated successfully
+ */
+router.patch('/:id', checkPermission('USER_MANAGE'), validate(updateUserValidator), userController.updateUser);
 
-// Delete user (SUPER_ADMIN only)
-router.delete('/:id', authorize('SUPER_ADMIN'), userController.deleteUser);
+/**
+ * @swagger
+ * /users/{id}:
+ *   delete:
+ *     summary: Delete user
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: User deleted successfully
+ */
+router.delete('/:id', checkPermission('ROLE_MANAGE'), userController.deleteUser);
 
 export default router;
