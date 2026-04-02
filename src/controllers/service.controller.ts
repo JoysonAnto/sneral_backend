@@ -50,6 +50,12 @@ export class ServiceController {
             const serviceData = {
                 ...req.body,
                 imageUrl,
+                // Ensure numeric fields are converted (FormData sends everything as strings)
+                ...(req.body.basePrice !== undefined && { basePrice: parseFloat(req.body.basePrice) }),
+                ...(req.body.duration !== undefined && { duration: parseInt(req.body.duration) }),
+                ...(req.body.isActive !== undefined && {
+                    isActive: req.body.isActive === 'true' || req.body.isActive === true
+                }),
             };
 
             const service = await this.serviceService.createService(serviceData);
@@ -75,8 +81,8 @@ export class ServiceController {
                 ...req.body,
                 ...(imageUrl && { imageUrl }),
                 // Ensure numeric fields are converted (FormData sends everything as strings)
-                ...(req.body.basePrice && { basePrice: parseFloat(req.body.basePrice) }),
-                ...(req.body.duration && { duration: parseInt(req.body.duration) }),
+                ...(req.body.basePrice !== undefined && { basePrice: parseFloat(req.body.basePrice) }),
+                ...(req.body.duration !== undefined && { duration: parseInt(req.body.duration) }),
                 ...(req.body.isActive !== undefined && {
                     isActive: req.body.isActive === 'true' || req.body.isActive === true
                 }),
@@ -126,6 +132,11 @@ export class ServiceController {
             const categoryData = {
                 ...req.body,
                 iconUrl,
+                // Ensure numeric/boolean fields are converted
+                ...(req.body.displayOrder !== undefined && { displayOrder: parseInt(req.body.displayOrder) }),
+                ...(req.body.isActive !== undefined && {
+                    isActive: req.body.isActive === 'true' || req.body.isActive === true
+                }),
             };
 
             const category = await this.serviceService.createCategory(categoryData);
@@ -137,9 +148,17 @@ export class ServiceController {
 
     updateCategory = async (req: Request, res: Response, next: NextFunction) => {
         try {
+            const updateData = {
+                ...req.body,
+                ...(req.body.displayOrder !== undefined && { displayOrder: parseInt(req.body.displayOrder) }),
+                ...(req.body.isActive !== undefined && {
+                    isActive: req.body.isActive === 'true' || req.body.isActive === true
+                }),
+            };
+
             const category = await this.serviceService.updateCategory(
                 req.params.id,
-                req.body
+                updateData
             );
             res.json(successResponse(category, 'Category updated successfully'));
         } catch (error) {
@@ -159,9 +178,14 @@ export class ServiceController {
 
     setLocationPricing = async (req: Request, res: Response, next: NextFunction) => {
         try {
+            const pricingData = {
+                ...req.body,
+                ...(req.body.price !== undefined && { price: parseFloat(req.body.price) }),
+            };
+
             const pricing = await this.serviceService.setLocationPricing(
                 req.params.id,
-                req.body
+                pricingData
             );
             res.status(201).json(successResponse(pricing, 'Location pricing set successfully'));
         } catch (error) {

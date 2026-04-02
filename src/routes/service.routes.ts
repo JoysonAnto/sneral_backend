@@ -140,23 +140,25 @@ router.patch(
 );
 
 // Location-based pricing - Admin only
-/**
- * @swagger
- * /services/{id}/pricing:
- *   post:
- *     summary: Set dynamic pricing for a service in a specific city/zone
- *     tags: [Services & Categories]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Pricing rule created
- */
+router.get(
+    '/:id/pricing',
+    authenticateToken,
+    checkPermission('SERVICE_MANAGE'),
+    serviceController.getServiceWithLocationPricing
+);
+
 router.post(
     '/:id/pricing',
     authenticateToken,
     checkPermission('SERVICE_MANAGE'),
     serviceController.setLocationPricing
+);
+
+router.delete(
+    '/:id/pricing/:pricingId',
+    authenticateToken,
+    checkPermission('SERVICE_MANAGE'),
+    serviceController.deleteLocationPricing
 );
 
 /**

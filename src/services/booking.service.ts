@@ -415,32 +415,35 @@ export class BookingService {
         let where: any = {};
         let currentPartner: any = null;
 
+
+
         if (userRole === 'CUSTOMER') {
             where.customer_id = userId;
         } else if (userRole === 'SERVICE_PARTNER') {
             currentPartner = await prisma.servicePartner.findUnique({
                 where: { user_id: userId },
             });
+
             if (currentPartner) {
                 // Determine which bookings this partner is eligible to see
-                where = {
-                    OR: [
-                        { partner_id: currentPartner.id }, // Bookings already assigned to them
-                        {
-                            AND: [
-                                { partner_id: null }, // Unassigned bookings
-                                { status: { in: ['SEARCHING_PARTNER', 'PENDING'] } },
-                                { items: { some: { service: { category_id: currentPartner.category_id } } } },
-                                { kyc_status: 'APPROVED' } // Only approved partners can see broad-casted jobs
-                            ]
-                        }
-                    ]
-                };
+                const orConditions: any[] = [
+                    { partner_id: currentPartner.id } // Always see explicitly assigned jobs
+                ];
 
-                // CRITICAL PRIVACY: If partner is NOT approved, they should ONLY see bookings already assigned to them (if any)
-                if (currentPartner.kyc_status !== 'APPROVED') {
-                    where = { partner_id: currentPartner.id };
+                // If approved and has a category, also see unassigned pending jobs in that category
+                if (currentPartner.kyc_status === 'APPROVED' && currentPartner.category_id) {
+                    orConditions.push({
+                        AND: [
+                            { partner_id: null },
+                            { status: { in: ['SEARCHING_PARTNER', 'PENDING'] } },
+                            { items: { some: { service: { category_id: currentPartner.category_id } } } }
+                        ]
+                    });
                 }
+
+                where = { OR: orConditions };
+            } else {
+                console.log(`[DEBUG_API] No currentPartner found for user_id ${userId}`);
             }
         } else if (userRole === 'BUSINESS_PARTNER') {
             // Business partners can see bookings of their service partners
@@ -480,6 +483,7 @@ export class BookingService {
                 where.status = status.toUpperCase();
             }
         }
+
         if (customerId) where.customer_id = customerId;
         if (partnerId) where.partner_id = partnerId;
         if (startDate || endDate) {
@@ -852,8 +856,21 @@ export class BookingService {
             include: { user: true },
         });
 
-        if (!partner || partner.availability_status !== 'AVAILABLE') {
-            throw new BadRequestError('Partner not available');
+        if (!partner) {
+            throw new BadRequestError('Service partner not found');
+        }
+
+        // Fetch the role of the person trying to assign
+        const actor = await prisma.user.findUnique({
+            where: { id: assignedBy },
+            select: { role: true }
+        });
+
+        const isAdmin = actor?.role === 'ADMIN' || actor?.role === 'SUPER_ADMIN';
+
+        // Only enforce availability for non-admins (e.g., BP auto-matching or logic that requires online status)
+        if (!isAdmin && partner.availability_status !== 'AVAILABLE') {
+            throw new BadRequestError('Partner is not currently available for immediate assignment');
         }
 
         // Assign partner
