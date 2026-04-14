@@ -326,6 +326,9 @@ model Booking {
   dynamic_multiplier    Float                    @default(1.0)
   estimated_duration    Int                      @default(0)
   overtime_charge       Float                    @default(0)
+  material_cost         Float                    @default(0)
+  material_bill_image   String?
+  gst_amount            Float                    @default(0)
   start_otp             String?
   group_id              String?
   is_scheduled          Boolean                  @default(false)
@@ -1015,5 +1018,17 @@ enum RecurringStatus {
 enum BookingType {
   INSTANT
   SCHEDULED
+}
+
+model PlatformSettings {
+  id               String   @id @default(uuid())
+  key              String   @unique
+  value            String
+  description      String?
+  updated_by       String?
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  @@map("platform_settings")
 }
 

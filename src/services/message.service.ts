@@ -1,6 +1,9 @@
+
 import prisma from '../config/database';
 import { getIO } from '../socket/socket.server';
 import logger from '../utils/logger';
+
+const namespaces = ['/customer', '/partner', '/admin'];
 
 export class MessageService {
     async getConversations(userId: string) {
@@ -108,13 +111,7 @@ export class MessageService {
         });
 
         return {
-            messages: messages.map(m => ({
-                id: m.id,
-                senderId: m.sender_id,
-                message: m.content,
-                createdAt: m.created_at,
-                read: m.is_read,
-            })),
+            messages: await Promise.all(messages.map(m => this.formatMessage(m))),
             pagination: {
                 page: Number(page),
                 limit: Number(limit),
@@ -123,7 +120,29 @@ export class MessageService {
         };
     }
 
-    async sendMessage(senderId: string, recipientId: string, message: string, bookingId?: string) {
+    async formatMessage(message: any) {
+        const sender = await prisma.user.findUnique({
+            where: { id: message.sender_id },
+            include: { profile: true }
+        });
+
+        return {
+            id: message.id,
+            conversationId: message.booking_id || 'general',
+            text: message.content,
+            contentType: message.content_type,
+            fileUrl: message.file_url,
+            createdAt: message.created_at,
+            sender: {
+                id: sender?.id,
+                name: sender?.full_name || 'Unknown',
+                role: sender?.role,
+                avatarUrl: sender?.profile?.avatar_url
+            }
+        };
+    }
+
+    async sendMessage(senderId: string, recipientId: string, message: string, bookingId?: string, contentType: string = 'text', fileUrl?: string) {
         // Verify recipient exists
         const recipient = await prisma.user.findUnique({
             where: { id: recipientId },
@@ -138,42 +157,42 @@ export class MessageService {
                 sender_id: senderId,
                 receiver_id: recipientId,
                 content: message,
-                content_type: 'text',
+                content_type: contentType,
+                file_url: fileUrl,
                 ...(bookingId && { booking_id: bookingId }),
             },
         });
 
+        const formattedMessage = await this.formatMessage(newMessage);
+
         // Emit Socket.IO event
         try {
             const io = getIO();
-            const messageData = {
-                id: newMessage.id,
-                senderId: newMessage.sender_id,
-                receiverId: newMessage.receiver_id,
-                content: newMessage.content,
-                createdAt: newMessage.created_at,
-                bookingId: newMessage.booking_id,
-            };
+            const roomName = `booking_${bookingId || 'general'}`;
 
-            // Notify recipient in their private room
-            io.of('/customer').to(recipientId).emit('message:new', messageData);
-            io.of('/partner').to(recipientId).emit('message:new', messageData);
+            // Notify everyone in the room (New Spec)
+            namespaces.forEach(ns => {
+                io.of(ns).to(roomName).emit('chat:message', formattedMessage);
+            });
 
-            // Also emit to the sender's other sessions
-            io.of('/customer').to(senderId).emit('message:sent', messageData);
-            io.of('/partner').to(senderId).emit('message:sent', messageData);
+            // Also emit to user-specific rooms for general "new message" notifications
+            namespaces.forEach(ns => {
+                io.of(ns).to(`user:${recipientId}`).emit('message:received', formattedMessage);
+            });
         } catch (error) {
             logger.warn('Failed to emit real-time message event:', error);
         }
 
-        // TODO: Send push notification to recipient
+        return formattedMessage;
+    }
 
-        return {
-            id: newMessage.id,
-            senderId: newMessage.sender_id,
-            receiverId: newMessage.receiver_id,
-            message: newMessage.content,
-            createdAt: newMessage.created_at,
-        };
+    async getConversationHistory(bookingId: string) {
+        const messages = await prisma.message.findMany({
+            where: { booking_id: bookingId },
+            orderBy: { created_at: 'desc' },
+            take: 100
+        });
+
+        return Promise.all(messages.map(m => this.formatMessage(m)));
     }
 }

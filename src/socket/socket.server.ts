@@ -3,6 +3,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import { authenticateSocket } from './middleware/auth.socket';
 import { setupBookingHandlers } from './handlers/booking.handler';
 import { setupMessageHandlers } from './handlers/message.handler';
+import { setupChatHandlers } from './handlers/chat.handler';
 import { setupNotificationHandlers } from './handlers/notification.handler';
 import logger from '../utils/logger';
 
@@ -19,13 +20,17 @@ export const initializeSocket = (server: HTTPServer) => {
     io = new SocketIOServer(server, {
         cors: {
             origin: (origin, callback) => {
-                // Allow requests with no origin (like mobile apps or curl requests)
+                // In development, allow all origins for easier multi-system testing
+                if (process.env.NODE_ENV === 'development') {
+                    return callback(null, true);
+                }
+
                 if (!origin) return callback(null, true);
 
-                // Check if origin is in allowed list or is a localhost variant
                 if (allowedOrigins.indexOf(origin) !== -1 || origin.startsWith('http://localhost:')) {
                     callback(null, true);
                 } else {
+                    logger.warn(`Rejected socket origin: ${origin}`);
                     callback(null, false);
                 }
             },
@@ -43,6 +48,7 @@ export const initializeSocket = (server: HTTPServer) => {
     // Setup event handlers
     setupBookingHandlers(io);
     setupMessageHandlers(io);
+    setupChatHandlers(io);
     setupNotificationHandlers(io);
 
     // Connection logging

@@ -250,6 +250,8 @@ export class BookingService {
 
             for (const partner of partners) {
                 try {
+                    logger.info(`[SOCKET_DEBUG] Attempting to notify partner ${partner.user.full_name} in room: ${partner.user_id}`);
+                    
                     // Send real-time notification via Socket.IO in partner namespace
                     io.of('/partner').to(partner.user_id).emit('new_job', {
                         id: booking.id,
@@ -271,6 +273,14 @@ export class BookingService {
                         scheduledDateTime: (booking as any).scheduled_date_time
                     });
 
+                    // Check if room exists (debug hint)
+                    const room = io.of('/partner').adapter.rooms.get(partner.user_id);
+                    if (!room) {
+                        logger.warn(`[SOCKET_DEBUG] Warning: No connected socket found in room: ${partner.user_id}. Partner might be offline or in wrong namespace.`);
+                    } else {
+                        logger.info(`[SOCKET_DEBUG] Success: Confirmed ${room.size} socket(s) in room: ${partner.user_id}`);
+                    }
+
                     // Create persistent notification
                     await this.notificationService.createNotification(
                         partner.user_id,
@@ -282,7 +292,7 @@ export class BookingService {
 
                     logger.info(`Notified partner ${partner.user.full_name} about booking ${booking.booking_number}`);
                 } catch (error) {
-                    logger.error(`Failed to notify partner ${partner.id}:`, error);
+                    logger.error(`Failed to notify partner ${partner.user.id}:`, error);
                 }
             }
 
@@ -431,6 +441,7 @@ export class BookingService {
                 ];
 
                 // If approved and has a category, also see unassigned pending jobs in that category
+                // If approved and has a category, also see unassigned pending jobs in that category
                 if (currentPartner.kyc_status === 'APPROVED' && currentPartner.category_id) {
                     orConditions.push({
                         AND: [
@@ -540,8 +551,8 @@ export class BookingService {
             });
 
             // If they are specifically looking for NEW jobs, filter by their radius
-            if (status === 'SEARCHING_PARTNER') {
-                const radius = currentPartner.service_radius || 10;
+            if (status && status.includes('SEARCHING_PARTNER')) {
+                const radius = process.env.NODE_ENV === 'development' ? 5000 : (currentPartner.service_radius || 10);
                 bookings = bookings.filter(b => b.partner_id === currentPartner.id || (b.distance_km && b.distance_km <= radius));
                 total = bookings.length; // Update total for accurate count in radius
                 bookings = bookings.slice(skip, skip + limit); // Apply pagination after filtering
@@ -552,6 +563,18 @@ export class BookingService {
         console.log('🔍 [DEBUG] getAllBookings - userRole:', userRole);
         console.log('🔍 [DEBUG] getAllBookings - userId:', userId);
         console.log('🔍 [DEBUG] getAllBookings - where clause:', JSON.stringify(where, null, 2));
+        
+        if (bookings.length === 0 && userRole === 'SERVICE_PARTNER') {
+            const allAvailable = await prisma.booking.findMany({
+                where: { status: { in: ['SEARCHING_PARTNER', 'PENDING'] }, partner_id: null },
+                include: { items: { include: { service: true } } }
+            });
+            console.log(`🔍 [DEBUG] System-wide unassigned bookings: ${allAvailable.length}`);
+            allAvailable.forEach(b => {
+                console.log(`  - Booking ${b.booking_number}: Category ${b.items[0]?.service?.category_id}, Status ${b.status}`);
+            });
+        }
+
         console.log('🔍 [DEBUG] getAllBookings - Found bookings:', bookings.length);
         console.log('🔍 [DEBUG] getAllBookings - Total count:', total);
 
@@ -672,8 +695,60 @@ export class BookingService {
             }
         }
 
+    }
+
+    async addMaterialCost(
+        bookingId: string,
+        partnerId: string,
+        amount: number,
+        billImageUrl?: string
+    ) {
+        const booking = await prisma.booking.findUnique({
+            where: { id: bookingId },
+        });
+
+        if (!booking) {
+            throw new NotFoundError('Booking not found');
+        }
+
+        if (booking.partner_id !== partnerId) {
+            throw new UnauthorizedError('Only the assigned partner can add material costs');
+        }
+
+        if (booking.status === 'COMPLETED' || booking.status === 'CANCELLED') {
+            throw new BadRequestError('Cannot add material costs to a closed booking');
+        }
+
+        const updatedBooking = await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                material_cost: amount,
+                material_bill_image: billImageUrl,
+                total_amount: { increment: amount },
+                remaining_amount: { increment: amount },
+                status_history: {
+                    create: {
+                        status: booking.status,
+                        changed_by: partnerId,
+                        notes: `Added material cost: ₹${amount}`,
+                    },
+                },
+            },
+            include: {
+                customer: true,
+                partner: {
+                    include: { user: true },
+                },
+            },
+        });
+
+        // Broadcast update so customer sees the price change
+        this.broadcastBookingUpdate(updatedBooking);
+
         return updatedBooking;
     }
+
+
 
     private async broadcastBookingCreated(booking: any) {
         try {
@@ -1228,7 +1303,7 @@ export class BookingService {
      * Generate OTP for service completion verification
      */
     async generateCompletionOTP(bookingId: string): Promise<string> {
-        const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
+        const otp = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit OTP
 
         await prisma.booking.update({
             where: { id: bookingId },

@@ -92,3 +92,43 @@ export const servicePhotoUpload = multer({
 // Field configuration for service photos
 export const beforeServicePhotos = servicePhotoUpload.array('before_images', 5); // Max 5 before images
 export const afterServicePhotos = servicePhotoUpload.array('after_images', 5); // Max 5 after images
+
+// Chat attachments configuration
+const chatAttachmentsDir = path.join(process.cwd(), 'uploads', 'chat');
+if (!fs.existsSync(chatAttachmentsDir)) {
+    fs.mkdirSync(chatAttachmentsDir, { recursive: true });
+}
+
+const chatStorage = multer.diskStorage({
+    destination: (_req, _file, cb) => {
+        cb(null, chatAttachmentsDir);
+    },
+    filename: (_req, file, cb) => {
+        const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1E9)}`;
+        const ext = path.extname(file.originalname);
+        cb(null, `chat-${uniqueSuffix}${ext}`);
+    },
+});
+
+const chatFileFilter = (_req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+    const allowedTypes = [
+        'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+        'application/pdf',
+        'video/mp4', 'video/mpeg', 'video/quicktime',
+        'audio/mpeg', 'audio/wav', 'audio/ogg'
+    ];
+
+    if (allowedTypes.includes(file.mimetype)) {
+        cb(null, true);
+    } else {
+        cb(new Error(`Invalid file type: ${file.mimetype}. Supported: JPG, PNG, WEBP, GIF, PDF, MP4, MP3, WAV.`));
+    }
+};
+
+export const chatUpload = multer({
+    storage: chatStorage,
+    limits: {
+        fileSize: 20 * 1024 * 1024, // 20MB limit for chat attachments
+    },
+    fileFilter: chatFileFilter,
+});

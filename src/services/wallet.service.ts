@@ -1,5 +1,7 @@
 import prisma from '../config/database';
 import { NotFoundError, BadRequestError } from '../utils/errors';
+import logger from '../utils/logger';
+
 
 interface AddMoneyData {
     amount: number;
@@ -266,88 +268,108 @@ export class WalletService {
 
         // Calculate Splits
         const totalAmount = booking.total_amount;
-        let commissionRate = 0.15; // Default 15% for independent partners
-        let platformFee = 0;
-        let partnerEarnings = 0;
+        const materialCost = booking.material_cost || 0;
 
-        // Check if associated with Business Partner
-        // The booking might have direct relation or via partner
-        // Using the logic from legacy BookingService:
-        const businessPartnerId = (booking as any).business_partner_id; // Explicit field on Booking
+        // ── DYNAMIC RATES FROM PLATFORM SETTINGS ──────────────────────────────
+        const { PlatformSettingsService } = await import('./platform-settings.service');
+        const settingsService = new PlatformSettingsService();
+        const earningsConfig = await settingsService.getEarningsConfig();
 
+        // For BP bookings, use their negotiated commission rate instead
+        let commissionRate = earningsConfig.commissionRate;
+        const businessPartnerId = booking.business_partner_id;
         if (businessPartnerId) {
-            const bp = await prisma.businessPartner.findUnique({
-                where: { id: businessPartnerId }
-            });
-            if (bp) {
-                commissionRate = bp.commission_rate;
-            }
+            const bp = await prisma.businessPartner.findUnique({ where: { id: businessPartnerId } });
+            if (bp) commissionRate = bp.commission_rate;
         }
 
-        // Calculate Platform Fee (Commission)
-        platformFee = totalAmount * commissionRate;
+        // ── FORMULA ───────────────────────────────────────────────────────────
+        // commissionable = total - material_cost  (no commission on materials)
+        // platform_commission = commissionable × commission_rate
+        // gst_amount = platform_commission × gst_rate
+        // partner_pool = total - platform_commission - gst_amount
+        const commissionableAmount = totalAmount - materialCost;
+        const platformCommission = parseFloat((Math.max(0, commissionableAmount * commissionRate)).toFixed(2));
+        const gstAmount = earningsConfig.gstEnabled
+            ? parseFloat((platformCommission * earningsConfig.gstRate).toFixed(2))
+            : 0;
+        const totalPlatformDeduction = platformCommission + gstAmount;
+        const partnerPool = parseFloat((totalAmount - totalPlatformDeduction).toFixed(2));
 
-        // Calculate optional Tax (GST) if applicable on the commission? 
-        // Or is tax deducted from Provider Share?
-        // For simplicity and matching implementation plan:
-        // "Tax Wallet" gets a cut. Let's say 18% GST is applicable on the Service Fee (Platform Fee).
-        // OR GST is applicable on the Total Booking Amount?
-        // As per PRD: "Tax Wallet (GST/VAT)".
-        // Let's assume Tax is 5% of Total Amount (Service Tax) deducted from Provider's share,
-        // OR assumes price included tax.
-        // Let's stick to the simpler model: Platform Fee is x%, remaining is Provider.
-        // Tax is handled internally by Platform from its fee or deducted from Provider?
-        // I will stick to: Total = PlatformFee + PartnerEarnings.
+        logger.info(`Booking ${booking.booking_number} earnings: total=₹${totalAmount} commission=₹${platformCommission} gst=₹${gstAmount} partnerPool=₹${partnerPool}`);
 
-        partnerEarnings = totalAmount - platformFee;
+        // ── BUSINESS vs SERVICE PARTNER SPLIT ─────────────────────────────────
+        let businessPartnerShare = 0;
+        let servicePartnerShare = partnerPool;
 
-        // Get Platform/Admin User (Super Admin)
+        const partnerId = booking.partner?.id;
+        const bpId = businessPartnerId || booking.partner?.business_partner_id;
+
+        if (partnerId && bpId) {
+            const association = await prisma.partnerAssociation.findFirst({
+                where: { service_partner_id: partnerId, business_partner_id: bpId }
+            });
+            const bpSplitRate = association ? (association.commission_split / 100) : 0.20;
+            businessPartnerShare = parseFloat((partnerPool * bpSplitRate).toFixed(2));
+            servicePartnerShare = parseFloat((partnerPool - businessPartnerShare).toFixed(2));
+        }
+
+        // Get Stakeholders
         const superAdmin = await prisma.user.findFirst({ where: { role: 'SUPER_ADMIN' } });
-        if (!superAdmin) throw new Error('Super Admin not found for Platform Wallet');
+        if (!superAdmin) throw new Error('Super Admin not found');
 
-        // Get Provider User
-        const providerUserId = booking.partner?.user_id;
-        if (!providerUserId) throw new Error('Provider not found for booking');
+        const servicePartnerUser = booking.partner?.user;
+        const businessPartnerUser = booking.business_partner?.user || booking.partner?.business_partner?.user;
 
         await prisma.$transaction(async (tx) => {
-            // 1. Credit Platform Commission
-            await this.updateWallet(tx, superAdmin.id, platformFee, 'CREDIT', 'COMMISSION', bookingId, `Commission for booking #${booking.booking_number}`);
+            // A. Platform Commission → Admin wallet
+            await this.updateWallet(tx, superAdmin.id, platformCommission, 'CREDIT', 'COMMISSION', bookingId,
+                `Platform Commission (${(commissionRate * 100).toFixed(1)}%) for booking #${booking.booking_number}`);
 
-            // 2. Credit Partner (ON HOLD)
-            // We implement this by adding to 'on_hold_balance' and 'balance', but blocking withdrawal
-            const providerWallet = await this.getOrCreateWallet(tx, providerUserId);
+            // B. GST → Admin wallet (separate entry for clean audit trail)
+            if (gstAmount > 0) {
+                await this.updateWallet(tx, superAdmin.id, gstAmount, 'CREDIT', 'TAX', bookingId,
+                    `GST (${(earningsConfig.gstRate * 100).toFixed(1)}%) on commission for booking #${booking.booking_number}`);
+            }
 
-            await tx.wallet.update({
-                where: { user_id: providerUserId },
-                data: {
-                    balance: { increment: partnerEarnings },
-                    on_hold_balance: { increment: partnerEarnings }
-                } as any
-            });
+            // C. Business Partner share (if applicable)
+            if (bpId && businessPartnerUser && businessPartnerShare > 0) {
+                await this.updateWallet(tx, businessPartnerUser.id, businessPartnerShare, 'CREDIT', 'BOOKING_PAYMENT', bookingId,
+                    `Business share for booking #${booking.booking_number}`);
+            }
 
-            await tx.transaction.create({
-                data: {
-                    user_id: providerUserId,
-                    type: 'BOOKING_PAYMENT',
-                    category: 'HOLD', // It is held initially
-                    status: 'COMPLETED',
-                    amount: partnerEarnings,
-                    description: `Earnings from booking #${booking.booking_number} (On Hold)`,
-                    booking_id: bookingId,
-                    balance_before: providerWallet.balance,
-                    balance_after: providerWallet.balance + partnerEarnings,
-                    metadata: {
-                        hold_release_date: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours from now
-                    }
-                } as any
-            });
+            // D. Service Partner — ON HOLD (released via withdrawal request)
+            if (servicePartnerUser) {
+                const spWallet = await this.getOrCreateWallet(tx, servicePartnerUser.id);
+                await tx.wallet.update({
+                    where: { user_id: servicePartnerUser.id },
+                    data: {
+                        balance: { increment: servicePartnerShare },
+                        on_hold_balance: { increment: servicePartnerShare }
+                    } as any
+                });
+                await tx.transaction.create({
+                    data: {
+                        user_id: servicePartnerUser.id,
+                        type: 'BOOKING_PAYMENT',
+                        category: 'HOLD',
+                        status: 'COMPLETED',
+                        amount: servicePartnerShare,
+                        description: `Service payout for booking #${booking.booking_number} (On Hold) | Deducted: Commission ₹${platformCommission} + GST ₹${gstAmount}`,
+                        booking_id: bookingId,
+                        balance_before: spWallet.balance,
+                        balance_after: spWallet.balance + servicePartnerShare
+                    } as any
+                });
+            }
 
-            // 3. Update Booking with Fee Details
+            // E. Stamp booking with full financial breakdown
             await tx.booking.update({
                 where: { id: bookingId },
                 data: {
-                    platform_fee: platformFee,
-                    commission_amount: partnerEarnings
+                    platform_fee: totalPlatformDeduction,
+                    commission_amount: servicePartnerShare,
+                    gst_amount: gstAmount,
                 } as any
             });
         });

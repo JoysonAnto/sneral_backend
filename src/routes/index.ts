@@ -1,3 +1,4 @@
+
 import { Router } from 'express';
 import authRoutes from './auth.routes';
 import bookingRoutes from './booking.routes';
@@ -36,6 +37,14 @@ router.get('/health', (_req, res) => {
         status: 'OK',
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
+    });
+});
+
+// Root API check (prevents fall-through to auth-guarded catch-alls)
+router.get('/', (_req, res) => {
+    res.json({
+        message: 'Snearal Unified API v1',
+        status: 'Running'
     });
 });
 
@@ -84,4 +93,3 @@ router.use(recurringInvoiceRoutes);
 router.use(teamManagementRoutes);
 
 export default router;
-

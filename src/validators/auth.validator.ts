@@ -1,11 +1,25 @@
 import { body } from 'express-validator';
 
-export const registerValidator = [
+// Safe email normaliser: only lowercases and trims — does NOT strip dots or subaddresses.
+// express-validator's normalizeEmail() strips dots from Gmail addresses (e.g. john.doe@gmail.com
+// becomes johndoe@gmail.com), which causes lookups to fail for users who registered with dots.
+const safeEmail = () =>
     body('email')
         .optional()
+        .trim()
+        .customSanitizer((val: string) => (typeof val === 'string' ? val.toLowerCase().trim() : val))
         .isEmail()
-        .withMessage('Please provide a valid email')
-        .normalizeEmail(),
+        .withMessage('Please provide a valid email');
+
+const requiredEmail = () =>
+    body('email')
+        .trim()
+        .customSanitizer((val: string) => (typeof val === 'string' ? val.toLowerCase().trim() : val))
+        .isEmail()
+        .withMessage('Please provide a valid email');
+
+export const registerValidator = [
+    safeEmail(),
     body('password')
         .optional()
         .isLength({ min: 8 })
@@ -37,11 +51,7 @@ export const registerValidator = [
 ];
 
 export const loginValidator = [
-    body('email')
-        .optional()
-        .isEmail()
-        .withMessage('Please provide a valid email')
-        .normalizeEmail(),
+    safeEmail(),
     body('phoneNumber')
         .optional()
         .isMobilePhone('any')
@@ -51,10 +61,7 @@ export const loginValidator = [
 ];
 
 export const verifyEmailValidator = [
-    body('email')
-        .isEmail()
-        .withMessage('Please provide a valid email')
-        .normalizeEmail(),
+    requiredEmail(),
     body('otp')
         .isLength({ min: 6, max: 6 })
         .withMessage('OTP must be 6 digits')
@@ -69,17 +76,11 @@ export const refreshTokenValidator = [
 ];
 
 export const forgotPasswordValidator = [
-    body('email')
-        .isEmail()
-        .withMessage('Please provide a valid email')
-        .normalizeEmail(),
+    requiredEmail(),
 ];
 
 export const resetPasswordValidator = [
-    body('email')
-        .isEmail()
-        .withMessage('Please provide a valid email')
-        .normalizeEmail(),
+    requiredEmail(),
     body('otp')
         .isLength({ min: 6, max: 6 })
         .withMessage('OTP must be 6 digits')

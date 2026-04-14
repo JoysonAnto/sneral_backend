@@ -40,4 +40,43 @@ router.patch(
 router.get('/reports', checkPermission('REPORT_VIEW'), adminController.generateReport);
 router.get('/analytics', checkPermission('REPORT_VIEW'), adminController.getDashboardStats);
 
+/**
+ * @swagger
+ * /admin/settings:
+ *   get:
+ *     summary: Get all platform settings (commission rate, GST rate, etc.)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Platform settings retrieved
+ *   put:
+ *     summary: Update platform commission and GST settings
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               commission_rate:
+ *                 type: number
+ *                 description: "0 to 1 (e.g. 0.15 = 15%)"
+ *               gst_rate:
+ *                 type: number
+ *                 description: "0 to 1 (e.g. 0.18 = 18%)"
+ *               gst_enabled:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Settings updated
+ */
+router.get('/settings', checkPermission('REPORT_VIEW'), adminController.getPlatformSettings);
+router.put('/settings', checkPermission('SERVICE_MANAGE'), adminController.updatePlatformSettings);
+
 export default router;
+

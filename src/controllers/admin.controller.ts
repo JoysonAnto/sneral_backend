@@ -119,4 +119,59 @@ export class AdminController {
             next(error);
         }
     };
+
+    getPlatformSettings = async (_req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { PlatformSettingsService } = await import('../services/platform-settings.service');
+            const settings = await new PlatformSettingsService().getAllSettings();
+            res.json(successResponse(settings, 'Platform settings retrieved successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    updatePlatformSettings = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            // req.body: { commission_rate?: number, gst_rate?: number, gst_enabled?: boolean }
+            const { commission_rate, gst_rate, gst_enabled } = req.body;
+
+            const updates: { key: string; value: string; description?: string }[] = [];
+
+            if (commission_rate !== undefined) {
+                const rate = parseFloat(commission_rate);
+                if (isNaN(rate) || rate < 0 || rate > 1) {
+                    res.status(400).json({ success: false, message: 'commission_rate must be between 0 and 1 (e.g., 0.15 for 15%)' });
+                    return;
+                }
+                updates.push({ key: 'commission_rate', value: rate.toString(), description: `Platform Commission (${(rate * 100).toFixed(1)}%)` });
+                updates.push({ key: 'commission_label', value: `Platform Commission (${(rate * 100).toFixed(1)}%)` });
+            }
+
+            if (gst_rate !== undefined) {
+                const rate = parseFloat(gst_rate);
+                if (isNaN(rate) || rate < 0 || rate > 1) {
+                    res.status(400).json({ success: false, message: 'gst_rate must be between 0 and 1 (e.g., 0.18 for 18%)' });
+                    return;
+                }
+                updates.push({ key: 'gst_rate', value: rate.toString(), description: `GST Rate (${(rate * 100).toFixed(1)}%)` });
+                updates.push({ key: 'gst_label', value: `GST (${(rate * 100).toFixed(1)}%)` });
+            }
+
+            if (gst_enabled !== undefined) {
+                updates.push({ key: 'gst_enabled', value: String(gst_enabled === true || gst_enabled === 'true') });
+            }
+
+            if (updates.length === 0) {
+                res.status(400).json({ success: false, message: 'No valid settings provided to update' });
+                return;
+            }
+
+            const { PlatformSettingsService } = await import('../services/platform-settings.service');
+            const result = await new PlatformSettingsService().updateSettings(updates, req.user!.userId);
+            res.json(successResponse(result, 'Platform settings updated successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
 }
+

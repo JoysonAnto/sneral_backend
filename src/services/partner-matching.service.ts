@@ -113,32 +113,34 @@ export class PartnerMatchingService {
             },
         });
 
-        logger.info(`Found ${partners.length} potential partners`);
+        logger.info(`Found ${partners.length} potential partners in DB for category: ${categoryId}`);
+        partners.forEach(p => {
+            logger.info(`  - Partner: ${p.user.full_name}, Lat: ${p.current_latitude}, Lon: ${p.current_longitude}, Radius: ${p.service_radius}km, KYC: ${p.kyc_status}, Availability: ${p.availability_status}`);
+        });
 
         // Calculate distance for each partner and filter by service radius
         const partnersWithDistance: PartnerWithDistance[] = partners
             .map((partner) => {
-                if (!partner.current_latitude || !partner.current_longitude) {
-                    return null;
-                }
-
-                const distance = this.calculateDistance(
-                    bookingLat,
-                    bookingLon,
-                    partner.current_latitude,
-                    partner.current_longitude
-                );
+                const distance = (partner.current_latitude && partner.current_longitude) 
+                    ? this.calculateDistance(
+                        bookingLat,
+                        bookingLon,
+                        partner.current_latitude,
+                        partner.current_longitude
+                    )
+                    : 999999; // Far away if no location
 
                 return {
                     ...partner,
                     distance,
                 };
             })
-            .filter((p): p is PartnerWithDistance =>
-                p !== null &&
-                p.distance !== undefined &&
-                p.distance <= (p.service_radius || 10)
-            )
+            .filter((p): p is PartnerWithDistance => {
+                if (!p) return false;
+                // DEVELOPMENT BYPASS: In dev mode, we practically ignore the distance constraint to help cross-system testing
+                if (process.env.NODE_ENV === 'development') return true;
+                return p.distance <= (p.service_radius || 10);
+            })
             .sort((a, b) => (a.distance || 0) - (b.distance || 0)); // Sort by distance
 
         logger.info(`${partnersWithDistance.length} partners within service radius`);

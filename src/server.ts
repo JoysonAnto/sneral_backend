@@ -34,9 +34,18 @@ async function startServer() {
         cronService.start();
         logger.info('✅ Cron service started');
 
+        // Seed default platform settings (commission, GST) — idempotent
+        try {
+            const { PlatformSettingsService } = await import('./services/platform-settings.service');
+            await new PlatformSettingsService().seedDefaults();
+            logger.info('✅ Platform settings ready');
+        } catch (settingsError) {
+            logger.warn('⚠️ Could not seed platform settings:', settingsError);
+        }
+
         // Start server
-        httpServer.listen(PORT, () => {
-            logger.info(`🚀 Server running on port ${PORT}`);
+        httpServer.listen(Number(PORT), '0.0.0.0', () => {
+            logger.info(`🚀 Server running on port ${PORT} at http://0.0.0.0:${PORT}`);
             logger.info(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
         });
     } catch (error) {

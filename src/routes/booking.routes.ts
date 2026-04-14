@@ -368,4 +368,43 @@ router.post(
     bookingController.updatePartnerLocation
 );
 
+/**
+ * @swagger
+ * /bookings/{id}/add-materials:
+ *   patch:
+ *     summary: Add material cost with bill proof image URL (Partner Action)
+ *     tags: [Bookings]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - amount
+ *             properties:
+ *               amount:
+ *                 type: number
+ *                 description: Material cost to add (commission-free)
+ *               billImageUrl:
+ *                 type: string
+ *                 description: Cloudinary URL of the uploaded bill photo
+ *     responses:
+ *       200:
+ *         description: Material cost recorded. Commission is NOT applied on this amount.
+ */
+router.patch(
+    '/:id/add-materials',
+    authorize('SERVICE_PARTNER'),
+    bookingController.addMaterialCost
+);
+
 export default router;
+

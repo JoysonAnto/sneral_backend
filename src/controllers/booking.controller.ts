@@ -362,4 +362,39 @@ export class BookingController {
             next(error);
         }
     };
+
+    addMaterialCost = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { id } = req.params;
+            const { amount, billImageUrl } = req.body;
+
+            if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+                res.status(400).json({ success: false, message: 'A valid positive amount is required' });
+                return;
+            }
+
+            // Get partner ID from the authenticated service partner
+            const prismaClient = await import('../config/database');
+            const servicePartner = await prismaClient.default.servicePartner.findUnique({
+                where: { user_id: req.user!.userId },
+            });
+
+            if (!servicePartner) {
+                res.status(403).json({ success: false, message: 'Service partner not found' });
+                return;
+            }
+
+            const updated = await this.bookingService.addMaterialCost(
+                id,
+                servicePartner.id,
+                Number(amount),
+                billImageUrl
+            );
+
+            res.json(successResponse(updated, 'Material cost added successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
 }
+
