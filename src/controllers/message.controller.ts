@@ -16,7 +16,7 @@ export class MessageController {
             const conversations = await this.messageService.getConversations(req.user!.userId);
             return res.json(successResponse(conversations, 'Conversations retrieved successfully'));
         } catch (error) {
-            next(error);
+            return next(error);
         }
     };
 
@@ -35,7 +35,7 @@ export class MessageController {
                 )
             );
         } catch (error) {
-            next(error);
+            return next(error);
         }
     };
 
@@ -77,7 +77,7 @@ export class MessageController {
             const messages = await this.messageService.getConversationHistory(bookingId);
             return res.json(successResponse(messages, 'History retrieved successfully'));
         } catch (error) {
-            next(error);
+            return next(error);
         }
     };
 
@@ -157,7 +157,7 @@ export class MessageController {
 
             return res.status(201).json(successResponse(message, 'Message sent successfully'));
         } catch (error) {
-            next(error);
+            return next(error);
         }
     };
 
@@ -171,7 +171,7 @@ export class MessageController {
             );
             return res.status(201).json(successResponse(message, 'Message sent successfully'));
         } catch (error) {
-            next(error);
+            return next(error);
         }
     };
 
@@ -199,7 +199,7 @@ export class MessageController {
 
             return res.status(201).json(successResponse(message, 'Attachment uploaded and sent'));
         } catch (error) {
-            next(error);
+            return next(error);
         }
     };
 }
