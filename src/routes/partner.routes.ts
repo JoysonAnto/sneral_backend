@@ -235,7 +235,7 @@ router.patch(
  */
 router.get(
     '/:id/performance',
-    authorize('ADMIN', 'SUPER_ADMIN'),
+    authorize('ADMIN', 'SUPER_ADMIN', 'SERVICE_PARTNER', 'BUSINESS_PARTNER'),
     partnerController.getPartnerPerformance
 );
 

@@ -4,6 +4,7 @@ import { NotificationService } from './notification.service';
 import { getIO } from '../socket/socket.server';
 import logger from '../utils/logger';
 import { AdminService } from './admin.service';
+import { fcmService } from './fcm.service';
 
 const broadcastStatsUpdate = async () => {
     try {
@@ -251,7 +252,7 @@ export class BookingService {
             for (const partner of partners) {
                 try {
                     logger.info(`[SOCKET_DEBUG] Attempting to notify partner ${partner.user.full_name} in room: ${partner.user_id}`);
-                    
+
                     // Send real-time notification via Socket.IO in partner namespace
                     io.of('/partner').to(partner.user_id).emit('new_job', {
                         id: booking.id,
@@ -289,6 +290,16 @@ export class BookingService {
                         `New ${serviceItem.service.name} job available ${partner.distance ? `${partner.distance.toFixed(1)}km away` : 'nearby'}`,
                         { bookingId: booking.id }
                     );
+
+                    // FCM push for new job (works even when app is in background)
+                    fcmService.notifyPartnerNewJob(
+                        partner.user_id,
+                        booking.id,
+                        booking.booking_number,
+                        serviceItem.service.name,
+                        booking.total_amount,
+                        partner.distance
+                    ).catch(err => logger.warn('[FCM] notifyPartnerNewJob failed:', err));
 
                     logger.info(`Notified partner ${partner.user.full_name} about booking ${booking.booking_number}`);
                 } catch (error) {
@@ -338,7 +349,7 @@ export class BookingService {
                     },
                 },
                 payments: true,
-                rating: true,
+                reviews: true,
                 status_history: {
                     orderBy: {
                         created_at: 'desc',
@@ -354,7 +365,7 @@ export class BookingService {
         // Check permissions
         const isSelf = booking.customer_id === userId || booking.partner?.user_id === userId;
         const isAdmin = userRole === 'SUPER_ADMIN' || userRole === 'ADMIN';
-        
+
         // Special case for partners viewing broadcasted jobs
         let isEligiblePartner = false;
         if (userRole === 'SERVICE_PARTNER' && !isSelf && !isAdmin) {
@@ -362,7 +373,7 @@ export class BookingService {
                 where: { user_id: userId },
                 select: { id: true, category_id: true }
             });
-            
+
             if (partner && booking.status === 'SEARCHING_PARTNER') {
                 // Check if any item in booking matches partner category
                 const hasMatchingCategory = booking.items.some(
@@ -380,10 +391,10 @@ export class BookingService {
 
         // Normalize response for mobile app consistency
         const b = booking as any;
-        
+
         // CUSTOMER PRIVACY: Only show coordinates after acceptance or for self/admin
         const showCoordinates = isSelf || isAdmin || (booking.status !== 'SEARCHING_PARTNER' && booking.status !== 'PENDING' && booking.partner_id !== null);
-        
+
         if (showCoordinates) {
             // Add top-level latitude/longitude for navigation screens
             b.latitude = b.service_latitude;
@@ -393,7 +404,7 @@ export class BookingService {
             b.latitude = null;
             b.longitude = null;
         }
-        
+
         b.isScheduled = b.is_scheduled;
         b.bookingType = b.booking_type === 'SCHEDULED' ? 'scheduled' : 'instant';
         b.scheduledDateTime = b.scheduled_date_time;
@@ -437,10 +448,14 @@ export class BookingService {
             if (currentPartner) {
                 // Determine which bookings this partner is eligible to see
                 const orConditions: any[] = [
-                    { partner_id: currentPartner.id } // Always see explicitly assigned jobs
+                    {
+                        AND: [
+                            { partner_id: currentPartner.id },
+                            { status: { not: 'CANCELLED' } } // Hide cancelled jobs from the main jobs list
+                        ]
+                    }
                 ];
 
-                // If approved and has a category, also see unassigned pending jobs in that category
                 // If approved and has a category, also see unassigned pending jobs in that category
                 if (currentPartner.kyc_status === 'APPROVED' && currentPartner.category_id) {
                     orConditions.push({
@@ -477,8 +492,8 @@ export class BookingService {
         // Apply additional filters
         if (status) {
             const validStatuses = [
-                'PENDING', 'SEARCHING_PARTNER', 'PARTNER_ASSIGNED', 'PARTNER_ACCEPTED', 
-                'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'RATED', 
+                'PENDING', 'SEARCHING_PARTNER', 'PARTNER_ASSIGNED', 'PARTNER_ACCEPTED',
+                'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'RATED',
                 'PARTNER_NOT_FOUND', 'PENDING_ASSIGNMENT', 'PARTNER_ARRIVED'
             ];
 
@@ -486,7 +501,7 @@ export class BookingService {
                 const statusArray = status.split(',')
                     .map(s => s.trim().toUpperCase())
                     .filter(s => validStatuses.includes(s));
-                
+
                 if (statusArray.length > 0) {
                     where.status = { in: statusArray };
                 }
@@ -563,7 +578,7 @@ export class BookingService {
         console.log('🔍 [DEBUG] getAllBookings - userRole:', userRole);
         console.log('🔍 [DEBUG] getAllBookings - userId:', userId);
         console.log('🔍 [DEBUG] getAllBookings - where clause:', JSON.stringify(where, null, 2));
-        
+
         if (bookings.length === 0 && userRole === 'SERVICE_PARTNER') {
             const allAvailable = await prisma.booking.findMany({
                 where: { status: { in: ['SEARCHING_PARTNER', 'PENDING'] }, partner_id: null },
@@ -754,7 +769,7 @@ export class BookingService {
         try {
             const io = getIO();
             const b = booking as any;
-            
+
             // Broadcast to Admin and specific customer
             io.of('/admin').emit('booking:created', {
                 id: b.id,
@@ -774,10 +789,18 @@ export class BookingService {
         } catch (error) {
             logger.warn('Failed to broadcast booking creation:', error);
         }
-        
+
+        // FCM push: notify customer + all admins about this new booking (fire-and-forget)
+        const b = booking as any;
+        fcmService.notifyCustomerBookingCreated(b.customer_id, b.booking_number, b.id)
+            .catch(err => logger.warn('[FCM] notifyCustomerBookingCreated failed:', err));
+        fcmService.notifyAdminsNewBooking(b.id, b.booking_number, b.customer?.full_name ?? 'Customer', b.total_amount ?? 0)
+            .catch(err => logger.warn('[FCM] notifyAdminsNewBooking failed:', err));
+
         // Parallel update stats for admin dashboard
         broadcastStatsUpdate();
     }
+
 
     private async broadcastBookingUpdate(booking: any) {
         try {
@@ -826,59 +849,127 @@ export class BookingService {
 
     private async sendBookingNotifications(booking: any, notes?: string) {
         const customerId = booking.customer_id;
-        const partnerId = booking.partner?.user_id;
+        const partnerUserId = booking.partner?.user_id;
+        const partnerName: string = booking.partner?.user?.full_name ?? 'Your technician';
+        const bookingId: string = booking.id;
+        const bookingNumber: string = booking.booking_number;
+        const amount: number = booking.total_amount ?? 0;
 
         try {
             switch (booking.status) {
-                case 'PARTNER_ACCEPTED':
+                case 'PARTNER_ASSIGNED':
+                    // DB notification
                     await this.notificationService.createNotification(
                         customerId,
                         'BOOKING_ASSIGNED',
                         'Technician Assigned',
-                        `Your booking ${booking.booking_number} has been accepted by ${booking.partner.user.full_name}.`,
-                        { bookingId: booking.id }
+                        `A technician has been assigned to your booking ${bookingNumber}.`,
+                        { bookingId }
                     );
+                    // FCM push
+                    fcmService.notifyCustomerPartnerAssigned(customerId, bookingNumber, bookingId, partnerName)
+                        .catch(e => logger.warn('[FCM] customerPartnerAssigned:', e));
+                    if (partnerUserId) {
+                        const serviceName = booking.items?.[0]?.service?.name ?? 'Service';
+                        fcmService.notifyPartnerAssigned(partnerUserId, bookingId, bookingNumber, serviceName, booking.customer?.full_name ?? 'Customer')
+                            .catch(e => logger.warn('[FCM] partnerAssigned:', e));
+                    }
                     break;
+
+                case 'PARTNER_ACCEPTED':
+                    await this.notificationService.createNotification(
+                        customerId,
+                        'BOOKING_ASSIGNED',
+                        'Technician On the Way',
+                        `${partnerName} has accepted your booking ${bookingNumber} and is heading your way.`,
+                        { bookingId }
+                    );
+                    fcmService.notifyCustomerPartnerAccepted(customerId, bookingNumber, bookingId, partnerName)
+                        .catch(e => logger.warn('[FCM] customerPartnerAccepted:', e));
+                    break;
+
+                case 'PARTNER_ARRIVED':
+                    await this.notificationService.createNotification(
+                        customerId,
+                        'PARTNER_ARRIVED',
+                        'Technician Arrived',
+                        `${partnerName} has arrived at your location for booking ${bookingNumber}.`,
+                        { bookingId }
+                    );
+                    fcmService.notifyCustomerPartnerArrived(customerId, bookingNumber, bookingId, partnerName)
+                        .catch(e => logger.warn('[FCM] customerPartnerArrived:', e));
+                    break;
+
                 case 'IN_PROGRESS':
                     await this.notificationService.createNotification(
                         customerId,
-                        'BOOKING_COMPLETED', // Using a generic type for now or add TECH_ARRIVED
-                        'Technician Arrived',
-                        `Your technician ${booking.partner.user.full_name} has arrived and started the service.`,
-                        { bookingId: booking.id }
+                        'BOOKING_STARTED',
+                        'Service Started',
+                        `${partnerName} has started your service for booking ${bookingNumber}.`,
+                        { bookingId }
                     );
+                    fcmService.notifyCustomerServiceStarted(customerId, bookingNumber, bookingId, partnerName)
+                        .catch(e => logger.warn('[FCM] customerServiceStarted:', e));
                     break;
+
                 case 'COMPLETED':
+                    // Customer
                     await this.notificationService.createNotification(
                         customerId,
                         'BOOKING_COMPLETED',
                         'Service Completed',
-                        `Your service for booking ${booking.booking_number} is completed. Please rate our service.`,
-                        { bookingId: booking.id }
+                        `Your service for booking ${bookingNumber} is complete. Please rate your experience.`,
+                        { bookingId }
                     );
+                    fcmService.notifyCustomerServiceCompleted(customerId, bookingNumber, bookingId)
+                        .catch(e => logger.warn('[FCM] customerServiceCompleted:', e));
+                    // Business partner if applicable
+                    if ((booking as any).business_partner_id) {
+                        const bp = await prisma.businessPartner.findUnique({
+                            where: { id: (booking as any).business_partner_id },
+                            select: { user_id: true }
+                        });
+                        if (bp) {
+                            fcmService.notifyBusinessPartnerBookingCompleted(bp.user_id, bookingNumber, bookingId, amount)
+                                .catch(e => logger.warn('[FCM] bpBookingCompleted:', e));
+                        }
+                    }
                     break;
+
                 case 'CANCELLED':
                     await this.notificationService.createNotification(
                         customerId,
-                        'GENERAL',
+                        'BOOKING_CANCELLED',
                         'Booking Cancelled',
-                        `Your booking ${booking.booking_number} has been cancelled. ${notes || ''}`,
-                        { bookingId: booking.id }
+                        `Your booking ${bookingNumber} has been cancelled. ${notes || ''}`,
+                        { bookingId }
                     );
-                    if (partnerId) {
-                        const partner = await prisma.servicePartner.findUnique({
-                            where: { id: partnerId }
-                        });
-                        if (partner) {
-                            await this.notificationService.createNotification(
-                                partner.user_id,
-                                'GENERAL',
-                                'Booking Cancelled',
-                                `Booking ${booking.booking_number} has been cancelled.`,
-                                { bookingId: booking.id }
-                            );
-                        }
+                    fcmService.notifyCustomerBookingCancelled(customerId, bookingNumber, bookingId, notes)
+                        .catch(e => logger.warn('[FCM] customerBookingCancelled:', e));
+                    if (partnerUserId) {
+                        await this.notificationService.createNotification(
+                            partnerUserId,
+                            'BOOKING_CANCELLED',
+                            'Booking Cancelled',
+                            `Booking ${bookingNumber} has been cancelled by the customer.`,
+                            { bookingId }
+                        );
+                        fcmService.notifyPartnerBookingCancelled(partnerUserId, bookingNumber, bookingId)
+                            .catch(e => logger.warn('[FCM] partnerBookingCancelled:', e));
                     }
+                    break;
+
+                case 'PARTNER_NOT_FOUND':
+                    await this.notificationService.createNotification(
+                        customerId,
+                        'GENERAL',
+                        'No Partner Available',
+                        `We could not find a technician for booking ${bookingNumber} right now. We will keep trying.`,
+                        { bookingId }
+                    );
+                    // Notify admins via FCM
+                    fcmService.notifyAdminsPartnerNotFound(bookingId, bookingNumber)
+                        .catch(e => logger.warn('[FCM] adminsPartnerNotFound:', e));
                     break;
             }
         } catch (error) {
@@ -1008,7 +1099,7 @@ export class BookingService {
     async acceptBooking(bookingId: string, partnerId: string) {
         const booking = await prisma.booking.findUnique({
             where: { id: bookingId },
-            include: { 
+            include: {
                 partner: { include: { user: true } },
                 items: { include: { service: true } }
             },
@@ -1026,7 +1117,7 @@ export class BookingService {
 
             // Assign the partner safely using updateMany to ensure only one partner claims it
             const updateResult = await prisma.booking.updateMany({
-                where: { 
+                where: {
                     id: bookingId,
                     partner_id: null,
                     status: { in: ['SEARCHING_PARTNER', 'PENDING'] }
@@ -1108,7 +1199,7 @@ export class BookingService {
         }
 
         // Release the partner and put booking back to searching state
-        return await prisma.booking.update({
+        const updatedBooking = await prisma.booking.update({
             where: { id: bookingId },
             data: {
                 partner_id: null,
@@ -1126,6 +1217,22 @@ export class BookingService {
                 customer: true,
             }
         });
+
+        // Re-trigger partner matching to find someone else immediately
+        this.findAndNotifyPartners(bookingId).catch(err => logger.error(`Re-assignment error after reject for ${bookingId}:`, err));
+
+        // Notify customer that we're still looking
+        try {
+            await this.notificationService.createNotification(
+                updatedBooking.customer_id,
+                'GENERAL',
+                'Searching for Partner',
+                `Technician was unavailable. We're searching for another partner for your booking.`,
+                { bookingId: updatedBooking.id }
+            );
+        } catch (e) { }
+
+        return updatedBooking;
     }
 
     async startBooking(bookingId: string, partnerId: string, otp?: string) {
@@ -1516,12 +1623,13 @@ export class BookingService {
         );
     }
 
-    async cancelBooking(bookingId: string, userId: string, reason: string) {
+    async cancelBooking(bookingId: string, userId: string, role: string, reason: string) {
         const booking = await prisma.booking.findUnique({
             where: { id: bookingId },
         });
-
+        console.log(booking)
         if (!booking) {
+            console.log("Booking not found")
             throw new NotFoundError('Booking not found');
         }
 
@@ -1541,6 +1649,61 @@ export class BookingService {
         // Check if cancellation is allowed
         if (booking.status === 'COMPLETED' || booking.status === 'CANCELLED') {
             throw new BadRequestError('Cannot cancel booking in current status');
+        }
+
+        // Restriction: If service partner accepted the job, do not allow customer to cancel
+        if (role === 'CUSTOMER') {
+            const restrictedStatuses = ['PARTNER_ACCEPTED', 'PARTNER_ARRIVED', 'IN_PROGRESS'];
+            if (restrictedStatuses.includes(booking.status)) {
+                console.log('Cannot cancel the booking once it has been accepted by a partner. Please contact support for assistance.');
+                throw new BadRequestError('Cannot cancel the booking once it has been accepted by a partner. Please contact support for assistance.');
+            }
+        }
+
+        // 🌟 PARTNER CANCELLATION LOGIC
+        // If a partner cancels, we put it back in the pool instead of cancelling the whole booking
+        if (role === 'SERVICE_PARTNER') {
+            const updatedBooking = await prisma.booking.update({
+                where: { id: bookingId },
+                data: {
+                    partner_id: null,
+                    partner_assigned_at: null,
+                    partner_accepted_at: null,
+                    status: 'SEARCHING_PARTNER',
+                    status_history: {
+                        create: {
+                            status: 'SEARCHING_PARTNER',
+                            changed_by: userId,
+                            notes: `Service Partner cancelled the booking assignment. Reason: ${reason}`,
+                        },
+                    },
+                },
+                include: {
+                    customer: true,
+                    items: { include: { service: true } }
+                }
+            });
+
+            // Notify Customer that we're searching again
+            try {
+                await this.notificationService.createNotification(
+                    updatedBooking.customer_id,
+                    'GENERAL',
+                    'Searching for new technician',
+                    `Your assigned technician had to cancel. We are searching for a new one for you.`,
+                    { bookingId: updatedBooking.id }
+                );
+
+                // Also broadcast socket update
+                this.broadcastBookingUpdate(updatedBooking);
+            } catch (error) {
+                logger.error('Failed to notify customer of partner cancellation:', error);
+            }
+
+            // Re-trigger partner matching
+            this.findAndNotifyPartners(bookingId).catch(err => logger.error(`Re-assignment error after partner cancel for ${bookingId}:`, err));
+
+            return updatedBooking;
         }
 
         // Calculate refund amount based on cancellation time
@@ -1592,44 +1755,14 @@ export class BookingService {
             throw new BadRequestError('No partner assigned to rate');
         }
 
-        // Check if already rated
-        const existingRating = await prisma.rating.findUnique({
-            where: { booking_id: bookingId },
+        // Delegate to ReviewService for the new canonical flow (backward compat)
+        const { ReviewService } = await import('./review.service');
+        const reviewService = new ReviewService();
+        await reviewService.submitReview(bookingId, customerId, 'CUSTOMER', {
+            rating,
+            comment: review,
+            type: 'CUSTOMER_TO_PARTNER',
         });
-
-        if (existingRating) {
-            throw new BadRequestError('Booking already rated');
-        }
-
-        // Create rating
-        await prisma.rating.create({
-            data: {
-                booking_id: bookingId,
-                rater_id: customerId,
-                rated_id: (booking as any).partner?.user_id || (booking as any).partner_id,
-                rating,
-                review,
-            },
-        });
-
-        // Update partner average rating
-        const partner = await prisma.servicePartner.findUnique({
-            where: { id: booking.partner_id },
-        });
-
-        if (partner) {
-            const totalRatings = partner.total_ratings + 1;
-            const newAvgRating =
-                ((partner.avg_rating * partner.total_ratings) + rating) / totalRatings;
-
-            await prisma.servicePartner.update({
-                where: { id: booking.partner_id },
-                data: {
-                    avg_rating: newAvgRating,
-                    total_ratings: totalRatings,
-                },
-            });
-        }
 
         // Update booking status to RATED
         await this.updateBookingStatus(

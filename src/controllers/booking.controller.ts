@@ -190,6 +190,7 @@ export class BookingController {
             const booking = await this.bookingService.cancelBooking(
                 req.params.id,
                 req.user!.userId,
+                req.user!.role,
                 req.body.reason
             );
             res.json(successResponse(booking, 'Booking cancelled successfully'));

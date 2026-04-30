@@ -62,4 +62,36 @@ export class NotificationController {
             next(error);
         }
     };
+
+    /**
+     * POST /notifications/register-device
+     * Body: { fcmToken: string }
+     * Called by mobile app after login to enable push notifications.
+     */
+    registerDevice = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { fcmToken } = req.body;
+            if (!fcmToken || typeof fcmToken !== 'string') {
+                res.status(400).json({ success: false, message: 'fcmToken is required' });
+                return;
+            }
+            const result = await this.notificationService.updateFcmToken(req.user!.userId, fcmToken);
+            res.json(successResponse(null, result.message));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    /**
+     * DELETE /notifications/unregister-device
+     * Called by mobile app on logout to stop push notifications.
+     */
+    unregisterDevice = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const result = await this.notificationService.removeFcmToken(req.user!.userId);
+            res.json(successResponse(null, result.message));
+        } catch (error) {
+            next(error);
+        }
+    };
 }

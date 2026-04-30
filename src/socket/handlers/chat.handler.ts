@@ -13,10 +13,32 @@ export const setupChatHandlers = (io: SocketIOServer) => {
             const userId = socket.userId;
 
             // 🟢 chat:join - Join a conversation room (SPEC: booking_${conversationId})
-            socket.on('chat:join', (data: { conversationId: string }) => {
-                const roomName = `booking_${data.conversationId}`;
-                socket.join(roomName);
-                logger.info(`User ${userId} joined room ${roomName}`);
+            socket.on('chat:join', async (data: { conversationId: string }) => {
+                try {
+                    const booking = await prisma.booking.findUnique({
+                        where: { id: data.conversationId },
+                        include: { partner: true }
+                    });
+
+                    if (!booking) {
+                        return socket.emit('error', { message: 'Booking not found' });
+                    }
+
+                    const isCustomer = booking.customer_id === userId;
+                    const isPartner = booking.partner?.user_id === userId;
+                    const isAdmin = socket.role === 'ADMIN' || socket.role === 'SUPER_ADMIN';
+                    
+                    if (!isCustomer && !isPartner && !isAdmin) {
+                        return socket.emit('error', { message: 'You are not a participant in this booking' });
+                    }
+
+                    const roomName = `booking_${data.conversationId}`;
+                    socket.join(roomName);
+                    logger.info(`User ${userId} joined room ${roomName}`);
+                } catch (error) {
+                    logger.error(`Error joining room: ${error}`);
+                    socket.emit('error', { message: 'Failed to join room' });
+                }
             });
 
             // 🔴 chat:leave - Leave a conversation room

@@ -1,6 +1,7 @@
 import prisma from '../config/database';
 import { getIO } from '../socket/socket.server';
 import logger from '../utils/logger';
+import { sendPushToToken } from './fcm.service';
 
 export class NotificationService {
     async getNotifications(userId: string, filters: any) {
@@ -141,8 +142,58 @@ export class NotificationService {
             logger.warn(`Could not send real-time notification to user ${userId}: ${error}`);
         }
 
-        // TODO: Send push notification via FCM
+        // Send FCM push notification if user has a registered device token
+        try {
+            const user = await prisma.user.findUnique({
+                where: { id: userId },
+                select: { fcm_token: true },
+            });
+
+            if (user?.fcm_token) {
+                const pushed = await sendPushToToken(user.fcm_token, {
+                    title,
+                    body: message,
+                    data: {
+                        type,
+                        notificationId: notification.id,
+                        ...(data ? Object.fromEntries(
+                            Object.entries(data).map(([k, v]) => [k, String(v)])
+                        ) : {}),
+                    },
+                });
+                if (pushed) {
+                    logger.info(`[FCM] Push sent to user ${userId} for type=${type}`);
+                }
+            }
+        } catch (fcmError) {
+            logger.warn(`[FCM] Could not send push to user ${userId}: ${fcmError}`);
+        }
 
         return notification;
+    }
+
+    /**
+     * Called by the mobile app after login to register / refresh the FCM device token.
+     * A user can have only one active token at a time (last-device wins).
+     */
+    async updateFcmToken(userId: string, fcmToken: string) {
+        await prisma.user.update({
+            where: { id: userId },
+            data: { fcm_token: fcmToken },
+        });
+        logger.info(`[FCM] Token registered for user ${userId}`);
+        return { message: 'Device token registered successfully' };
+    }
+
+    /**
+     * Remove the FCM token (e.g., on logout).
+     */
+    async removeFcmToken(userId: string) {
+        await prisma.user.update({
+            where: { id: userId },
+            data: { fcm_token: null },
+        });
+        logger.info(`[FCM] Token removed for user ${userId}`);
+        return { message: 'Device token removed' };
     }
 }

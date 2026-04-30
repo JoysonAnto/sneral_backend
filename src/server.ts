@@ -1,3 +1,4 @@
+// Restart trigger: 2026-04-25T09:25
 import 'dotenv/config';
 import { initializeSentry } from './config/sentry';
 initializeSentry();
@@ -8,6 +9,10 @@ import prisma from './config/database';
 import { connectRedis } from './config/redis';
 import { initializeSocket } from './socket/socket.server';
 import { cronService } from './services/cron.service';
+import { initializeFirebase } from './config/firebase';
+
+// Initialize Firebase Admin SDK as early as possible
+initializeFirebase();
 
 const PORT = process.env.PORT || 3000;
 
@@ -76,3 +81,4 @@ process.on('SIGINT', async () => {
 });
 
 startServer();
+ 

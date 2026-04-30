@@ -27,6 +27,7 @@ import locationTrackingRoutes from './location-tracking.routes';
 import roleRoutes from './role.routes';
 import addressRoutes from './address.routes';
 import servicePartnerRoutes from './service-partner.routes';
+import reviewRoutes from './review.routes';
 
 
 const router = Router();
@@ -62,6 +63,7 @@ router.use('/addresses', addressRoutes);
 router.use('/services', serviceRoutes);
 router.use('/bookings', bookingRoutes);
 router.use('/jobs', bookingRoutes); // Alias for partner app
+router.use('/reviews', reviewRoutes); // Review endpoints under /reviews prefix
 
 // 4. PARTNER & WALLET ROUTES
 router.use('/partners', partnerRoutes);

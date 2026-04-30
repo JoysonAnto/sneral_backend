@@ -29,6 +29,9 @@ model User {
   updated_at              DateTime            @updatedAt
   is_active               Boolean             @default(true)
   role_id                 String?
+  fcm_token               String?
+  avg_rating              Float               @default(0)
+  total_reviews           Int                 @default(0)
   audit_logs              AuditLog[]
   bookings                Booking[]           @relation("CustomerBookings")
   business_partner        BusinessPartner?
@@ -37,8 +40,8 @@ model User {
   notifications           Notification[]
   payments                Payment[]
   profile                 Profile?
-  ratings_received        Rating[]            @relation("RatingReceiver")
-  ratings_given           Rating[]            @relation("RatingGiver")
+  reviews_received        Review[]            @relation("ReviewReceiver")
+  reviews_given           Review[]            @relation("ReviewGiver")
   service_partner         ServicePartner?
   transactions            Transaction[]
   custom_role             Role?               @relation(fields: [role_id], references: [id])
@@ -344,7 +347,7 @@ model Booking {
   messages              Message[]
   location_history      PartnerLocationHistory[]
   payments              Payment[]
-  rating                Rating?
+  reviews               Review[]
 
   @@index([customer_id])
   @@index([partner_id])
@@ -557,22 +560,7 @@ model KycDocument {
   @@map("kyc_documents")
 }
 
-model Rating {
-  id         String   @id @default(uuid())
-  booking_id String   @unique
-  rater_id   String
-  rated_id   String
-  rating     Int
-  review     String?
-  created_at DateTime @default(now())
-  booking    Booking  @relation(fields: [booking_id], references: [id])
-  rated      User     @relation("RatingReceiver", fields: [rated_id], references: [id])
-  rater      User     @relation("RatingGiver", fields: [rater_id], references: [id])
 
-  @@index([rater_id])
-  @@index([rated_id])
-  @@map("ratings")
-}
 
 model AuditLog {
   id            String   @id @default(uuid())
@@ -975,6 +963,13 @@ enum NotificationType {
   MESSAGE_RECEIVED
   GENERAL
   KYC_ACTION_REQUIRED
+  NEW_BOOKING
+  BOOKING_CANCELLED
+  PARTNER_ARRIVED
+  BOOKING_STARTED
+  PAYMENT_COMPLETED
+  PAYOUT_PROCESSED
+  TEAM_INVITATION
 }
 
 enum TeamMemberRole {
@@ -1032,3 +1027,26 @@ model PlatformSettings {
   @@map("platform_settings")
 }
 
+model Review {
+  id          String     @id @default(uuid())
+  booking_id  String
+  reviewer_id String
+  reviewee_id String
+  rating      Int
+  comment     String?
+  type        ReviewType
+  created_at  DateTime   @default(now())
+  booking     Booking    @relation(fields: [booking_id], references: [id], onDelete: Cascade)
+  reviewer    User       @relation("ReviewGiver", fields: [reviewer_id], references: [id])
+  reviewee    User       @relation("ReviewReceiver", fields: [reviewee_id], references: [id])
+
+  @@unique([booking_id, type])
+  @@index([reviewee_id])
+  @@index([reviewer_id])
+  @@map("reviews")
+}
+
+enum ReviewType {
+  CUSTOMER_TO_PARTNER
+  PARTNER_TO_CUSTOMER
+}

@@ -43,7 +43,38 @@ export class MessageController {
     // New Spec: id is likely the bookingId (context of conversation)
     getConversationHistory = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const messages = await this.messageService.getConversationHistory(req.params.id);
+            const bookingId = req.params.id;
+            const userId = req.user!.userId;
+            const userRole = req.user!.role;
+
+            // Verify access to this booking
+            const booking = await prisma.booking.findUnique({
+                where: { id: bookingId },
+                include: { partner: true }
+            });
+
+            if (!booking) {
+                return res.status(404).json({ message: 'Booking not found' });
+            }
+
+            const isCustomer = booking.customer_id === userId;
+            const isPartner = booking.partner?.user_id === userId;
+            const isAdmin = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
+
+            // Business Partner check
+            let isBusinessPartner = false;
+            if (userRole === 'BUSINESS_PARTNER') {
+                const bp = await prisma.businessPartner.findUnique({
+                    where: { user_id: userId }
+                });
+                isBusinessPartner = bp?.id === booking.business_partner_id;
+            }
+
+            if (!isCustomer && !isPartner && !isAdmin && !isBusinessPartner) {
+                return res.status(403).json({ message: 'You do not have permission to view this conversation' });
+            }
+
+            const messages = await this.messageService.getConversationHistory(bookingId);
             return res.json(successResponse(messages, 'History retrieved successfully'));
         } catch (error) {
             next(error);
@@ -55,30 +86,75 @@ export class MessageController {
     sendSpecMessage = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const { text, bookingId } = req.body;
-            
+            const conversationId = bookingId || req.params.id;
+            const userId = req.user!.userId;
+            const userRole = req.user!.role;
+
             // Find receiver (the other party in the booking)
             const booking = await prisma.booking.findUnique({
-                where: { id: bookingId || req.params.id },
-                select: { customer_id: true, partner_id: true }
+                where: { id: conversationId },
+                select: { customer_id: true, partner_id: true, business_partner_id: true }
             });
 
             if (!booking) {
+                console.warn(`Message attempt for non-existent booking: ${conversationId}`);
                 return res.status(404).json({ message: 'Booking not found' });
             }
+            // console.log(booking);
+            let receiverId: string | null = null;
 
-            // If current user is customer, receiver is partner, and vice versa
-            const receiverId = req.user!.role === 'CUSTOMER' ? booking.partner_id : booking.customer_id;
+            if (userRole === 'CUSTOMER') {
+                // Verify this is the customer who booked
+                if (booking.customer_id !== userId) {
+                    return res.status(403).json({ message: 'You are not the customer for this booking' });
+                }
+
+                // booking.partner_id is a ServicePartner.id — resolve to User.id
+                if (!booking.partner_id) {
+                    return res.status(400).json({ message: 'No partner assigned to this booking yet' });
+                }
+                const servicePartner = await prisma.servicePartner.findUnique({
+                    where: { id: booking.partner_id },
+                    select: { user_id: true }
+                });
+                receiverId = servicePartner?.user_id ?? null;
+            } else if (userRole === 'SERVICE_PARTNER') {
+                // Verify this is the partner assigned to the booking
+                const servicePartner = await prisma.servicePartner.findUnique({
+                    where: { user_id: userId },
+                    select: { id: true }
+                });
+
+                if (!servicePartner || servicePartner.id !== booking.partner_id) {
+                    return res.status(403).json({ message: 'You are not the assigned partner for this booking' });
+                }
+                console.log(servicePartner);
+                receiverId = booking.customer_id;
+            } else if (userRole === 'BUSINESS_PARTNER' || userRole === 'ADMIN' || userRole === 'SUPER_ADMIN') {
+                // Business Partner can message customer if it's their booking
+                if (userRole === 'BUSINESS_PARTNER') {
+                    const bp = await prisma.businessPartner.findUnique({
+                        where: { user_id: userId },
+                        select: { id: true }
+                    });
+                    if (!bp || bp.id !== booking.business_partner_id) {
+                        return res.status(403).json({ message: 'You are not the business partner for this booking' });
+                    }
+                }
+                receiverId = booking.customer_id;
+            }
 
             if (!receiverId) {
                 return res.status(400).json({ message: 'No participant to receive the message' });
             }
 
             const message = await this.messageService.sendMessage(
-                req.user!.userId,
+                userId,
                 receiverId,
                 text,
-                bookingId || req.params.id
+                conversationId
             );
+
             return res.status(201).json(successResponse(message, 'Message sent successfully'));
         } catch (error) {
             next(error);

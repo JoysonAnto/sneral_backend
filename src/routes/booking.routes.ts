@@ -241,21 +241,32 @@ router.post(
  *   post:
  *     summary: Cancel a booking with reason
  *     tags: [Bookings]
+ *   patch:
+ *     summary: Cancel a booking with reason (supports both POST and PATCH)
+ *     tags: [Bookings]
  *     responses:
  *       200:
  *         description: Booking cancelled
  */
-router.post(
-    '/:id/cancel',
-    validate(cancelBookingValidator),
-    bookingController.cancel
-);
+router.route('/:id/cancel')
+    .post(
+        authorize('CUSTOMER', 'SERVICE_PARTNER', 'BUSINESS_PARTNER', 'ADMIN', 'SUPER_ADMIN'),
+        validate(cancelBookingValidator),
+        bookingController.cancel
+    )
+    .patch(
+        authorize('CUSTOMER', 'SERVICE_PARTNER', 'BUSINESS_PARTNER', 'ADMIN', 'SUPER_ADMIN'),
+        validate(cancelBookingValidator),
+        bookingController.cancel
+    );
+
 
 /**
  * @swagger
  * /bookings/{id}/rate:
  *   post:
- *     summary: Provide rating and feedback for a finished job
+ *     summary: "[Deprecated] Use POST /bookings/{id}/reviews instead"
+ *     description: Legacy endpoint kept for backward compatibility. Prefer /reviews.
  *     tags: [Bookings]
  *     responses:
  *       200:
@@ -263,10 +274,11 @@ router.post(
  */
 router.post(
     '/:id/rate',
-    authorize('CUSTOMER'),
+    authorize('CUSTOMER', 'SERVICE_PARTNER'),
     validate(rateBookingValidator),
     bookingController.rate
 );
+
 
 import { beforeServicePhotos, afterServicePhotos } from '../middleware/upload.middleware';
 
@@ -316,7 +328,7 @@ router.post(
  */
 router.post(
     '/:id/generate-start-otp',
-    authorize('CUSTOMER'),
+    authorize('CUSTOMER', 'SERVICE_PARTNER'),
     bookingController.generateStartOTP
 );
 
@@ -332,7 +344,7 @@ router.post(
  */
 router.post(
     '/:id/generate-otp',
-    authorize('CUSTOMER'),
+    authorize('CUSTOMER', 'SERVICE_PARTNER'),
     bookingController.generateCompletionOTP
 );
 
@@ -404,6 +416,46 @@ router.patch(
     '/:id/add-materials',
     authorize('SERVICE_PARTNER'),
     bookingController.addMaterialCost
+);
+
+// Move Controller import inside the file or use an existing one if available
+import { ReviewController } from '../controllers/review.controller';
+const reviewControllerInstance = new ReviewController();
+
+/**
+ * @swagger
+ * /bookings/reviews/my-reviews:
+ *   get:
+ *     summary: Get reviews written about the authenticated user
+ *     tags: [Bookings, Reviews]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of reviews retrieved
+ */
+router.get(
+    '/reviews/my-reviews',
+    authorize('CUSTOMER', 'SERVICE_PARTNER'),
+    reviewControllerInstance.getMyReviews
+);
+
+/**
+ * @swagger
+ * /bookings/{id}/reviews:
+ *   post:
+ *     summary: Submit a review for a booking
+ *     tags: [Bookings, Reviews]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       201:
+ *         description: Review submitted
+ */
+router.post(
+    '/:id/reviews',
+    authorize('CUSTOMER', 'SERVICE_PARTNER'),
+    reviewControllerInstance.submitReview
 );
 
 export default router;
