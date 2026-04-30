@@ -1,7 +1,6 @@
 
 import prisma from '../config/database';
 import { getIO } from '../socket/socket.server';
-import logger from '../utils/logger';
 
 const namespaces = ['/customer', '/partner', '/admin'];
 
@@ -168,8 +167,6 @@ export class MessageService {
         // Emit Socket.IO event
         try {
             const io = getIO();
-            const roomName = `booking_${bookingId || 'general'}`;
-
             // 🎯 DIRECT DELIVERY STRATEGY
             // To prevent self-delivery (echo), we target the specific recipient's room
             // and specialized monitor rooms (Admins), rather than the general booking room.

@@ -21,9 +21,9 @@ export class ReviewController {
                 req.user!.role,
                 req.body
             );
-            res.status(201).json(successResponse(review, 'Review submitted successfully'));
+            return res.status(201).json(successResponse(review, 'Review submitted successfully'));
         } catch (error) {
-            next(error);
+            return next(error);
         }
     };
 
@@ -37,9 +37,9 @@ export class ReviewController {
                 req.params.id,
                 req.user!.userId
             );
-            res.json(successResponse(status, 'Review status retrieved'));
+            return res.json(successResponse(status, 'Review status retrieved'));
         } catch (error) {
-            next(error);
+            return next(error);
         }
     };
 
@@ -53,9 +53,9 @@ export class ReviewController {
                 req.params.partnerId,
                 req.query as any
             );
-            res.json(successResponse(result, 'Partner reviews retrieved'));
+            return res.json(successResponse(result, 'Partner reviews retrieved'));
         } catch (error) {
-            next(error);
+            return next(error);
         }
     };
 
@@ -69,9 +69,9 @@ export class ReviewController {
                 req.params.userId,
                 req.query as any
             );
-            res.json(successResponse(result, 'Customer reviews retrieved'));
+            return res.json(successResponse(result, 'Customer reviews retrieved'));
         } catch (error) {
-            next(error);
+            return next(error);
         }
     };
     /**
@@ -80,9 +80,9 @@ export class ReviewController {
     getPartnerRatingSummary = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const result = await this.reviewService.getPartnerRatingSummary(req.params.partnerId);
-            res.json(successResponse(result, 'Partner rating summary retrieved'));
+            return res.json(successResponse(result, 'Partner rating summary retrieved'));
         } catch (error) {
-            next(error);
+            return next(error);
         }
     };
 
@@ -92,9 +92,9 @@ export class ReviewController {
     getUserRatingSummary = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const result = await this.reviewService.getCustomerRatingSummary(req.params.userId);
-            res.json(successResponse(result, 'User rating summary retrieved'));
+            return res.json(successResponse(result, 'User rating summary retrieved'));
         } catch (error) {
-            next(error);
+            return next(error);
         }
     };
 
@@ -120,14 +120,14 @@ export class ReviewController {
                 }
 
                 const result = await this.reviewService.getPartnerReviews(partner.id, req.query as any);
-                res.json(successResponse(result, 'My reviews retrieved'));
+                return res.json(successResponse(result, 'My reviews retrieved'));
             } else {
                 // For customers, use their base user ID
                 const result = await this.reviewService.getCustomerReviews(userId, req.query as any);
-                res.json(successResponse(result, 'My reviews retrieved'));
+                return res.json(successResponse(result, 'My reviews retrieved'));
             }
         } catch (error) {
-            next(error);
+            return next(error);
         }
     };
 }
