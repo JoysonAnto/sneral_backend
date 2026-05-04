@@ -65,6 +65,78 @@ export class EmailService {
     }
   }
 
+  async sendLoginOTPEmail(email: string, otp: string, name: string) {
+    try {
+      await this.transporter.sendMail({
+        from: process.env.EMAIL_FROM || 'noreply@yourapp.com',
+        to: email,
+        subject: 'Login OTP - Snearal',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2>Hello ${name},</h2>
+            <p>Use the OTP below to complete your login:</p>
+            <div style="background-color: #f0f0f0; padding: 20px; text-align: center; font-size: 24px; letter-spacing: 5px; font-weight: bold;">
+              ${otp}
+            </div>
+            <p>This OTP will expire in 10 minutes.</p>
+            <p>If you didn't attempt to login, please ignore this email.</p>
+          </div>
+        `,
+      });
+      logger.info(`Login OTP email sent to ${email}`);
+    } catch (error) {
+      logger.error('Error sending login OTP email:', error);
+    }
+  }
+
+  async sendStartOTPEmail(email: string, otp: string, bookingNumber: string, customerName: string) {
+    try {
+      await this.transporter.sendMail({
+        from: process.env.EMAIL_FROM || 'noreply@yourapp.com',
+        to: email,
+        subject: `Start Code for Booking #${bookingNumber}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2>Hello ${customerName},</h2>
+            <p>Your technician is ready to start the service for booking <strong>#${bookingNumber}</strong>.</p>
+            <p>Please share the following code with the technician to begin the job:</p>
+            <div style="background-color: #e3f2fd; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; color: #1976d2; border-radius: 8px;">
+              ${otp}
+            </div>
+            <p>This code ensures that the service starts only when the technician is at your location.</p>
+          </div>
+        `,
+      });
+      logger.info(`Start OTP email sent to ${email} for booking ${bookingNumber}`);
+    } catch (error) {
+      logger.error('Error sending start OTP email:', error);
+    }
+  }
+
+  async sendCompletionOTPEmail(email: string, otp: string, bookingNumber: string, customerName: string) {
+    try {
+      await this.transporter.sendMail({
+        from: process.env.EMAIL_FROM || 'noreply@yourapp.com',
+        to: email,
+        subject: `Completion Code for Booking #${bookingNumber}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2>Hello ${customerName},</h2>
+            <p>Your service for booking <strong>#${bookingNumber}</strong> has been finished.</p>
+            <p>If you are satisfied with the work, please share the following completion code with the technician:</p>
+            <div style="background-color: #e8f5e9; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; color: #2e7d32; border-radius: 8px;">
+              ${otp}
+            </div>
+            <p>Sharing this code confirms that the job has been completed to your satisfaction.</p>
+          </div>
+        `,
+      });
+      logger.info(`Completion OTP email sent to ${email} for booking ${bookingNumber}`);
+    } catch (error) {
+      logger.error('Error sending completion OTP email:', error);
+    }
+  }
+
   async sendBookingConfirmation(email: string, bookingDetails: any) {
     try {
       await this.transporter.sendMail({

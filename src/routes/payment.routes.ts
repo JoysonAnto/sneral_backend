@@ -20,7 +20,7 @@ router.post(
     validate([
         body('bookingId').notEmpty().isUUID(),
         body('amount').notEmpty().isFloat({ min: 1 }),
-        body('method').notEmpty().isIn(['RAZORPAY', 'STRIPE', 'WALLET']),
+        body('method').notEmpty().isIn(['RAZORPAY', 'STRIPE', 'WALLET', 'CASHFREE']),
         body('type').notEmpty().isIn(['ADVANCE', 'FULL']),
     ]),
     paymentController.createPayment
@@ -37,6 +37,16 @@ router.post(
         body('signature').notEmpty(),
     ]),
     paymentController.verifyPayment
+);
+
+// Verify Cashfree payment (customers only)
+router.post(
+    '/verify-cashfree',
+    authorize('CUSTOMER'),
+    validate([
+        body('orderId').notEmpty(),
+    ]),
+    paymentController.verifyCashfreePayment
 );
 
 // Process refund (admin only)

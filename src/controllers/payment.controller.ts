@@ -34,6 +34,19 @@ export class PaymentController {
         }
     };
 
+    verifyCashfreePayment = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { orderId } = req.body;
+            const result = await this.paymentService.verifyCashfreePayment(
+                orderId,
+                req.user!.userId
+            );
+            res.json(successResponse(result, result.message));
+        } catch (error) {
+            next(error);
+        }
+    };
+
     processRefund = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const { bookingId, amount, reason } = req.body;

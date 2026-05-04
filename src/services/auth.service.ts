@@ -203,6 +203,11 @@ export class AuthService {
             });
 
             console.log(`Login OTP for ${identifier}: ${otp}`);
+
+            if (user.email) {
+                await this.emailService.sendLoginOTPEmail(user.email, otp, user.full_name);
+            }
+
             return {
                 message: 'OTP sent successfully. Please verify to login.',
                 otp, // dev only

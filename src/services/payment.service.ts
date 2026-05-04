@@ -4,6 +4,7 @@ import prisma from '../config/database';
 import { BadRequestError } from '../utils/errors';
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
+import { CashfreeService } from './cashfree.service';
 
 // Initialize Razorpay (if credentials are available)
 let razorpay: Razorpay | null = null;
@@ -18,7 +19,7 @@ if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
 interface CreatePaymentData {
     bookingId: string;
     amount: number;
-    method: 'RAZORPAY' | 'STRIPE' | 'WALLET';
+    method: 'RAZORPAY' | 'STRIPE' | 'WALLET' | 'CASHFREE';
     type: 'ADVANCE' | 'FULL';
 }
 
@@ -115,6 +116,55 @@ export class PaymentService {
                 razorpayKeyId: process.env.RAZORPAY_KEY_ID,
                 message: 'Payment order created successfully',
             };
+        } else if (data.method === 'CASHFREE') {
+            const cashfreeService = new CashfreeService();
+            
+            // Get user details for Cashfree
+            const user = await prisma.user.findUnique({
+                where: { id: userId }
+            });
+
+            if (!user) {
+                throw new BadRequestError('User not found');
+            }
+
+            const cashfreeOrderId = `ORDER_${data.bookingId}_${Date.now()}`;
+            
+            const cfOrder = await cashfreeService.createOrder(
+                cashfreeOrderId,
+                amount,
+                userId,
+                user.phone || '',
+                user.full_name,
+                user.email
+            );
+
+            if (!cfOrder.success) {
+                throw new BadRequestError(cfOrder.message || 'Failed to create Cashfree order');
+            }
+
+            // Create payment record
+            const payment = await prisma.payment.create({
+                data: {
+                    booking_id: data.bookingId,
+                    user_id: userId,
+                    amount,
+                    payment_method: 'CARD', // Generic for Cashfree
+                    payment_status: 'PENDING',
+                    cashfree_order_id: cashfreeOrderId,
+                },
+            });
+
+            return {
+                paymentId: payment.id,
+                orderId: cashfreeOrderId,
+                paymentSessionId: cfOrder.data.payment_session_id,
+                amount: amount,
+                currency: 'INR',
+                status: 'PENDING',
+                method: 'CASHFREE',
+                message: 'Cashfree payment session created successfully',
+            };
         } else {
             throw new BadRequestError('Payment method not supported yet');
         }
@@ -195,6 +245,86 @@ export class PaymentService {
             paymentId,
             message: 'Payment verified successfully',
         };
+    }
+
+    async verifyCashfreePayment(orderId: string, userId: string) {
+        const cashfreeService = new CashfreeService();
+        const result = await cashfreeService.getOrderStatus(orderId);
+
+        if (!result.success) {
+            throw new BadRequestError(result.message || 'Failed to verify payment with Cashfree');
+        }
+
+        const payment = await prisma.payment.findFirst({
+            where: { cashfree_order_id: orderId },
+            include: { booking: true }
+        });
+
+        if (!payment) {
+            throw new BadRequestError('Payment record not found');
+        }
+
+        if (payment.user_id !== userId) {
+            throw new BadRequestError('Unauthorized');
+        }
+
+        if (result.status === 'PAID') {
+            // Process payment success
+            await prisma.$transaction(async (tx) => {
+                // Update payment
+                await tx.payment.update({
+                    where: { id: payment.id },
+                    data: {
+                        payment_status: 'COMPLETED',
+                        paid_at: new Date(),
+                        gateway_response: result.data
+                    },
+                });
+
+                // Update booking
+                await tx.booking.update({
+                    where: { id: payment.booking_id },
+                    data: {
+                        payment_status: (payment.amount === (payment.booking as any).total_amount
+                            ? 'COMPLETED'
+                            : 'PARTIAL') as any,
+                    },
+                });
+
+                // Create transaction record
+                await tx.transaction.create({
+                    data: {
+                        user_id: userId,
+                        booking_id: payment.booking_id,
+                        type: 'BOOKING_PAYMENT',
+                        amount: payment.amount,
+                        description: `Payment for booking #${payment.booking.booking_number} via Cashfree`,
+                        balance_before: 0,
+                        balance_after: 0,
+                    },
+                });
+            });
+
+            return {
+                status: 'COMPLETED',
+                paymentId: payment.id,
+                message: 'Payment verified successfully',
+            };
+        } else {
+            // Update payment as failed or keep pending
+            if (result.status === 'FAILED' || result.status === 'CANCELLED') {
+                await prisma.payment.update({
+                    where: { id: payment.id },
+                    data: { payment_status: 'FAILED' }
+                });
+            }
+            
+            return {
+                status: result.status,
+                paymentId: payment.id,
+                message: `Payment is in ${result.status} state`,
+            };
+        }
     }
 
     async processRefund(bookingId: string, amount: number, _reason: string, _adminId: string) {

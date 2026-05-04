@@ -477,6 +477,7 @@ model Payment {
   razorpay_payment_id      String?       @unique
   razorpay_signature       String?
   stripe_payment_intent_id String?       @unique
+  cashfree_order_id        String?       @unique
   user_id                  String
   booking                  Booking       @relation(fields: [booking_id], references: [id])
   user                     User          @relation(fields: [user_id], references: [id])

@@ -1,4 +1,4 @@
-import { PrismaClient, UserRole, BookingStatus, KycStatus, PartnerAvailability } from '@prisma/client';
+import { PrismaClient, UserRole, BookingStatus, KycStatus, PartnerAvailability, ReviewType } from '@prisma/client';
 import { hashPassword } from '../src/utils/encryption';
 
 const prisma = new PrismaClient();
@@ -32,7 +32,7 @@ async function main() {
     // Clear existing data to avoid unique constraint violations
     console.log('🧹 Clearing existing data...');
     await prisma.notification.deleteMany();
-    await prisma.rating.deleteMany();
+    await prisma.review.deleteMany();
     await prisma.bookingItem.deleteMany();
     await prisma.booking.deleteMany();
     await prisma.wallet.deleteMany();
@@ -848,13 +848,14 @@ async function main() {
         });
 
         if (data.review && data.partner) {
-            await prisma.rating.create({
+            await prisma.review.create({
                 data: {
                     booking_id: booking.id,
-                    rater_id: data.customer.id,
-                    rated_id: data.partner.id,
+                    reviewer_id: data.customer.id,
+                    reviewee_id: data.partner.id,
                     rating: 5,
-                    review: data.review,
+                    comment: data.review,
+                    type: ReviewType.CUSTOMER_TO_PARTNER,
                 }
             });
         }

@@ -5,6 +5,7 @@ import { getIO } from '../socket/socket.server';
 import logger from '../utils/logger';
 import { AdminService } from './admin.service';
 import { fcmService } from './fcm.service';
+import { EmailService } from './email.service';
 
 const broadcastStatsUpdate = async () => {
     try {
@@ -40,9 +41,11 @@ interface CreateBookingData {
 
 export class BookingService {
     private notificationService: NotificationService;
+    private emailService: EmailService;
 
     constructor() {
         this.notificationService = new NotificationService();
+        this.emailService = new EmailService();
     }
 
     async createBooking(customerId: string, data: CreateBookingData) {
@@ -1398,10 +1401,20 @@ export class BookingService {
     async generateStartOTP(bookingId: string): Promise<string> {
         const otp = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit PIN for start
 
-        await prisma.booking.update({
+        const booking = await prisma.booking.update({
             where: { id: bookingId },
             data: { start_otp: otp } as any,
+            include: { customer: true }
         });
+
+        if (booking.customer?.email) {
+            await this.emailService.sendStartOTPEmail(
+                booking.customer.email,
+                otp,
+                booking.booking_number,
+                booking.customer.full_name
+            );
+        }
 
         return otp;
     }
@@ -1412,10 +1425,20 @@ export class BookingService {
     async generateCompletionOTP(bookingId: string): Promise<string> {
         const otp = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit OTP
 
-        await prisma.booking.update({
+        const booking = await prisma.booking.update({
             where: { id: bookingId },
             data: { completion_otp: otp },
+            include: { customer: true }
         });
+
+        if (booking.customer?.email) {
+            await this.emailService.sendCompletionOTPEmail(
+                booking.customer.email,
+                otp,
+                booking.booking_number,
+                booking.customer.full_name
+            );
+        }
 
         return otp;
     }
