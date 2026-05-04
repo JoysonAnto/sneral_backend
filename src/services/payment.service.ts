@@ -134,7 +134,7 @@ export class PaymentService {
                 cashfreeOrderId,
                 amount,
                 userId,
-                user.phone || '',
+                user.phone_number || '',
                 user.full_name,
                 user.email
             );
