@@ -10,6 +10,9 @@ import { swaggerSpec } from './config/swagger';
 
 const app: Application = express();
 
+// Trust proxy for rate limiter to work correctly behind proxies like Render/Railway/Cloudflare
+app.set('trust proxy', 1);
+
 app.use((req, _res, next) => {
     console.log(`[REQ] ${req.method} ${req.url}`);
     next();
@@ -49,7 +52,8 @@ const allowedOrigins = process.env.CORS_ORIGINS?.split(',') || [
     'http://localhost:3002', // Business Partner
     'http://localhost:3003', // Service Partner
     'http://localhost:4000',
-    'https://mortgages-wings-adoption-reel.trycloudflare.com'
+    'https://mortgages-wings-adoption-reel.trycloudflare.com',
+    'https://sneralbackend-production.up.railway.app'
 ];
 
 const corsOptions: cors.CorsOptions = {

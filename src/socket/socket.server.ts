@@ -15,6 +15,7 @@ export const initializeSocket = (server: HTTPServer) => {
         'http://localhost:3001', // Admin Dashboard
         'http://localhost:3002', // Business Partner
         'http://localhost:3003', // Service Partner
+        'https://sneralbackend-production.up.railway.app'
     ];
 
     io = new SocketIOServer(server, {
