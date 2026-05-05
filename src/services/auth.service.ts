@@ -238,11 +238,11 @@ export class AuthService {
             // return { message: 'Already verified' };
         }
 
-        if (user.verification_otp !== otp || !user.otp_expires_at) {
+        if (!user.verification_otp || !user.otp_expires_at) {
             throw new BadRequestError('No verification OTP found. Please request a new one.');
         }
 
-        if (user.verification_otp !== otp) {
+        if (user.verification_otp !== otp.toString()) {
             throw new BadRequestError('Invalid OTP');
         }
 
