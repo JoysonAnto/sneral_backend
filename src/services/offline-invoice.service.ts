@@ -316,14 +316,11 @@ export class OfflineInvoiceService {
             throw new AppError('Customer does not have an email address', 400);
         }
 
-        // Generate PDF
-        const { pdfGeneratorService } = await import('./pdf-generator.service');
-        const pdfBuffer = await pdfGeneratorService.generateInvoicePDF(invoiceId);
 
         // Send email with PDF
         const { EmailService } = await import('./email.service');
         const emailService = new EmailService();
-        await emailService.sendInvoiceEmail(invoice.customer.email, invoice, pdfBuffer);
+        await emailService.sendInvoiceEmail(invoice.customer.email, invoice);
 
         // Update invoice status
         const updatedInvoice = await prisma.offlineInvoice.update({
