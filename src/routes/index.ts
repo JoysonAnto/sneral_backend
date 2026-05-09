@@ -69,8 +69,8 @@ router.use('/reviews', reviewRoutes); // Review endpoints under /reviews prefix
 router.use('/partners', partnerRoutes);
 router.use('/partner', servicePartnerRoutes);
 router.use('/wallet', walletRoutes);
-router.use('/kyc', kycRoutes);
 router.use('/kyc/cashfree', cashfreeRoutes);
+router.use('/kyc', kycRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/payouts', payoutRoutes);
 

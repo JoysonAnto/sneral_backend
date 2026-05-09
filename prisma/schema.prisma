@@ -88,12 +88,13 @@ model ServicePartner {
   completion_rate      Float                    @default(0)
   total_bookings       Int                      @default(0)
   completed_bookings   Int                      @default(0)
-  kyc_status           KycStatus                @default(PENDING)
-  kyc_verified_at      DateTime?
-  kyc_verified_by      String?
-  bank_account_number  String?
-  bank_ifsc_code       String?
-  bank_account_name    String?
+  kyc_status                  KycStatus                @default(PENDING)
+  kyc_verified_at             DateTime?
+  kyc_verified_by             String?
+  cashfree_kyc_verification_id String?
+  bank_account_number         String?
+  bank_ifsc_code              String?
+  bank_account_name           String?
   created_at           DateTime                 @default(now())
   updated_at           DateTime                 @updatedAt
   category_id          String?
