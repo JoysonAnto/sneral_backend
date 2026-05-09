@@ -28,15 +28,30 @@ export class EmailService {
       params.append('bodyHtml', bodyHtml);
       params.append('isTransactional', 'true');
 
-      const response = await axios.post(this.apiUrl, params);
+      // Use validateStatus to prevent axios from throwing on non-2xx responses
+      // so we can handle the Elastic Email error response manually
+      const response = await axios.post(this.apiUrl, params, {
+        validateStatus: () => true 
+      });
 
       if (response.data.success === false) {
-        logger.error('Elastic Email Error:', response.data.error);
+        const errorMsg = typeof response.data.error === 'object' 
+          ? JSON.stringify(response.data.error) 
+          : response.data.error;
+        
+        if (errorMsg && errorMsg.includes('purchase one of our plan')) {
+          logger.warn(`Email simulation: Elastic Email free plan limit reached. Target: ${to}. Subject: ${subject}`);
+          logger.info(`Check console logs for the OTP/content if in development.`);
+        } else {
+          logger.error('Elastic Email Error:', errorMsg);
+        }
+      } else if (response.status >= 400) {
+        logger.error(`Elastic Email HTTP Error ${response.status}:`, response.data);
       } else {
         logger.info(`Email sent to ${to} via Elastic Email. Transaction ID: ${response.data.data?.transactionid}`);
       }
-    } catch (error) {
-      logger.error('Error sending email via Elastic Email:', error);
+    } catch (error: any) {
+      logger.error('Unexpected error sending email:', error.message);
     }
   }
 

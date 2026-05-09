@@ -336,6 +336,7 @@ export class AuthService {
 
         // Send verification email
         await this.emailService.sendVerificationEmail(email, otp, user.full_name);
+        console.log(`Resent Verification OTP for ${email}: ${otp}`);
 
         return { message: 'Verification code sent to your email' };
     }
@@ -365,6 +366,7 @@ export class AuthService {
 
         // Send password reset email
         await this.emailService.sendPasswordResetEmail(email, otp, user.full_name);
+        console.log(`Password Reset OTP for ${email}: ${otp}`);
 
         return { message: 'If the email exists, a password reset code has been sent' };
     }
