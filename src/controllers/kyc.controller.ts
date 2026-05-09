@@ -15,11 +15,22 @@ export class KYCController {
 
             const documents: any = {};
 
+            // Handle both camelCase and snake_case field names from Multer
             if (files.aadhaarFront) documents.aadhaarFront = files.aadhaarFront[0].filename;
+            else if (files.aadhaar_front) documents.aadhaarFront = files.aadhaar_front[0].filename;
+
             if (files.aadhaarBack) documents.aadhaarBack = files.aadhaarBack[0].filename;
+            else if (files.aadhaar_back) documents.aadhaarBack = files.aadhaar_back[0].filename;
+
             if (files.panCard) documents.panCard = files.panCard[0].filename;
+            else if (files.pan_card) documents.panCard = files.pan_card[0].filename;
+
             if (files.photo) documents.photo = files.photo[0].filename;
+
             if (files.bankProof) documents.bankProof = files.bankProof[0].filename;
+            else if (files.bank_proof) documents.bankProof = files.bank_proof[0].filename;
+            else if (files.bank_passbook) documents.bankProof = files.bank_passbook[0].filename;
+
             if (files.businessLicense) documents.businessLicense = files.businessLicense[0].filename;
             if (files.gstCertificate) documents.gstCertificate = files.gstCertificate[0].filename;
 
@@ -43,6 +54,20 @@ export class KYCController {
                 req.user!.role
             );
             res.json(successResponse(status, 'KYC status retrieved successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    getMyKYCStatus = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            // Use the authenticated user's ID as the partnerId (the service handles lookup by UserID)
+            const status = await this.kycService.getKYCStatus(
+                req.user!.userId,
+                req.user!.userId,
+                req.user!.role
+            );
+            res.json(successResponse(status, 'Your KYC status retrieved successfully'));
         } catch (error) {
             next(error);
         }

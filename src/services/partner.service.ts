@@ -344,10 +344,50 @@ export class PartnerService {
     }
 
     async updatePartner(id: string, data: any, _userId: string, _role: string) {
-        return await prisma.servicePartner.update({
-            where: { id },
-            data: data
+        // Special case: if id is "availability", it's likely a misrouted request from the frontend
+        if (id === 'availability') {
+            console.log('🔄 [DEBUG] Redirecting updatePartner(availability) to updateAvailability');
+            
+            // Find the partner for this user
+            const partner = await prisma.servicePartner.findUnique({
+                where: { user_id: _userId }
+            });
+            
+            if (!partner) {
+                throw new BadRequestError('Service partner profile not found');
+            }
+            
+            return await this.updateAvailability(partner.id, data);
+        }
+
+        // Map 'status' to 'availability_status' if present
+        const updateData = { ...data };
+        if (updateData.status && !updateData.availability_status) {
+            updateData.availability_status = updateData.status === 'ONLINE' ? 'AVAILABLE' : updateData.status;
+            delete updateData.status;
+        }
+
+        // Remove any fields that don't exist in the schema
+        const allowedFields = [
+            'availability_status', 'current_latitude', 'current_longitude', 
+            'service_radius', 'category_id', 'business_partner_id'
+        ];
+        
+        Object.keys(updateData).forEach(key => {
+            if (!allowedFields.includes(key)) {
+                delete updateData[key];
+            }
         });
+
+        try {
+            return await prisma.servicePartner.update({
+                where: { id },
+                data: updateData
+            });
+        } catch (error) {
+            console.error('🔥 [DEBUG] Partner update failed:', error);
+            throw error;
+        }
     }
 
     async updateAvailability(id: string, data: any) {
@@ -359,22 +399,25 @@ export class PartnerService {
         }
 
         // Map ONLINE to AVAILABLE (Prisma enum)
-        if (status === 'ONLINE') {
-            status = 'AVAILABLE';
+        if (status === 'ONLINE' || status === 'AVAILABLE') {
+            status = 'AVAILABLE' as any;
+        } else if (status === 'OFFLINE' || status === 'BUSY') {
+            // Keep as is or map accordingly
         }
 
         if (!status) {
             throw new BadRequestError('Availability status is required');
         }
 
-        const updatedPartner = await prisma.servicePartner.update({
-            where: { id },
-            data: { availability_status: status as any }
-        });
+        console.log(`📡 [DEBUG] Updating partner ${id} status to ${status}`);
 
-        return {
-            availability_status: updatedPartner.availability_status
-        };
+        return await prisma.servicePartner.update({
+            where: { id },
+            data: {
+                availability_status: status as any,
+                last_location_update: new Date()
+            },
+        });
     }
 
     async getPartnerServices(id: string) {

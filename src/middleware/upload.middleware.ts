@@ -50,6 +50,12 @@ export const kycFields = kycUpload.fields([
     { name: 'bankProof', maxCount: 1 },
     { name: 'businessLicense', maxCount: 1 },
     { name: 'gstCertificate', maxCount: 1 },
+    // Snake case compatibility
+    { name: 'aadhaar_front', maxCount: 1 },
+    { name: 'aadhaar_back', maxCount: 1 },
+    { name: 'pan_card', maxCount: 1 },
+    { name: 'bank_passbook', maxCount: 1 },
+    { name: 'bank_proof', maxCount: 1 },
 ]);
 
 // Service photos storage

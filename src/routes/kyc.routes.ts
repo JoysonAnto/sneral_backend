@@ -57,6 +57,20 @@ router.post(
 
 /**
  * @swagger
+ * /kyc/me:
+ *   get:
+ *     summary: Check your own KYC verification status
+ *     tags: [KYC & Onboarding]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Current KYC status returned
+ */
+router.get('/me', kycController.getMyKYCStatus);
+
+/**
+ * @swagger
  * /kyc/{partnerId}:
  *   get:
  *     summary: Check the KYC verification status of a partner

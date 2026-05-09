@@ -118,22 +118,39 @@ export class KYCService {
     }
 
     async getKYCStatus(partnerId: string, requesterId: string, requesterRole: string) {
-        // Try both partner types
-        const [servicePartner, businessPartner] = await Promise.all([
+        console.log(`🔍 [DEBUG] Checking KYC status for PartnerID/UserID: ${partnerId}`);
+
+        // Try both partner types by ID first
+        let [servicePartner, businessPartner] = await Promise.all([
             prisma.servicePartner.findUnique({
                 where: { id: partnerId },
-                include: { user: true },
+                include: { user: true, kyc_documents: true },
             }),
             prisma.businessPartner.findUnique({
                 where: { id: partnerId },
-                include: { user: true },
+                include: { user: true, kyc_documents: true },
             }),
         ]);
+
+        // If not found by ID, try searching by user_id (common frontend mistake)
+        if (!servicePartner && !businessPartner) {
+            console.log(`🔍 [DEBUG] Not found by ID, searching by UserID: ${partnerId}`);
+            [servicePartner, businessPartner] = await Promise.all([
+                prisma.servicePartner.findUnique({
+                    where: { user_id: partnerId },
+                    include: { user: true, kyc_documents: true },
+                }),
+                prisma.businessPartner.findUnique({
+                    where: { user_id: partnerId },
+                    include: { user: true, kyc_documents: true },
+                }),
+            ]);
+        }
 
         const partner = servicePartner || businessPartner;
 
         if (!partner) {
-            throw new NotFoundError('Partner not found');
+            throw new NotFoundError('Partner profile not found');
         }
 
         // Check permissions
