@@ -13,7 +13,7 @@ export const comparePassword = async (
     return await bcrypt.compare(password, hashedPassword);
 };
 
-export const generateOTP = (length: number = 6): string => {
+export const generateOTP = (length: number = 4): string => {
     const min = Math.pow(10, length - 1);
     const max = Math.pow(10, length) - 1;
     return Math.floor(min + Math.random() * (max - min)).toString();

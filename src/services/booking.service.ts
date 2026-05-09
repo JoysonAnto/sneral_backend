@@ -6,6 +6,7 @@ import logger from '../utils/logger';
 import { AdminService } from './admin.service';
 import { fcmService } from './fcm.service';
 import { EmailService } from './email.service';
+import { generateOTP } from '../utils/encryption';
 
 const broadcastStatsUpdate = async () => {
     try {
@@ -1399,7 +1400,7 @@ export class BookingService {
      * Generate OTP for service start verification
      */
     async generateStartOTP(bookingId: string): Promise<string> {
-        const otp = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit PIN for start
+        const otp = generateOTP(4); // Reverted to 4-digit PIN
 
         const booking = await prisma.booking.update({
             where: { id: bookingId },
@@ -1423,7 +1424,7 @@ export class BookingService {
      * Generate OTP for service completion verification
      */
     async generateCompletionOTP(bookingId: string): Promise<string> {
-        const otp = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit OTP
+        const otp = generateOTP(4); // Reverted to 4-digit OTP
 
         const booking = await prisma.booking.update({
             where: { id: bookingId },

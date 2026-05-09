@@ -50,7 +50,7 @@ export class AuthService {
         const hashedPassword = await hashPassword(userPassword);
 
         // Generate OTP for verification
-        const otp = generateOTP(6);
+        const otp = generateOTP(4);
         const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
         // Create user and partner in transaction
@@ -191,7 +191,7 @@ export class AuthService {
             };
         } else {
             // OTP login
-            const otp = generateOTP(6);
+            const otp = generateOTP(4);
             const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
 
             await prisma.user.update({
@@ -322,7 +322,7 @@ export class AuthService {
         }
 
         // Generate new OTP
-        const otp = generateOTP(6);
+        const otp = generateOTP(4);
         const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
         // Update user with new OTP
@@ -352,7 +352,7 @@ export class AuthService {
         }
 
         // Generate OTP for password reset
-        const otp = generateOTP(6);
+        const otp = generateOTP(4);
         const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
         // Update user with reset OTP

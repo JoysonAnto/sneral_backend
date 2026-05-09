@@ -227,11 +227,11 @@ Content-Type: application/json
 |--------|----------|------|-------------|
 | `POST` | `/bookings/:id/generate-start-otp` | ✅ SP | Generate Start OTP |
 
-### Completion OTP (6-digit — Required to Release Payment)
+### Completion OTP (4-digit — Required to Release Payment)
 
 | Method | Endpoint | Auth | Description |
 |--------|----------|------|-------------|
-| `POST` | `/bookings/:id/generate-otp` | ✅ SP | Request 6-digit completion OTP (sent to customer) |
+| `POST` | `/bookings/:id/generate-otp` | ✅ SP | Request 4-digit completion OTP (sent to customer) |
 | `POST` | `/bookings/:id/verify-otp` | ✅ SP | Submit OTP customer shared → releases payment |
 
 ```http
