@@ -382,13 +382,21 @@ export class CashfreeService {
         customerEmail?: string
     ) {
         try {
+            // Cashfree requires amount rounded to max 2 decimal places
+            const roundedAmount = parseFloat(amount.toFixed(2));
+
+            // Cashfree requires a valid phone number
+            if (!customerPhone || customerPhone.trim() === '') {
+                return { success: false, message: 'Customer phone number is required for payment' };
+            }
+
             const body = {
                 order_id: orderId,
-                order_amount: amount,
+                order_amount: roundedAmount,
                 order_currency: 'INR',
                 customer_details: {
                     customer_id: customerId,
-                    customer_phone: customerPhone,
+                    customer_phone: customerPhone.trim(),
                     customer_name: customerName || 'Customer',
                     customer_email: customerEmail || 'customer@example.com',
                 },
@@ -397,7 +405,7 @@ export class CashfreeService {
                 },
             };
 
-            logger.info(`Cashfree: Creating order ${orderId} for ${amount} INR`);
+            logger.info(`Cashfree: Creating order ${orderId} for ${roundedAmount} INR`);
 
             const response = await fetch(`${this.pgBaseUrl}/orders`, {
                 method: 'POST',
