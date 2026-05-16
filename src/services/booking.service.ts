@@ -982,17 +982,22 @@ export class BookingService {
     }
 
     async assignPartner(bookingId: string, partnerId: string, assignedBy: string) {
+        logger.info(`[Dispatch] Starting assignment: booking=${bookingId}, partner=${partnerId}, actor=${assignedBy}`);
+        
         const booking = await prisma.booking.findUnique({
             where: { id: bookingId },
         });
 
         if (!booking) {
+            logger.error(`[Dispatch] Booking not found: ${bookingId}`);
             throw new NotFoundError('Booking not found');
         }
 
-        const allowedStatuses: string[] = ['SEARCHING_PARTNER', 'PENDING', 'PENDING_ASSIGNMENT'];
+        // Expanded allowed statuses to include PARTNER_NOT_FOUND for manual rescue and PARTNER_ASSIGNED for re-assignment
+        const allowedStatuses: string[] = ['SEARCHING_PARTNER', 'PENDING', 'PENDING_ASSIGNMENT', 'PARTNER_ASSIGNED', 'PARTNER_NOT_FOUND'];
         if (!allowedStatuses.includes(booking.status)) {
-            throw new BadRequestError('Booking cannot be assigned in current status');
+            logger.warn(`[Dispatch] Invalid status for assignment: ${booking.status} (Booking: ${bookingId})`);
+            throw new BadRequestError(`Booking cannot be assigned in current status: ${booking.status}`);
         }
 
         // Permission Check: If it's a BP booking, only BP owner or Admin can assign
@@ -1004,6 +1009,7 @@ export class BookingService {
 
             // If the user is a BP, they must own the BP record assigned to this booking
             if (actingBp && actingBp.id !== bpIdOfBooking) {
+                logger.warn(`[Dispatch] Unauthorized BP assignment attempt: actor=${assignedBy}, booking_bp=${bpIdOfBooking}`);
                 throw new UnauthorizedError('You are not authorized to assign technicians for this business');
             }
 
@@ -1017,6 +1023,7 @@ export class BookingService {
             });
 
             if (!association) {
+                logger.warn(`[Dispatch] Technician not in BP team: partner=${partnerId}, bp=${bpIdOfBooking}`);
                 throw new BadRequestError('The selected technician is not a member of your active team');
             }
         }
@@ -1027,21 +1034,26 @@ export class BookingService {
         });
 
         if (!partner) {
+            logger.error(`[Dispatch] Service partner not found: ${partnerId}`);
             throw new BadRequestError('Service partner not found');
         }
 
         // Fetch the role of the person trying to assign
         const actor = await prisma.user.findUnique({
             where: { id: assignedBy },
-            select: { role: true }
+            select: { role: true, full_name: true }
         });
 
         const isAdmin = actor?.role === 'ADMIN' || actor?.role === 'SUPER_ADMIN';
+        logger.info(`[Dispatch] Actor lookup: name=${actor?.full_name}, role=${actor?.role}, isAdmin=${isAdmin}`);
 
-        // Only enforce availability for non-admins (e.g., BP auto-matching or logic that requires online status)
+        // Only enforce availability for non-admins
         if (!isAdmin && partner.availability_status !== 'AVAILABLE') {
+            logger.warn(`[Dispatch] Partner unavailable for non-admin assignment: status=${partner.availability_status}`);
             throw new BadRequestError('Partner is not currently available for immediate assignment');
         }
+
+        logger.info(`[Dispatch] Executing database update for booking ${bookingId}`);
 
         // Assign partner
         const updatedBooking = await prisma.booking.update({
@@ -1054,7 +1066,7 @@ export class BookingService {
                     create: {
                         status: 'PARTNER_ASSIGNED',
                         changed_by: assignedBy,
-                        notes: `Assigned to ${partner.user.full_name}`,
+                        notes: `Assigned to ${partner.user.full_name} by ${actor?.full_name || 'Administrator'}`,
                     },
                 },
             },

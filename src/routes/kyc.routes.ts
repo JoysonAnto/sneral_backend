@@ -117,13 +117,35 @@ router.post(
     kycController.verifyKYC
 );
 
+/**
+ * @swagger
+ * /kyc/pending:
+ *   get:
+ *     summary: List all pending KYC applications (Admin only)
+ *     tags: [KYC & Onboarding]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of pending partners returned
+ */
+router.get(
+    '/pending',
+    authorize('ADMIN', 'SUPER_ADMIN'),
+    kycController.getPendingKYCs
+);
+
 // Compatibility with Frontend Admin Dashboard
-router.patch('/:partnerId/approve', authorize('ADMIN', 'SUPER_ADMIN'), (req, res, next) => {
+router.patch('/:id/approve', authorize('ADMIN', 'SUPER_ADMIN'), kycController.approveDocument);
+router.patch('/:id/reject', authorize('ADMIN', 'SUPER_ADMIN'), kycController.rejectDocument);
+
+// Legacy/Alternative paths
+router.patch('/partner/:partnerId/approve', authorize('ADMIN', 'SUPER_ADMIN'), (req, res, next) => {
     req.body.status = 'APPROVED';
     return kycController.verifyKYC(req, res, next);
 });
 
-router.patch('/:partnerId/reject', authorize('ADMIN', 'SUPER_ADMIN'), (req, res, next) => {
+router.patch('/partner/:partnerId/reject', authorize('ADMIN', 'SUPER_ADMIN'), (req, res, next) => {
     req.body.status = 'REJECTED';
     return kycController.verifyKYC(req, res, next);
 });

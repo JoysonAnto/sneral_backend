@@ -280,7 +280,6 @@ router.post(
 );
 
 
-import { beforeServicePhotos, afterServicePhotos } from '../middleware/upload.middleware';
 
 /**
  * @swagger
@@ -295,7 +294,6 @@ import { beforeServicePhotos, afterServicePhotos } from '../middleware/upload.mi
 router.post(
     '/:id/before-photos',
     authorize('SERVICE_PARTNER'),
-    beforeServicePhotos,
     bookingController.uploadBeforePhotos
 );
 
@@ -312,7 +310,6 @@ router.post(
 router.post(
     '/:id/after-photos',
     authorize('SERVICE_PARTNER'),
-    afterServicePhotos,
     bookingController.uploadAfterPhotos
 );
 

@@ -37,7 +37,7 @@ export class KYCController {
             const result = await this.kycService.submitKYC(
                 req.user!.userId,
                 documents,
-                req.user!.role
+                req.user!.role as 'SERVICE_PARTNER' | 'BUSINESS_PARTNER'
             );
 
             res.status(201).json(successResponse(result, result.message));
@@ -54,6 +54,15 @@ export class KYCController {
                 req.user!.role
             );
             res.json(successResponse(status, 'KYC status retrieved successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    getPendingKYCs = async (_req: Request, res: Response, next: NextFunction) => {
+        try {
+            const partners = await this.kycService.getPendingKYCs();
+            res.json(successResponse(partners, 'Pending partners retrieved successfully'));
         } catch (error) {
             next(error);
         }
@@ -83,6 +92,35 @@ export class KYCController {
                 req.user!.userId
             );
             res.json(successResponse(result, result.message));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    approveDocument = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const result = await this.kycService.verifyKYCDocument(
+                req.params.id,
+                'APPROVED',
+                undefined,
+                req.user!.userId
+            );
+            res.json(successResponse(result, 'Document approved successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    rejectDocument = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { reason } = req.body;
+            const result = await this.kycService.verifyKYCDocument(
+                req.params.id,
+                'REJECTED',
+                reason,
+                req.user!.userId
+            );
+            res.json(successResponse(result, 'Document rejected successfully'));
         } catch (error) {
             next(error);
         }

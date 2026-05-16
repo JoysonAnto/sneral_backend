@@ -251,12 +251,11 @@ export class BookingController {
                 throw new Error('Service partner profile not found');
             }
 
-            const files = req.files as Express.Multer.File[];
-            if (!files || files.length === 0) {
-                throw new Error('No images uploaded');
+            const { imageUrls } = req.body;
+            if (!imageUrls || !Array.isArray(imageUrls) || imageUrls.length === 0) {
+                throw new Error('No image URLs provided');
             }
 
-            const imageUrls = files.map(file => `/uploads/service-photos/${file.filename}`);
             const result = await this.bookingService.uploadBeforeServicePhotos(
                 req.params.id,
                 partner.id,
@@ -280,12 +279,11 @@ export class BookingController {
                 throw new Error('Service partner profile not found');
             }
 
-            const files = req.files as Express.Multer.File[];
-            if (!files || files.length === 0) {
-                throw new Error('No images uploaded');
+            const { imageUrls } = req.body;
+            if (!imageUrls || !Array.isArray(imageUrls) || imageUrls.length === 0) {
+                throw new Error('No image URLs provided');
             }
 
-            const imageUrls = files.map(file => `/uploads/service-photos/${file.filename}`);
             const result = await this.bookingService.uploadAfterServicePhotos(
                 req.params.id,
                 partner.id,

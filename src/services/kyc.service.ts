@@ -185,6 +185,114 @@ export class KYCService {
         };
     }
 
+    async getPendingKYCs(page = 1, limit = 20) {
+        const skip = (page - 1) * limit;
+
+        logger.info(`[KYC] Fetching pending KYCs (page ${page}, limit ${limit})`);
+
+        // 1. Fetch Service Partners in PENDING_VERIFICATION
+        const servicePartners = await prisma.servicePartner.findMany({
+            where: { kyc_status: 'PENDING_VERIFICATION' },
+            include: { user: true, kyc_documents: true },
+            orderBy: { updated_at: 'desc' }
+        });
+
+        // 2. Fetch Business Partners in PENDING_VERIFICATION
+        const businessPartners = await prisma.businessPartner.findMany({
+            where: { kyc_status: 'PENDING_VERIFICATION' },
+            include: { user: true, kyc_documents: true },
+            orderBy: { updated_at: 'desc' }
+        });
+
+        // 3. Map to flattened document-like structures for the frontend
+        const flattenedDocs: any[] = [];
+
+        const processPartner = (p: any, type: 'SERVICE_PARTNER' | 'BUSINESS_PARTNER') => {
+            const partnerRole = type === 'SERVICE_PARTNER' ? 'SERVICE' : 'BUSINESS';
+            
+            if (p.kyc_documents && p.kyc_documents.length > 0) {
+                p.kyc_documents.forEach((doc: any) => {
+                    // Include pending documents
+                    if (doc.status === 'PENDING_VERIFICATION') {
+                        flattenedDocs.push({
+                            id: doc.id,
+                            doc_type: doc.document_type,
+                            doc_number: doc.document_number || 'PENDING',
+                            file_url: doc.document_url,
+                            status: doc.status,
+                            created_at: doc.created_at,
+                            partner: {
+                                id: p.id,
+                                full_name: p.user?.full_name,
+                                email: p.user?.email,
+                                phone: p.user?.phone_number,
+                                type: partnerRole
+                            }
+                        });
+                    }
+                });
+            } else {
+                // Return a placeholder for partners with no documents but pending status
+                flattenedDocs.push({
+                    id: `placeholder-${p.id}`,
+                    doc_type: 'MISSING_DOCUMENTS',
+                    doc_number: 'N/A',
+                    file_url: '',
+                    status: 'PENDING_VERIFICATION',
+                    created_at: p.updated_at,
+                    partner: {
+                        id: p.id,
+                        full_name: p.user?.full_name,
+                        email: p.user?.email,
+                        phone: p.user?.phone_number,
+                        type: partnerRole
+                    }
+                });
+            }
+        };
+
+        servicePartners.forEach(p => processPartner(p, 'SERVICE_PARTNER'));
+        businessPartners.forEach(p => processPartner(p, 'BUSINESS_PARTNER'));
+
+        // Sort by created_at desc
+        flattenedDocs.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+        // Apply pagination
+        const paginatedDocs = flattenedDocs.slice(skip, skip + limit);
+
+        return {
+            documents: paginatedDocs,
+            total: flattenedDocs.length,
+            page,
+            limit
+        };
+    }
+
+    async verifyKYCDocument(documentId: string, status: 'APPROVED' | 'REJECTED' | 'ACTION_REQUIRED', reason?: string, adminId?: string) {
+        const document = await prisma.kycDocument.findUnique({
+            where: { id: documentId },
+            include: {
+                service_partner: true,
+                business_partner: true
+            }
+        });
+
+        if (!document) {
+            throw new NotFoundError('KYC Document not found');
+        }
+
+        const partnerId = document.service_partner_id || document.business_partner_id;
+        if (!partnerId) {
+            throw new BadRequestError('Document is not associated with any partner');
+        }
+
+        // Use existing verifyKYC logic but targeted at this partner
+        // The verifyKYC method already handles status updates for the partner and all their documents
+        // Since the frontend seems to approve/reject on a per-document basis but our service is partner-level,
+        // we'll apply it to the partner for now as that's the current system architecture.
+        return await this.verifyKYC(partnerId, status, reason, adminId);
+    }
+
     async verifyKYC(partnerId: string, status: 'APPROVED' | 'REJECTED' | 'ACTION_REQUIRED', reason?: string, adminId?: string) {
         const notificationService = new NotificationService();
         // Try both partner types

@@ -464,16 +464,84 @@ export class PartnerService {
             where: { user_id: partner.user_id }
         });
 
+        // Fetch recent transactions
+        const transactions = await prisma.transaction.findMany({
+            where: { user_id: partner.user_id },
+            take: 5,
+            orderBy: { created_at: 'desc' }
+        });
+
+        // Calculate total earnings (sum of all credits)
+        const totalEarningsAgg = await prisma.transaction.aggregate({
+            where: {
+                user_id: partner.user_id,
+                category: 'CREDIT',
+                status: 'COMPLETED'
+            },
+            _sum: {
+                amount: true
+            }
+        });
+
         return {
-            totalEarnings: wallet?.balance || 0, // Simplified: should be sum of past earned
+            totalEarnings: totalEarningsAgg._sum.amount || 0,
             currentBalance: wallet?.balance || 0,
             pendingPayouts: wallet?.pending_payout || 0,
-            recentTransactions: [] // Front end can handle empty
+            recentTransactions: transactions.map(t => ({
+                id: t.id,
+                type: t.type,
+                amount: t.amount,
+                description: t.description,
+                createdAt: t.created_at,
+                status: (t as any).status
+            }))
         };
     }
 
-    async getPartnerPerformance(_id: string, _dateRange?: any) {
-        return { rating: 5, jobsCompleted: 0, responseTime: '10m' };
+    async getPartnerPerformance(id: string, _dateRange?: any) {
+        const sp = await prisma.servicePartner.findUnique({
+            where: { id },
+            select: { avg_rating: true, completed_bookings: true, total_bookings: true }
+        });
+
+        if (sp) {
+            return {
+                rating: sp.avg_rating || 0,
+                jobsCompleted: sp.completed_bookings || 0,
+                totalJobs: sp.total_bookings || 0,
+                responseTime: '15m'
+            };
+        }
+
+        const bp = await prisma.businessPartner.findUnique({
+            where: { id },
+            select: { id: true }
+        });
+
+        if (!bp) return { rating: 0, jobsCompleted: 0, responseTime: 'N/A' };
+
+        const totals = await prisma.booking.groupBy({
+            by: ['status'],
+            where: { business_partner_id: id },
+            _count: { id: true }
+        });
+
+        const totalJobs = totals.reduce((acc, curr) => acc + curr._count.id, 0);
+        const completed = totals.find(t => t.status === 'COMPLETED');
+        const jobsCompleted = completed ? completed._count.id : 0;
+
+        const reviewsObj = await prisma.review.aggregate({
+            where: { booking: { business_partner_id: id } },
+            _avg: { rating: true }
+        });
+        const rating = reviewsObj._avg.rating ? Number(reviewsObj._avg.rating.toFixed(1)) : 0;
+
+        return {
+            rating,
+            jobsCompleted,
+            totalJobs,
+            responseTime: '15m'
+        };
     }
 
     async addTeamMember(_partnerId: string, spId: string, _userId: string) {
