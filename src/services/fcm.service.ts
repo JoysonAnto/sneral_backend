@@ -105,17 +105,30 @@ export async function sendPushToTokens(tokens: string[], payload: PushPayload): 
             },
             data: payload.data ?? {},
             android: {
-                priority: 'high',
+                priority: payload.priority ?? 'high',
+                ttl: 0, // Deliver immediately
+                directBootOk: true,
                 notification: {
                     sound: 'default',
-                    channelId: 'snearal_notifications',
+                    channelId: payload.data?.type === 'NEW_BOOKING' ? 'job-requests' : 'snearal_notifications',
                     clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+                    visibility: 'public',
+                    priority: 'max',
                 },
             },
             apns: {
                 payload: {
-                    aps: { sound: 'default', badge: 1 },
+                    aps: {
+                        sound: 'default',
+                        badge: 1,
+                        contentAvailable: true,
+                        'interruption-level': payload.priority === 'high' ? 'critical' : 'active',
+                    },
                 },
+                headers: {
+                    'apns-priority': payload.priority === 'high' ? '10' : '5',
+                    'apns-push-type': 'alert',
+                }
             },
         });
 
