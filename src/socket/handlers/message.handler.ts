@@ -1,6 +1,7 @@
 import { Server as SocketIOServer } from 'socket.io';
 import prisma from '../../config/database';
 import logger from '../../utils/logger';
+import { sendPushToToken } from '../../services/fcm.service';
 
 export const setupMessageHandlers = (io: SocketIOServer) => {
     const handleSendMessage = async (socket: any, data: { recipientId: string; message: string; bookingId?: string; tempId?: string }) => {
@@ -46,6 +47,31 @@ export const setupMessageHandlers = (io: SocketIOServer) => {
                 tempId: data.tempId, // Optional client-side temp ID
                 createdAt: message.created_at,
             });
+
+            // Send Firebase Push Notification to the recipient
+            try {
+                const recipient = await prisma.user.findUnique({
+                    where: { id: data.recipientId },
+                    select: { fcm_token: true }
+                });
+
+                if (recipient?.fcm_token) {
+                    await sendPushToToken(recipient.fcm_token, {
+                        title: `💬 Message from ${message.sender.full_name}`,
+                        body: data.message,
+                        data: {
+                            type: 'chat',
+                            bookingId: data.bookingId ?? '',
+                            conversationId: data.bookingId ?? '',
+                            senderName: message.sender.full_name,
+                            screen: 'Chat'
+                        },
+                        priority: 'high'
+                    });
+                }
+            } catch (fcmError) {
+                logger.error('[FCM] Failed to send socket chat push notification:', fcmError);
+            }
 
             logger.info(`Message sent from ${socket.userId} to ${data.recipientId}`);
         } catch (error) {

@@ -1,6 +1,7 @@
 
 import prisma from '../config/database';
 import { getIO } from '../socket/socket.server';
+import { sendPushToToken } from './fcm.service';
 
 const namespaces = ['/customer', '/partner', '/admin'];
 
@@ -183,6 +184,26 @@ export class MessageService {
             });
         } catch (error) {
             console.error('Socket emission failed in MessageService:', error);
+        }
+
+        // Send Firebase Push Notification to the recipient
+        try {
+            if (recipient.fcm_token) {
+                await sendPushToToken(recipient.fcm_token, {
+                    title: `💬 Message from ${formattedMessage.sender.name}`,
+                    body: message,
+                    data: {
+                        type: 'chat',
+                        bookingId: bookingId ?? '',
+                        conversationId: bookingId ?? '',
+                        senderName: formattedMessage.sender.name,
+                        screen: 'Chat'
+                    },
+                    priority: 'high'
+                });
+            }
+        } catch (fcmError) {
+            console.error('[FCM] Failed to send chat push notification:', fcmError);
         }
 
         return formattedMessage;
