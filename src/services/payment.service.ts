@@ -281,13 +281,23 @@ export class PaymentService {
                     },
                 });
 
+                // Get all other completed payments for this booking
+                const completedPayments = await tx.payment.findMany({
+                    where: {
+                        booking_id: payment.booking_id,
+                        payment_status: 'COMPLETED',
+                        id: { not: payment.id }
+                    }
+                });
+                const totalPaidBefore = completedPayments.reduce((sum: number, p: any) => sum + p.amount, 0);
+                const totalPaidAfter = totalPaidBefore + payment.amount;
+                const isFullyPaid = totalPaidAfter >= (payment.booking as any).total_amount;
+
                 // Update booking
                 await tx.booking.update({
                     where: { id: payment.booking_id },
                     data: {
-                        payment_status: (payment.amount === (payment.booking as any).total_amount
-                            ? 'COMPLETED'
-                            : 'PARTIAL') as any,
+                        payment_status: isFullyPaid ? 'COMPLETED' : 'PARTIAL',
                     },
                 });
 

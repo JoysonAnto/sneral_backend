@@ -1489,6 +1489,13 @@ export class BookingService {
             throw new BadRequestError('Invalid OTP. Please ask the customer for the correct code.');
         }
 
+        // Enforce online payment completion if payment_method is online
+        if (booking.payment_method && booking.payment_method !== 'CASH' && booking.payment_method !== 'WALLET') {
+            if (booking.payment_status !== 'COMPLETED') {
+                throw new BadRequestError('Online payment is pending. Please ask the customer to complete payment before verifying OTP.');
+            }
+        }
+
         // Check if service photos were uploaded
         if (!booking.before_service_images || booking.before_service_images.length === 0) {
             throw new BadRequestError('Please upload before-service photos first');
@@ -1613,15 +1620,59 @@ export class BookingService {
         }
 
         // Update booking with duration and overtime info
+        const remainingAmount = finalTotalAmount - (booking.advance_amount || 0);
+
         await prisma.booking.update({
             where: { id: bookingId },
             data: {
                 actual_duration: actualDurationMinutes,
                 overtime_charge: overtimeCharge,
                 total_amount: finalTotalAmount,
-                remaining_amount: finalTotalAmount - (booking.advance_amount || 0)
+                remaining_amount: remainingAmount
             } as any
         });
+
+        // Record Cash Payment if payment method is CASH or unspecified (defaults to cash for in-hand completion)
+        if (!booking.payment_method || booking.payment_method === 'CASH') {
+            if (remainingAmount > 0) {
+                // Create payment record
+                await prisma.payment.create({
+                    data: {
+                        booking_id: bookingId,
+                        user_id: booking.customer_id,
+                        amount: remainingAmount,
+                        payment_method: 'CASH',
+                        payment_status: 'COMPLETED',
+                        paid_at: new Date(),
+                        transaction_id: `CASH_${Date.now()}`
+                    }
+                });
+
+                // Create transaction record
+                await prisma.transaction.create({
+                    data: {
+                        user_id: booking.customer_id,
+                        booking_id: bookingId,
+                        type: 'BOOKING_PAYMENT',
+                        amount: remainingAmount,
+                        description: `Cash payment for remaining balance of booking #${booking.booking_number}`,
+                        balance_before: 0,
+                        balance_after: 0,
+                        category: 'CREDIT',
+                        status: 'COMPLETED'
+                    } as any
+                });
+            }
+
+            // Update booking payment status
+            await prisma.booking.update({
+                where: { id: bookingId },
+                data: {
+                    payment_status: 'COMPLETED',
+                    payment_method: 'CASH'
+                }
+            });
+        }
 
         // ---------------------------------------------------------
         // Financial Split Logic has been moved to WalletService.distributeEarnings
