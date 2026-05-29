@@ -738,13 +738,22 @@ export class BookingService {
             throw new BadRequestError('Cannot add material costs to a closed booking');
         }
 
+        // Verification Enforcement: If cost is added, a bill proof receipt image MUST be provided
+        if (amount > 0 && (!billImageUrl || billImageUrl.trim() === '')) {
+            throw new BadRequestError('A purchase bill receipt photo is required for verification.');
+        }
+
+        // Idempotent calculation: update total and remaining amount based on the difference
+        const currentMaterialCost = booking.material_cost || 0;
+        const diff = amount - currentMaterialCost;
+
         const updatedBooking = await prisma.booking.update({
             where: { id: bookingId },
             data: {
                 material_cost: amount,
                 material_bill_image: billImageUrl,
-                total_amount: { increment: amount },
-                remaining_amount: { increment: amount },
+                total_amount: { increment: diff },
+                remaining_amount: { increment: diff },
                 status_history: {
                     create: {
                         status: booking.status,

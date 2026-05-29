@@ -10,6 +10,10 @@ export const SETTINGS_KEYS = {
     GST_ENABLED: 'gst_enabled',              // "true" | "false"
     COMMISSION_LABEL: 'commission_label',     // Display label, e.g. "Platform Commission"
     GST_LABEL: 'gst_label',                  // Display label, e.g. "GST (18%)"
+    PLATFORM_FEE_CASHFREE: 'platform_fee_cashfree',
+    PLATFORM_FEE_RAZORPAY: 'platform_fee_razorpay',
+    PLATFORM_FEE_STRIPE: 'platform_fee_stripe',
+    PLATFORM_FEE_WALLET: 'platform_fee_wallet',
 } as const;
 
 const DEFAULTS: Record<string, string> = {
@@ -18,6 +22,10 @@ const DEFAULTS: Record<string, string> = {
     [SETTINGS_KEYS.GST_ENABLED]: 'true',
     [SETTINGS_KEYS.COMMISSION_LABEL]: 'Platform Commission (15%)',
     [SETTINGS_KEYS.GST_LABEL]: 'GST (18%)',
+    [SETTINGS_KEYS.PLATFORM_FEE_CASHFREE]: '15',
+    [SETTINGS_KEYS.PLATFORM_FEE_RAZORPAY]: '15',
+    [SETTINGS_KEYS.PLATFORM_FEE_STRIPE]: '15',
+    [SETTINGS_KEYS.PLATFORM_FEE_WALLET]: '0',
 };
 
 export class PlatformSettingsService {

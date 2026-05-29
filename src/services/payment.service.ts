@@ -38,35 +38,68 @@ export class PaymentService {
             throw new BadRequestError('Unauthorized: Booking does not belong to you');
         }
 
-        // Calculate amount based on type
-        const amount = data.type === 'ADVANCE'
+        // Calculate base amount based on type
+        const baseAmount = data.type === 'ADVANCE'
             ? booking.advance_amount
             : booking.remaining_amount;
+
+        // Fetch dynamic platform fee per payment method
+        const { PlatformSettingsService } = await import('./platform-settings.service');
+        const settingsService = new PlatformSettingsService();
+        
+        let platformFee = 0;
+        const methodKey = `platform_fee_${data.method.toLowerCase()}`;
+        try {
+            platformFee = await settingsService.getNumeric(methodKey);
+        } catch (e) {
+            // Default fallbacks if settings service fails or key is missing
+            platformFee = data.method === 'WALLET' ? 0 : 15;
+        }
+
+        const totalAmount = baseAmount + platformFee;
 
         if (data.method === 'WALLET') {
             // Process wallet payment
             const { WalletService } = await import('./wallet.service');
             const walletService = new WalletService();
 
-            await walletService.processBookingPayment(userId, data.bookingId, amount);
+            await walletService.processBookingPayment(userId, data.bookingId, totalAmount);
 
             // Create payment record
             const payment = await prisma.payment.create({
                 data: {
                     booking_id: data.bookingId,
                     user_id: userId,
-                    amount,
+                    amount: totalAmount,
                     payment_method: 'WALLET',
                     payment_status: 'COMPLETED',
                     transaction_id: `WALLET_${Date.now()}`,
+                    gateway_response: {
+                        base_amount: baseAmount,
+                        platform_fee: platformFee
+                    } as any,
                 },
             });
+
+            // Get all completed payments for this booking to calculate isFullyPaid
+            const completedPayments = await prisma.payment.findMany({
+                where: {
+                    booking_id: data.bookingId,
+                    payment_status: 'COMPLETED',
+                }
+            });
+            const totalBasePaid = completedPayments.reduce((sum: number, p: any) => {
+                const gResp = p.gateway_response as any;
+                const baseAmt = (gResp && typeof gResp.base_amount === 'number') ? gResp.base_amount : p.amount;
+                return sum + baseAmt;
+            }, 0);
+            const isFullyPaid = totalBasePaid >= (booking as any).total_amount;
 
             // Update booking payment status
             await prisma.booking.update({
                 where: { id: data.bookingId },
                 data: {
-                    payment_status: (data.type === 'FULL' ? 'COMPLETED' : 'PARTIAL') as any,
+                    payment_status: isFullyPaid ? 'COMPLETED' : 'PARTIAL',
                 },
             });
 
@@ -85,13 +118,15 @@ export class PaymentService {
 
             // Create Razorpay order
             const order = await razorpay.orders.create({
-                amount: amount * 100, // Razorpay expects amount in paise
+                amount: Math.round(totalAmount * 100), // Razorpay expects amount in paise
                 currency: 'INR',
                 receipt: `ORDER_${data.bookingId}_${Date.now()}`,
                 notes: {
                     bookingId: data.bookingId,
                     userId: userId,
                     type: data.type,
+                    baseAmount: baseAmount.toString(),
+                    platformFee: platformFee.toString()
                 },
             });
 
@@ -100,17 +135,21 @@ export class PaymentService {
                 data: {
                     booking_id: data.bookingId,
                     user_id: userId,
-                    amount,
+                    amount: totalAmount,
                     payment_method: 'CARD', // Razorpay can be card/UPI/etc
                     payment_status: 'PENDING',
                     razorpay_order_id: order.id,
+                    gateway_response: {
+                        base_amount: baseAmount,
+                        platform_fee: platformFee
+                    } as any,
                 },
             });
 
             return {
                 paymentId: payment.id,
                 orderId: order.id,
-                amount: amount,
+                amount: totalAmount,
                 currency: 'INR',
                 status: 'PENDING',
                 razorpayKeyId: process.env.RAZORPAY_KEY_ID,
@@ -132,7 +171,7 @@ export class PaymentService {
             
             const cfOrder = await cashfreeService.createOrder(
                 cashfreeOrderId,
-                amount,
+                totalAmount,
                 userId,
                 user.phone_number || '',
                 user.full_name,
@@ -148,10 +187,14 @@ export class PaymentService {
                 data: {
                     booking_id: data.bookingId,
                     user_id: userId,
-                    amount,
+                    amount: totalAmount,
                     payment_method: 'CARD', // Generic for Cashfree
                     payment_status: 'PENDING',
                     cashfree_order_id: cashfreeOrderId,
+                    gateway_response: {
+                        base_amount: baseAmount,
+                        platform_fee: platformFee
+                    } as any,
                 },
             });
 
@@ -159,7 +202,7 @@ export class PaymentService {
                 paymentId: payment.id,
                 orderId: cashfreeOrderId,
                 paymentSessionId: cfOrder.data.payment_session_id,
-                amount: amount,
+                amount: totalAmount,
                 currency: 'INR',
                 status: 'PENDING',
                 method: 'CASHFREE',
@@ -206,25 +249,45 @@ export class PaymentService {
         // Payment verified - update records
         await prisma.$transaction(async (tx) => {
             // Update payment
-            await tx.payment.update({
+            const updatedPayment = await tx.payment.update({
                 where: { id: paymentId },
                 data: {
                     payment_status: 'COMPLETED',
                     razorpay_payment_id: razorpayPaymentId,
                     razorpay_signature: signature,
                     paid_at: new Date(),
+                    gateway_response: {
+                        ...(payment.gateway_response as any),
+                        razorpay_payment_id: razorpayPaymentId,
+                    } as any,
                 },
             });
+
+            // Get all completed payments for this booking to calculate isFullyPaid
+            const completedPayments = await tx.payment.findMany({
+                where: {
+                    booking_id: payment.booking_id,
+                    payment_status: 'COMPLETED',
+                }
+            });
+            const totalBasePaid = completedPayments.reduce((sum: number, p: any) => {
+                const gResp = p.gateway_response as any;
+                const baseAmt = (gResp && typeof gResp.base_amount === 'number') ? gResp.base_amount : p.amount;
+                return sum + baseAmt;
+            }, 0);
+            const isFullyPaid = totalBasePaid >= (payment.booking as any).total_amount;
 
             // Update booking
             await tx.booking.update({
                 where: { id: payment.booking_id },
                 data: {
-                    payment_status: (payment.amount === (payment.booking as any).total_amount
-                        ? 'COMPLETED'
-                        : 'PARTIAL') as any,
+                    payment_status: isFullyPaid ? 'COMPLETED' : 'PARTIAL',
                 },
             });
+
+            // Calculate base amount for transaction record
+            const gResp = updatedPayment.gateway_response as any;
+            const baseAmount = (gResp && typeof gResp.base_amount === 'number') ? gResp.base_amount : payment.amount;
 
             // Create transaction record
             await tx.transaction.create({
@@ -232,7 +295,7 @@ export class PaymentService {
                     user_id: userId,
                     booking_id: payment.booking_id,
                     type: 'BOOKING_PAYMENT',
-                    amount: payment.amount,
+                    amount: baseAmount,
                     description: `Payment for booking #${payment.booking.booking_number}`,
                     balance_before: 0,
                     balance_after: 0,
@@ -272,26 +335,31 @@ export class PaymentService {
             // Process payment success
             await prisma.$transaction(async (tx) => {
                 // Update payment
-                await tx.payment.update({
+                const updatedPayment = await tx.payment.update({
                     where: { id: payment.id },
                     data: {
                         payment_status: 'COMPLETED',
                         paid_at: new Date(),
-                        gateway_response: result.data
+                        gateway_response: {
+                            ...(payment.gateway_response as any),
+                            ...result.data
+                        } as any
                     },
                 });
 
-                // Get all other completed payments for this booking
+                // Get all completed payments for this booking to calculate isFullyPaid
                 const completedPayments = await tx.payment.findMany({
                     where: {
                         booking_id: payment.booking_id,
                         payment_status: 'COMPLETED',
-                        id: { not: payment.id }
                     }
                 });
-                const totalPaidBefore = completedPayments.reduce((sum: number, p: any) => sum + p.amount, 0);
-                const totalPaidAfter = totalPaidBefore + payment.amount;
-                const isFullyPaid = totalPaidAfter >= (payment.booking as any).total_amount;
+                const totalBasePaid = completedPayments.reduce((sum: number, p: any) => {
+                    const gResp = p.gateway_response as any;
+                    const baseAmt = (gResp && typeof gResp.base_amount === 'number') ? gResp.base_amount : p.amount;
+                    return sum + baseAmt;
+                }, 0);
+                const isFullyPaid = totalBasePaid >= (payment.booking as any).total_amount;
 
                 // Update booking
                 await tx.booking.update({
@@ -301,13 +369,16 @@ export class PaymentService {
                     },
                 });
 
+                const gResp = updatedPayment.gateway_response as any;
+                const baseAmount = (gResp && typeof gResp.base_amount === 'number') ? gResp.base_amount : payment.amount;
+
                 // Create transaction record
                 await tx.transaction.create({
                     data: {
                         user_id: userId,
                         booking_id: payment.booking_id,
                         type: 'BOOKING_PAYMENT',
-                        amount: payment.amount,
+                        amount: baseAmount,
                         description: `Payment for booking #${payment.booking.booking_number} via Cashfree`,
                         balance_before: 0,
                         balance_after: 0,

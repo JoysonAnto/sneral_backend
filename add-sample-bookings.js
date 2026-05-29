@@ -159,7 +159,6 @@ async function addSampleBookings() {
                     items: {
                         create: {
                             service_id: service.id,
-                            service_name: service.name,
                             quantity: 1,
                             unit_price: data.totalAmount,
                             total_price: data.totalAmount,

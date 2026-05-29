@@ -132,10 +132,8 @@ async function addServicePartners() {
                     service_radius: 10, // 10km radius
                     current_latitude: sp.location.lat,
                     current_longitude: sp.location.lon,
-                    rating: 4.5 + Math.random() * 0.5, // Random rating 4.5-5.0
-                    total_jobs_completed: Math.floor(Math.random() * 100) + 50,
-                    skills: sp.skills,
-                    experience_years: 5 + Math.floor(Math.random() * 10),
+                    avg_rating: 4.5 + Math.random() * 0.5, // Random rating 4.5-5.0
+                    completed_bookings: Math.floor(Math.random() * 100) + 50,
                 },
             });
 
