@@ -1,12 +1,15 @@
 import { Request, Response, NextFunction } from 'express';
 import { BookingService } from '../services/booking.service';
+import { MessageService } from '../services/message.service';
 import { successResponse } from '../utils/response';
 
 export class BookingController {
     private bookingService: BookingService;
+    private messageService: MessageService;
 
     constructor() {
         this.bookingService = new BookingService();
+        this.messageService = new MessageService();
     }
 
     create = async (req: Request, res: Response, next: NextFunction) => {
@@ -391,6 +394,121 @@ export class BookingController {
             );
 
             res.json(successResponse(updated, 'Material cost added successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    sendVoiceMessage = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const bookingId = req.params.id || req.body.booking_id;
+            const { audio_url, duration_seconds } = req.body;
+            const userId = req.user!.userId;
+
+            // 1. Verify access to this booking
+            const prismaClient = await import('../config/database');
+            const prisma = prismaClient.default;
+            const booking = await prisma.booking.findUnique({
+                where: { id: bookingId },
+                select: { customer_id: true, partner_id: true, business_partner_id: true }
+            });
+
+            if (!booking) {
+                res.status(404).json({ success: false, message: 'Booking not found' });
+                return;
+            }
+
+            // 2. Resolve receiver ID
+            let receiverId: string | null = null;
+            if (req.user!.role === 'CUSTOMER') {
+                if (booking.customer_id !== userId) {
+                    res.status(403).json({ success: false, message: 'You are not the customer for this booking' });
+                    return;
+                }
+                if (!booking.partner_id) {
+                    res.status(400).json({ success: false, message: 'No partner assigned to this booking yet' });
+                    return;
+                }
+                const servicePartner = await prisma.servicePartner.findUnique({
+                    where: { id: booking.partner_id },
+                    select: { user_id: true }
+                });
+                receiverId = servicePartner?.user_id ?? null;
+            } else if (req.user!.role === 'SERVICE_PARTNER') {
+                const servicePartner = await prisma.servicePartner.findUnique({
+                    where: { user_id: userId },
+                    select: { id: true }
+                });
+                if (!servicePartner || servicePartner.id !== booking.partner_id) {
+                    res.status(403).json({ success: false, message: 'You are not the assigned partner for this booking' });
+                    return;
+                }
+                receiverId = booking.customer_id;
+            } else {
+                receiverId = booking.customer_id;
+            }
+
+            if (!receiverId) {
+                res.status(400).json({ success: false, message: 'No participant to receive the message' });
+                return;
+            }
+
+            // 3. Send voice message
+            const formattedMessage = await this.messageService.sendMessage(
+                userId,
+                receiverId,
+                'Sent a voice note',
+                bookingId,
+                'voice',
+                audio_url,
+                duration_seconds ? Number(duration_seconds) : undefined
+            );
+
+            res.status(201).json({
+                success: true,
+                message: "Voice message sent successfully",
+                data: formattedMessage
+            });
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    getVoiceMessages = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const bookingId = req.params.id;
+            const prismaClient = await import('../config/database');
+            const prisma = prismaClient.default;
+
+            const messages = await prisma.message.findMany({
+                where: {
+                    booking_id: bookingId,
+                    content_type: { in: ['voice', 'audio'] }
+                },
+                include: {
+                    sender: {
+                        select: {
+                            role: true
+                        }
+                    }
+                },
+                orderBy: { created_at: 'asc' }
+            });
+
+            const formattedMessages = messages.map(msg => ({
+                message_id: msg.id,
+                booking_id: msg.booking_id || bookingId,
+                sender_id: msg.sender_id,
+                sender_type: msg.sender?.role === 'CUSTOMER' ? 'customer' : 'worker',
+                audio_url: msg.file_url || msg.content,
+                duration_seconds: msg.duration_seconds || 0,
+                created_at: msg.created_at
+            }));
+
+            res.json({
+                success: true,
+                messages: formattedMessages
+            });
         } catch (error) {
             next(error);
         }

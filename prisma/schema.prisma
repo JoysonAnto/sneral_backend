@@ -508,9 +508,10 @@ model Message {
   receiver_id  String
   booking_id   String?
   content      String
-  content_type String    @default("text")
-  file_url     String?
-  is_read      Boolean   @default(false)
+  content_type     String    @default("text")
+  file_url         String?
+  duration_seconds Int?
+  is_read          Boolean   @default(false)
   read_at      DateTime?
   created_at   DateTime  @default(now())
   booking      Booking?  @relation(fields: [booking_id], references: [id])

@@ -313,6 +313,16 @@ router.post(
     bookingController.uploadAfterPhotos
 );
 
+router.post(
+    '/:id/voice-messages',
+    bookingController.sendVoiceMessage
+);
+
+router.get(
+    '/:id/voice-messages',
+    bookingController.getVoiceMessages
+);
+
 /**
  * @swagger
  * /bookings/{id}/generate-start-otp:

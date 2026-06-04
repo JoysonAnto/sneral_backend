@@ -132,6 +132,8 @@ export class MessageService {
             text: message.content,
             contentType: message.content_type,
             fileUrl: message.file_url,
+            audio_url: (message.content_type === 'voice' || message.content_type === 'audio') ? message.file_url : undefined,
+            duration_seconds: message.duration_seconds || undefined,
             createdAt: message.created_at,
             sender: {
                 id: sender?.id,
@@ -142,7 +144,7 @@ export class MessageService {
         };
     }
 
-    async sendMessage(senderId: string, recipientId: string, message: string, bookingId?: string, contentType: string = 'text', fileUrl?: string) {
+    async sendMessage(senderId: string, recipientId: string, message: string, bookingId?: string, contentType: string = 'text', fileUrl?: string, durationSeconds?: number) {
         // Verify recipient exists
         const recipient = await prisma.user.findUnique({
             where: { id: recipientId },
@@ -159,6 +161,7 @@ export class MessageService {
                 content: message,
                 content_type: contentType,
                 file_url: fileUrl,
+                duration_seconds: durationSeconds,
                 ...(bookingId && { booking_id: bookingId }),
             },
         });
