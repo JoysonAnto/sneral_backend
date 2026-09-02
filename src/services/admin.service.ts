@@ -311,7 +311,7 @@ export class AdminService {
                 name: data.name,
                 description: data.description,
                 icon_url: data.icon_url,
-                display_order: data.display_order || 0,
+                display_order: data.display_order ? parseInt(data.display_order, 10) : 0,
             }
         });
     }
@@ -323,8 +323,8 @@ export class AdminService {
                 name: data.name,
                 description: data.description,
                 icon_url: data.icon_url,
-                display_order: data.display_order,
-                is_active: data.is_active,
+                display_order: data.display_order !== undefined ? parseInt(data.display_order, 10) : undefined,
+                is_active: data.is_active !== undefined ? (data.is_active === 'true' || data.is_active === true) : undefined,
             }
         });
     }
