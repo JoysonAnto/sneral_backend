@@ -167,7 +167,7 @@ export class BookingService {
     /**
      * Find available partners and notify them about a new booking
      */
-    private async findAndNotifyPartners(bookingId: string): Promise<void> {
+    public async findAndNotifyPartners(bookingId: string): Promise<void> {
         try {
             const { PartnerMatchingService } = await import('./partner-matching.service');
             const matchingService = new PartnerMatchingService();

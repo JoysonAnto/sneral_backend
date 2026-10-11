@@ -267,10 +267,106 @@ export class PartnerService {
     }
 
     async updatePartner(id: string, data: any, _userId: string, _role: string) {
-        return await prisma.servicePartner.update({
-            where: { id },
-            data: data
+        // Try finding by servicePartner id or user_id
+        let sp = await prisma.servicePartner.findFirst({
+            where: {
+                OR: [{ id }, { user_id: id }]
+            },
+            include: { user: true }
         });
+
+        if (sp) {
+            // Update user details if provided
+            if (data.fullName || data.full_name || data.phoneNumber || data.phone_number) {
+                await prisma.user.update({
+                    where: { id: sp.user_id },
+                    data: {
+                        ...(data.fullName || data.full_name ? { full_name: data.fullName || data.full_name } : {}),
+                        ...(data.phoneNumber || data.phone_number ? { phone_number: data.phoneNumber || data.phone_number } : {}),
+                    }
+                });
+            }
+
+            const partnerUpdateData: any = {};
+            if (data.serviceRadius !== undefined || data.service_radius !== undefined) {
+                partnerUpdateData.service_radius = parseFloat(data.serviceRadius ?? data.service_radius);
+            }
+            if (data.availabilityStatus || data.availability_status) {
+                partnerUpdateData.availability_status = data.availabilityStatus || data.availability_status;
+            }
+            if (data.kycStatus || data.kyc_status) {
+                partnerUpdateData.kyc_status = data.kycStatus || data.kyc_status;
+            }
+            if (data.bankAccountNumber !== undefined || data.bank_account_number !== undefined) {
+                partnerUpdateData.bank_account_number = data.bankAccountNumber ?? data.bank_account_number;
+            }
+            if (data.bankIfscCode !== undefined || data.bank_ifsc_code !== undefined) {
+                partnerUpdateData.bank_ifsc_code = data.bankIfscCode ?? data.bank_ifsc_code;
+            }
+            if (data.bankAccountName !== undefined || data.bank_account_name !== undefined) {
+                partnerUpdateData.bank_account_name = data.bankAccountName ?? data.bank_account_name;
+            }
+
+            return await prisma.servicePartner.update({
+                where: { id: sp.id },
+                data: partnerUpdateData,
+                include: { user: true }
+            });
+        }
+
+        // Try business partner
+        let bp = await prisma.businessPartner.findFirst({
+            where: {
+                OR: [{ id }, { user_id: id }]
+            },
+            include: { user: true }
+        });
+
+        if (bp) {
+            if (data.fullName || data.full_name || data.phoneNumber || data.phone_number) {
+                await prisma.user.update({
+                    where: { id: bp.user_id },
+                    data: {
+                        ...(data.fullName || data.full_name ? { full_name: data.fullName || data.full_name } : {}),
+                        ...(data.phoneNumber || data.phone_number ? { phone_number: data.phoneNumber || data.phone_number } : {}),
+                    }
+                });
+            }
+
+            const bpUpdateData: any = {};
+            if (data.businessName || data.business_name) {
+                bpUpdateData.business_name = data.businessName || data.business_name;
+            }
+            if (data.businessType || data.business_type) {
+                bpUpdateData.business_type = data.businessType || data.business_type;
+            }
+            if (data.gstNumber !== undefined || data.gst_number !== undefined) {
+                bpUpdateData.gst_number = data.gstNumber ?? data.gst_number;
+            }
+            if (data.commissionRate !== undefined || data.commission_rate !== undefined) {
+                bpUpdateData.commission_rate = parseFloat(data.commissionRate ?? data.commission_rate);
+            }
+            if (data.kycStatus || data.kyc_status) {
+                bpUpdateData.kyc_status = data.kycStatus || data.kyc_status;
+            }
+            if (data.bankAccountNumber !== undefined || data.bank_account_number !== undefined) {
+                bpUpdateData.bank_account_number = data.bankAccountNumber ?? data.bank_account_number;
+            }
+            if (data.bankIfscCode !== undefined || data.bank_ifsc_code !== undefined) {
+                bpUpdateData.bank_ifsc_code = data.bankIfscCode ?? data.bank_ifsc_code;
+            }
+            if (data.bankAccountName !== undefined || data.bank_account_name !== undefined) {
+                bpUpdateData.bank_account_name = data.bankAccountName ?? data.bank_account_name;
+            }
+
+            return await prisma.businessPartner.update({
+                where: { id: bp.id },
+                data: bpUpdateData,
+                include: { user: true }
+            });
+        }
+
+        throw new NotFoundError('Partner not found');
     }
 
     async updateAvailability(id: string, data: any) {

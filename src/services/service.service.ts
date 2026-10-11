@@ -8,6 +8,7 @@ interface CreateServiceData {
     basePrice: number;
     duration: number;
     imageUrl?: string;
+    isActive?: boolean | string;
 }
 
 interface CreateCategoryData {
@@ -208,7 +209,7 @@ export class ServiceService {
                 ...(data.basePrice !== undefined && { base_price: parseFloat(data.basePrice as any) }),
                 ...(data.duration !== undefined && { duration: parseInt(data.duration as any, 10) }),
                 ...(data.imageUrl && { image_url: data.imageUrl }),
-                ...(data.isActive !== undefined && { is_active: (data.isActive === 'true' || data.isActive === true) }),
+                ...(data.isActive !== undefined && { is_active: (String(data.isActive) === 'true') }),
             },
             include: {
                 category: true,

@@ -28,15 +28,40 @@ export const createPartnerValidator = [
 export const updatePartnerValidator = [
     body('fullName')
         .optional()
-        .trim()
-        .notEmpty(),
+        .trim(),
     body('phoneNumber')
-        .optional()
-        .isMobilePhone('any'),
+        .optional(),
     body('serviceRadius')
         .optional()
-        .isFloat({ min: 1, max: 50 })
-        .withMessage('Service radius must be between 1 and 50 km'),
+        .isFloat({ min: 1, max: 100 })
+        .withMessage('Service radius must be between 1 and 100 km'),
+    body('businessName')
+        .optional()
+        .trim(),
+    body('businessType')
+        .optional()
+        .trim(),
+    body('gstNumber')
+        .optional()
+        .trim(),
+    body('commissionRate')
+        .optional()
+        .isFloat({ min: 0, max: 1 }),
+    body('kycStatus')
+        .optional()
+        .isIn(['PENDING', 'PENDING_VERIFICATION', 'APPROVED', 'REJECTED']),
+    body('availabilityStatus')
+        .optional()
+        .isIn(['AVAILABLE', 'BUSY', 'OFFLINE']),
+    body('bankAccountNumber')
+        .optional()
+        .trim(),
+    body('bankIfscCode')
+        .optional()
+        .trim(),
+    body('bankAccountName')
+        .optional()
+        .trim(),
 ];
 
 export const updateAvailabilityValidator = [

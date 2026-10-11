@@ -301,6 +301,7 @@ model Booking {
   remaining_amount      Float
   payment_method        PaymentMethod?
   payment_status        PaymentStatus            @default(PENDING)
+  retry_count           Int                      @default(0)
   special_instructions  String?
   partner_assigned_at   DateTime?
   partner_accepted_at   DateTime?
@@ -883,6 +884,7 @@ enum BookingStatus {
   RATED
   PARTNER_NOT_FOUND
   PENDING_ASSIGNMENT
+  PARTNER_ARRIVED
   ARRIVED
 }
 
@@ -937,6 +939,13 @@ enum NotificationType {
   MESSAGE_RECEIVED
   GENERAL
   KYC_ACTION_REQUIRED
+  NEW_BOOKING
+  BOOKING_CANCELLED
+  PARTNER_ARRIVED
+  BOOKING_STARTED
+  PAYMENT_COMPLETED
+  PAYOUT_PROCESSED
+  TEAM_INVITATION
 }
 
 enum TeamMemberRole {
