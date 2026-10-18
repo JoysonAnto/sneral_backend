@@ -329,10 +329,10 @@ export class FcmService {
         await sendPushToToken(token, {
             title: '🆕 New Job Available',
             body: `${serviceName}${distanceText} – ₹${amount.toFixed(0)}. Tap to accept!`,
-            data: { 
-                type: 'NEW_BOOKING', 
-                bookingId, 
-                bookingNumber, 
+            data: {
+                type: 'NEW_BOOKING',
+                bookingId,
+                bookingNumber,
                 screen: 'JobDetail',
                 fullScreen: 'true', // Trigger Wake-up UI
                 price: amount.toString(),

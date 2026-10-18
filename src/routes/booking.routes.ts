@@ -241,21 +241,32 @@ router.post(
  *   post:
  *     summary: Cancel a booking with reason
  *     tags: [Bookings]
+ *   patch:
+ *     summary: Cancel a booking with reason (supports both POST and PATCH)
+ *     tags: [Bookings]
  *     responses:
  *       200:
  *         description: Booking cancelled
  */
-router.post(
-    '/:id/cancel',
-    validate(cancelBookingValidator),
-    bookingController.cancel
-);
+router.route('/:id/cancel')
+    .post(
+        authorize('CUSTOMER', 'SERVICE_PARTNER', 'BUSINESS_PARTNER', 'ADMIN', 'SUPER_ADMIN'),
+        validate(cancelBookingValidator),
+        bookingController.cancel
+    )
+    .patch(
+        authorize('CUSTOMER', 'SERVICE_PARTNER', 'BUSINESS_PARTNER', 'ADMIN', 'SUPER_ADMIN'),
+        validate(cancelBookingValidator),
+        bookingController.cancel
+    );
+
 
 /**
  * @swagger
  * /bookings/{id}/rate:
  *   post:
- *     summary: Provide rating and feedback for a finished job
+ *     summary: "[Deprecated] Use POST /bookings/{id}/reviews instead"
+ *     description: Legacy endpoint kept for backward compatibility. Prefer /reviews.
  *     tags: [Bookings]
  *     responses:
  *       200:
@@ -263,10 +274,11 @@ router.post(
  */
 router.post(
     '/:id/rate',
-    authorize('CUSTOMER'),
+    authorize('CUSTOMER', 'SERVICE_PARTNER'),
     validate(rateBookingValidator),
     bookingController.rate
 );
+
 
 import { beforeServicePhotos, afterServicePhotos } from '../middleware/upload.middleware';
 

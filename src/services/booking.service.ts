@@ -807,6 +807,7 @@ export class BookingService {
         broadcastStatsUpdate();
     }
 
+
     private async broadcastBookingUpdate(booking: any) {
         try {
             const io = getIO();
