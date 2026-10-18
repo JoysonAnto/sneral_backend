@@ -465,14 +465,15 @@ export class PartnerService {
             throw new BadRequestError('Availability status is required');
         }
 
-        const updatedPartner = await prisma.servicePartner.update({
-            where: { id },
-            data: { availability_status: status as any }
-        });
+        console.log(`📡 [DEBUG] Updating partner ${id} status to ${status}`);
 
-        return {
-            availability_status: updatedPartner.availability_status
-        };
+        return await prisma.servicePartner.update({
+            where: { id },
+            data: {
+                availability_status: status as any,
+                last_location_update: new Date()
+            },
+        });
     }
 
     async getPartnerServices(id: string) {
