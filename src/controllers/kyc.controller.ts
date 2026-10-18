@@ -68,6 +68,15 @@ export class KYCController {
         }
     };
 
+    getKYCStats = async (_req: Request, res: Response, next: NextFunction) => {
+        try {
+            const stats = await this.kycService.getKYCStats();
+            res.json(successResponse(stats, 'KYC statistics retrieved successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
     getMyKYCStatus = async (req: Request, res: Response, next: NextFunction) => {
         try {
             // Use the authenticated user's ID as the partnerId (the service handles lookup by UserID)

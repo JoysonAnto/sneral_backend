@@ -5,8 +5,8 @@ import { authenticateToken, authorize } from '../middleware/auth.middleware';
 const router = Router();
 const customerController = new OfflineCustomerController();
 
-// All routes require authentication and BUSINESS_PARTNER role
-router.use(authenticateToken);
+// Routes require authentication
+router.use(['/business', '/offline-customers'], authenticateToken);
 // Customer management for a specific business partner
 router.get(
     '/business/:businessPartnerId/offline-customers',

@@ -31,21 +31,18 @@ async function main() {
 
     // Clear existing data to avoid unique constraint violations
     console.log('🧹 Clearing existing data...');
-    await prisma.notification.deleteMany();
-    await prisma.review.deleteMany();
-    await prisma.bookingItem.deleteMany();
-    await prisma.booking.deleteMany();
-    await prisma.wallet.deleteMany();
-    await prisma.profile.deleteMany();
-    await prisma.partnerService.deleteMany();
-    await prisma.servicePartner.deleteMany();
-    await prisma.businessPartner.deleteMany();
-    await prisma.service.deleteMany();
-    await prisma.category.deleteMany();
-    await prisma.rolePermission.deleteMany();
-    await prisma.permission.deleteMany();
-    await prisma.role.deleteMany();
-    await prisma.user.deleteMany();
+    const tablenames = await prisma.$queryRaw<Array<{ tablename: string }>>`
+        SELECT tablename FROM pg_tables WHERE schemaname='public'
+    `;
+    const tables = tablenames
+        .map(({ tablename }) => tablename)
+        .filter((name) => name !== '_prisma_migrations')
+        .map((name) => `"public"."${name}"`)
+        .join(', ');
+
+    if (tables.length > 0) {
+        await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${tables} CASCADE;`);
+    }
     console.log('✅ Database cleared.\n');
 
     const hashedPassword = await hashPassword('password123');

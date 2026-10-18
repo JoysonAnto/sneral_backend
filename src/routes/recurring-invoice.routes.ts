@@ -5,8 +5,8 @@ import { authenticateToken, authorize } from '../middleware/auth.middleware';
 const router = Router();
 const recurringController = new RecurringInvoiceController();
 
-// All routes require authentication
-router.use(authenticateToken);
+// Routes require authentication
+router.use(['/business', '/recurring-invoices'], authenticateToken);
 // Recurring invoice management for a specific business partner
 router.get(
     '/business/:businessPartnerId/recurring-invoices',

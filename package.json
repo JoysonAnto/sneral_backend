@@ -31,7 +31,7 @@
   "dependencies": {
     "@googlemaps/google-maps-services-js": "^3.4.2",
     "@prisma/client": "^5.22.0",
-    "@sentry/node": "^10.32.1",
+    "@sentry/node": "^10.76.2",
     "@sentry/profiling-node": "^10.32.1",
     "@types/sanitize-html": "^2.16.1",
     "@types/streamifier": "^0.1.2",

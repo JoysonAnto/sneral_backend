@@ -5,8 +5,8 @@ import { authenticateToken, authorize } from '../middleware/auth.middleware';
 const router = Router();
 const invoiceController = new OfflineInvoiceController();
 
-// All routes require authentication and BUSINESS_PARTNER role
-router.use(authenticateToken);
+// Routes require authentication
+router.use(['/business', '/offline-invoices'], authenticateToken);
 // Invoice management for a specific business partner
 router.get(
     '/business/:businessPartnerId/offline-invoices',

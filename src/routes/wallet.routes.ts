@@ -23,6 +23,7 @@ router.use(authenticateToken);
  *         description: Wallet balance returned
  */
 router.get('/', walletController.getBalance);
+router.get('/balance', walletController.getBalance);
 
 /**
  * @swagger

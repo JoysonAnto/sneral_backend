@@ -47,12 +47,16 @@ describe('Encryption Utils', () => {
     });
 
     describe('generateOTP', () => {
-        it('should generate 6-digit OTP', () => {
-            const otp = generateOTP();
+        it('should generate default 4-digit OTP and custom 6-digit OTP', () => {
+            const defaultOtp = generateOTP();
+            expect(defaultOtp).toBeDefined();
+            expect(defaultOtp.length).toBe(4);
+            expect(/^\d{4}$/.test(defaultOtp)).toBe(true);
 
-            expect(otp).toBeDefined();
-            expect(otp.length).toBe(6);
-            expect(/^\d{6}$/.test(otp)).toBe(true);
+            const otp6 = generateOTP(6);
+            expect(otp6).toBeDefined();
+            expect(otp6.length).toBe(6);
+            expect(/^\d{6}$/.test(otp6)).toBe(true);
         });
 
         it('should generate different OTPs', () => {

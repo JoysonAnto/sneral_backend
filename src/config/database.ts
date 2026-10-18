@@ -18,10 +18,5 @@ if (process.env.NODE_ENV === 'development') {
     });
 }
 
-// Graceful shutdown
-process.on('beforeExit', async () => {
-    await prisma.$disconnect();
-    logger.info('Prisma disconnected');
-});
 
 export default prisma;

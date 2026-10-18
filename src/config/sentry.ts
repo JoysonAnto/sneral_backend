@@ -21,7 +21,7 @@ export const initializeSentry = () => {
         profilesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
 
         integrations: [
-            nodeProfilingIntegration(),
+            nodeProfilingIntegration() as any,
         ],
 
         // Filter out sensitive data

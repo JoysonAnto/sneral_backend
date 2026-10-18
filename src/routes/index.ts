@@ -69,23 +69,10 @@ router.use('/reviews', reviewRoutes); // Review endpoints under /reviews prefix
 router.use('/partners', partnerRoutes);
 router.use('/partner', servicePartnerRoutes);
 router.use('/wallet', walletRoutes);
-router.use('/kyc', kycRoutes);
 router.use('/kyc/cashfree', cashfreeRoutes);
+router.use('/kyc', kycRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/payouts', payoutRoutes);
-
-// 5. LOCATION & TRACKING
-router.use('/locations', locationRoutes);
-router.use('/tracking', locationTrackingRoutes);
-
-// 6. COMMUNICATION
-router.use('/notifications', notificationRoutes);
-router.use('/messages', messageRoutes);
-
-// 7. ADMIN & ROLES
-router.use('/admin', adminRoutes);
-router.use('/roles', roleRoutes);
-router.use('/business-partners', businessPartnerRoutes);
 
 // 5. LOCATION & TRACKING
 router.use('/locations', locationRoutes);

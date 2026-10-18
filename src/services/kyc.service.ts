@@ -163,7 +163,7 @@ export class KYCService {
 
         // Get KYC documents
         const whereDoc: any = {};
-        whereDoc[servicePartner ? 'service_partner_id' : 'business_partner_id'] = partnerId;
+        whereDoc[servicePartner ? 'service_partner_id' : 'business_partner_id'] = partner.id;
 
         const documents = await prisma.kycDocument.findMany({
             where: whereDoc,
@@ -268,7 +268,43 @@ export class KYCService {
         };
     }
 
+    async getKYCStats() {
+        const [
+            spPending, bpPending,
+            spPendingVerif, bpPendingVerif,
+            spApproved, bpApproved,
+            spRejected, bpRejected
+        ] = await Promise.all([
+            prisma.servicePartner.count({ where: { kyc_status: 'PENDING' } }),
+            prisma.businessPartner.count({ where: { kyc_status: 'PENDING' } }),
+            prisma.servicePartner.count({ where: { kyc_status: 'PENDING_VERIFICATION' } }),
+            prisma.businessPartner.count({ where: { kyc_status: 'PENDING_VERIFICATION' } }),
+            prisma.servicePartner.count({ where: { kyc_status: 'APPROVED' } }),
+            prisma.businessPartner.count({ where: { kyc_status: 'APPROVED' } }),
+            prisma.servicePartner.count({ where: { kyc_status: 'REJECTED' } }),
+            prisma.businessPartner.count({ where: { kyc_status: 'REJECTED' } }),
+        ]);
+
+        const pendingDocs = await prisma.kycDocument.count({
+            where: { status: 'PENDING_VERIFICATION' },
+        });
+
+        return {
+            pending: spPending + bpPending,
+            pending_verification: spPendingVerif + bpPendingVerif,
+            approved: spApproved + bpApproved,
+            rejected: spRejected + bpRejected,
+            total: spPending + bpPending + spPendingVerif + bpPendingVerif + spApproved + bpApproved + spRejected + bpRejected,
+            pendingDocuments: pendingDocs,
+        };
+    }
+
     async verifyKYCDocument(documentId: string, status: 'APPROVED' | 'REJECTED' | 'ACTION_REQUIRED', reason?: string, adminId?: string) {
+        if (documentId.startsWith('placeholder-')) {
+            const partnerId = documentId.replace('placeholder-', '');
+            return await this.verifyKYC(partnerId, status, reason, adminId);
+        }
+
         const document = await prisma.kycDocument.findUnique({
             where: { id: documentId },
             include: {
@@ -286,10 +322,17 @@ export class KYCService {
             throw new BadRequestError('Document is not associated with any partner');
         }
 
-        // Use existing verifyKYC logic but targeted at this partner
-        // The verifyKYC method already handles status updates for the partner and all their documents
-        // Since the frontend seems to approve/reject on a per-document basis but our service is partner-level,
-        // we'll apply it to the partner for now as that's the current system architecture.
+        // Update the document directly
+        await prisma.kycDocument.update({
+            where: { id: documentId },
+            data: {
+                status: status as any,
+                verified_at: new Date(),
+                verified_by: adminId,
+                rejection_reason: reason || null,
+            }
+        });
+
         return await this.verifyKYC(partnerId, status, reason, adminId);
     }
 

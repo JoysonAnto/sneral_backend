@@ -1,4 +1,5 @@
 import express, { Application } from 'express';
+import path from 'path';
 import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
@@ -25,7 +26,7 @@ app.use(
             directives: {
                 defaultSrc: ["'self'"],
                 styleSrc: ["'self'", "'unsafe-inline'"],
-                scriptSrc: ["'self'"],
+                scriptSrc: ["'self'", "'unsafe-inline'"],
                 imgSrc: ["'self'", 'data:', 'https:'],
                 connectSrc: ["'self'"],
                 fontSrc: ["'self'"],
@@ -97,7 +98,15 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// Swagger UI
+// Static uploads serving (KYC docs, service photos, invoices)
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+app.use('/api/v1/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
+// Swagger UI & JSON Spec
+app.get('/api/v1/docs.json', (_req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.send(swaggerSpec);
+});
 app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
     explorer: true,
     customSiteTitle: 'Snearal API Documentation',
@@ -113,6 +122,11 @@ app.get('/', (_req, res) => {
         version: '1.0.0',
         docs: '/api/v1/docs',
     });
+});
+
+// Sentry debug endpoint for testing error capturing
+app.get('/debug-sentry', (_req, _res) => {
+    throw new Error('My first Sentry error!');
 });
 
 // 404 handler

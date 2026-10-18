@@ -280,8 +280,6 @@ router.post(
 );
 
 
-import { beforeServicePhotos, afterServicePhotos } from '../middleware/upload.middleware';
-
 /**
  * @swagger
  * /bookings/{id}/before-photos:

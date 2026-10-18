@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { KYCController } from '../controllers/kyc.controller';
+import { CashfreeController } from '../controllers/cashfree.controller';
 import { authenticateToken, authorize } from '../middleware/auth.middleware';
 import { kycFields } from '../middleware/upload.middleware';
 import { body } from 'express-validator';
@@ -7,6 +8,7 @@ import { validate } from '../middleware/validate.middleware';
 
 const router = Router();
 const kycController = new KYCController();
+const cashfreeController = new CashfreeController();
 
 /**
  * @swagger
@@ -69,53 +71,8 @@ router.post(
  */
 router.get('/me', kycController.getMyKYCStatus);
 
-/**
- * @swagger
- * /kyc/{partnerId}:
- *   get:
- *     summary: Check the KYC verification status of a partner
- *     tags: [KYC & Onboarding]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: partnerId
- *         required: true
- *         schema: { type: string }
- *     responses:
- *       200:
- *         description: Current KYC status returned
- */
-router.get('/:partnerId', kycController.getKYCStatus);
-
-/**
- * @swagger
- * /kyc/{partnerId}/verify:
- *   post:
- *     summary: Approve or reject KYC documents (Admin only)
- *     tags: [KYC & Onboarding]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: KYC status updated
- */
-router.post(
-    '/:partnerId/verify',
-    authorize('ADMIN', 'SUPER_ADMIN'),
-    validate([
-        body('status')
-            .notEmpty()
-            .isIn(['APPROVED', 'REJECTED', 'ACTION_REQUIRED'])
-            .withMessage('Status must be APPROVED, REJECTED or ACTION_REQUIRED'),
-        body('reason')
-            .optional()
-            .trim()
-            .isLength({ min: 10, max: 500 })
-            .withMessage('Reason must be between 10 and 500 characters'),
-    ]),
-    kycController.verifyKYC
-);
+// Alias for mobile app
+router.get('/status', kycController.getMyKYCStatus);
 
 /**
  * @swagger
@@ -135,11 +92,36 @@ router.get(
     kycController.getPendingKYCs
 );
 
-// Compatibility with Frontend Admin Dashboard
-router.patch('/:id/approve', authorize('ADMIN', 'SUPER_ADMIN'), kycController.approveDocument);
-router.patch('/:id/reject', authorize('ADMIN', 'SUPER_ADMIN'), kycController.rejectDocument);
+/**
+ * @swagger
+ * /kyc/stats:
+ *   get:
+ *     summary: Get KYC verification summary statistics (Admin only)
+ *     tags: [KYC & Onboarding]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: KYC summary statistics
+ */
+router.get(
+    '/stats',
+    authorize('ADMIN', 'SUPER_ADMIN'),
+    kycController.getKYCStats
+);
 
-// Legacy/Alternative paths
+/**
+ * @swagger
+ * /kyc/partner/{partnerId}:
+ *   get:
+ *     summary: Check the KYC verification status of a partner by partner ID
+ *     tags: [KYC & Onboarding]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/partner/:partnerId', kycController.getKYCStatus);
+
+// Legacy/Alternative paths for Partner verification
 router.patch('/partner/:partnerId/approve', authorize('ADMIN', 'SUPER_ADMIN'), (req, res, next) => {
     req.body.status = 'APPROVED';
     return kycController.verifyKYC(req, res, next);
@@ -189,5 +171,88 @@ router.post(
     ]),
     kycController.verifyEkoBank
 );
+
+// Unified /verify-pan alias (accepts either panNumber or pan)
+router.post(
+    '/verify-pan',
+    authorize('SERVICE_PARTNER', 'BUSINESS_PARTNER', 'ADMIN', 'SUPER_ADMIN'),
+    (req, res, next) => {
+        if (req.body.panNumber) {
+            return kycController.verifyEkoPan(req, res, next);
+        }
+        return cashfreeController.verifyPAN(req, res, next);
+    }
+);
+
+// Unified /verify-bank alias (accepts either accountNumber/ifscCode or account_number/ifsc)
+router.post(
+    '/verify-bank',
+    authorize('SERVICE_PARTNER', 'BUSINESS_PARTNER', 'ADMIN', 'SUPER_ADMIN'),
+    (req, res, next) => {
+        if (req.body.ifscCode) {
+            return kycController.verifyEkoBank(req, res, next);
+        }
+        return cashfreeController.verifyBankAccount(req, res, next);
+    }
+);
+
+// Mobile alias for cashfree initiate
+router.post(
+    '/initiate-cashfree',
+    authorize('SERVICE_PARTNER'),
+    cashfreeController.initiateKYC
+);
+
+// Compatibility with Frontend Admin Dashboard
+router.patch('/:id/approve', authorize('ADMIN', 'SUPER_ADMIN'), kycController.approveDocument);
+router.patch('/:id/reject', authorize('ADMIN', 'SUPER_ADMIN'), kycController.rejectDocument);
+
+/**
+ * @swagger
+ * /kyc/{partnerId}/verify:
+ *   post:
+ *     summary: Approve or reject KYC documents (Admin only)
+ *     tags: [KYC & Onboarding]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: KYC status updated
+ */
+router.post(
+    '/:partnerId/verify',
+    authorize('ADMIN', 'SUPER_ADMIN'),
+    validate([
+        body('status')
+            .notEmpty()
+            .isIn(['APPROVED', 'REJECTED', 'ACTION_REQUIRED'])
+            .withMessage('Status must be APPROVED, REJECTED or ACTION_REQUIRED'),
+        body('reason')
+            .optional()
+            .trim()
+            .isLength({ min: 10, max: 500 })
+            .withMessage('Reason must be between 10 and 500 characters'),
+    ]),
+    kycController.verifyKYC
+);
+
+/**
+ * @swagger
+ * /kyc/{partnerId}:
+ *   get:
+ *     summary: Check the KYC verification status of a partner
+ *     tags: [KYC & Onboarding]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: partnerId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Current KYC status returned
+ */
+router.get('/:partnerId', kycController.getKYCStatus);
 
 export default router;

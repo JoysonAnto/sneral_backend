@@ -4,8 +4,8 @@ import { authenticateToken, authorize } from '../middleware/auth.middleware';
 
 const router = Router();
 
-// All routes require authentication and BUSINESS_PARTNER role
-router.use(authenticateToken);
+// Routes require authentication
+router.use(['/business', '/team'], authenticateToken);
 // Toggle team management feature
 router.post(
     '/business/:businessPartnerId/team/toggle',
