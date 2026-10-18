@@ -307,6 +307,7 @@ model Booking {
   remaining_amount      Float
   payment_method        PaymentMethod?
   payment_status        PaymentStatus            @default(PENDING)
+  retry_count           Int                      @default(0)
   special_instructions  String?
   partner_assigned_at   DateTime?
   partner_accepted_at   DateTime?
@@ -915,6 +916,10 @@ enum BookingStatus {
   PARTNER_NOT_FOUND
   PENDING_ASSIGNMENT
   PARTNER_ARRIVED
+<<<<<<< HEAD
+=======
+  ARRIVED
+>>>>>>> c523a3c (fix bugs)
 }
 
 enum PaymentStatus {
