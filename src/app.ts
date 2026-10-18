@@ -58,11 +58,12 @@ const allowedOrigins = process.env.CORS_ORIGINS?.split(',') || [
 
 const corsOptions: cors.CorsOptions = {
     origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-        // In development, allow all origins for easier debugging
+        // In development, allow all origins for easier debugging (especially with ngrok)
         if (process.env.NODE_ENV === 'development') {
+            console.log(`🔓 [CORS] Dev mode: Allowing origin ${origin}`);
             return callback(null, true);
         }
-        
+
         if (!origin || allowedOrigins.includes(origin)) {
             callback(null, true);
         } else {

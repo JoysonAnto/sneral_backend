@@ -114,7 +114,10 @@ export class CashfreeController {
     getKYCStatus = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const { verificationId } = req.params;
-            if (!verificationId) throw new BadRequestError('Verification ID is required');
+
+            if (!verificationId) {
+                throw new BadRequestError('Verification ID is required');
+            }
 
             const result = await this.cashfreeService.getKYCStatus(verificationId);
 

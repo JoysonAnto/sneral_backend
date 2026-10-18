@@ -207,8 +207,24 @@ router.post(
  * @swagger
  * /kyc/cashfree/generate-link:
  *   post:
- *     summary: Manually generate a Cashfree KYC link for any phone number (Admin/legacy)
+ *     summary: Generate a Cashfree KYC Link for user verification
  *     tags: [KYC Cashfree]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [phone]
+ *             properties:
+ *               partnerId:
+ *                 type: string
+ *               phone:
+ *                 type: string
+ *               name:
+ *                 type: string
+ *               email:
+ *                 type: string
  */
 router.post(
     '/generate-link',
@@ -222,7 +238,7 @@ router.post(
  * @swagger
  * /kyc/cashfree/status/{verificationId}:
  *   get:
- *     summary: Check the status of a KYC link by verification ID
+ *     summary: Check the status of a KYC verification link
  *     tags: [KYC Cashfree]
  *     parameters:
  *       - in: path

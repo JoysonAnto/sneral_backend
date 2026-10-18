@@ -306,8 +306,10 @@ export class PartnerService {
             phoneNumber: user.phone_number,
             role: user.role,
             kycStatus: partner.kyc_status,
+            kyc_status: partner.kyc_status,
             kycVerifiedAt: partner.kyc_verified_at,
             availabilityStatus: partner.availability_status,
+            availability_status: partner.availability_status,
             serviceRadius: partner.service_radius,
             commissionRate: partner.commission_rate || 0.1,
             businessName: partner.business_name,
@@ -463,15 +465,14 @@ export class PartnerService {
             throw new BadRequestError('Availability status is required');
         }
 
-        console.log(`📡 [DEBUG] Updating partner ${id} status to ${status}`);
-
-        return await prisma.servicePartner.update({
+        const updatedPartner = await prisma.servicePartner.update({
             where: { id },
-            data: {
-                availability_status: status as any,
-                last_location_update: new Date()
-            },
+            data: { availability_status: status as any }
         });
+
+        return {
+            availability_status: updatedPartner.availability_status
+        };
     }
 
     async getPartnerServices(id: string) {

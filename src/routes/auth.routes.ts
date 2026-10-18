@@ -51,7 +51,7 @@ const authController = new AuthController();
  *                 type: string
  *     responses:
  *       201:
- *         description: Partner registered successfully
+ *         description: User registered successfully
  */
 router.post('/register', validate(registerValidator), authController.register);
 
@@ -195,6 +195,7 @@ router.post('/logout', authenticateToken, authController.logout);
  *         description: Profile data
  */
 router.get('/profile', authenticateToken, authController.getProfile);
+
 /**
  * @swagger
  * /auth/me:
@@ -205,7 +206,7 @@ router.get('/profile', authenticateToken, authController.getProfile);
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: Partner profile data
+ *         description: User profile data
  */
 router.get('/me', authenticateToken, authController.getProfile); // Alias for profile
 
@@ -217,21 +218,9 @@ router.get('/me', authenticateToken, authController.getProfile); // Alias for pr
  *     tags: [Authentication]
  *     security:
  *       - bearerAuth: []
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               name:
- *                 type: string
- *               bio:
- *                 type: string
- *               phone:
- *                 type: string
  *     responses:
  *       200:
- *         description: Profile updated
+ *         description: Profile updated successfully
  */
 router.patch('/profile', authenticateToken, authController.updateProfile);
 

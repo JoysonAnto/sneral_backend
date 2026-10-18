@@ -108,18 +108,31 @@ export class CashfreeService {
             logger.info('Cashfree KYC Link Response:', data);
 
             if (response.ok) {
-                return { success: true, data, message: 'KYC link generated successfully' };
+                return {
+                    success: true,
+                    data: data, // contains form_link
+                    message: 'KYC link generated successfully'
+                };
             } else {
-                return { success: false, message: data.message || 'Failed to generate KYC link', error: data };
+                return {
+                    success: false,
+                    message: data.message || 'Failed to generate KYC link',
+                    error: data
+                };
             }
         } catch (error: any) {
             logger.error('Cashfree KYC Link Error:', error);
-            return { success: false, message: error.message || 'External service error', error };
+            return {
+                success: false,
+                message: error.message || 'External service error',
+                error: error
+            };
         }
     }
 
     /**
      * Get status of a KYC verification link
+     * @param verificationId The ID used to generate the link
      */
     async getKYCStatus(verificationId: string) {
         try {

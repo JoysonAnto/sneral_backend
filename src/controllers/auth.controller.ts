@@ -30,6 +30,9 @@ export class AuthController {
 
     login = async (req: Request, res: Response, next: NextFunction) => {
         try {
+            console.log(`🔌 [LOGIN DEBUG] Attempt from Origin: ${req.headers.origin}, Agent: ${req.headers['user-agent']}`);
+            console.log(`🔌 [LOGIN DEBUG] ngrok skip header: ${req.headers['ngrok-skip-browser-warning']}`);
+            
             const { email, password, phoneNumber } = req.body;
             const identifier = email || phoneNumber;
             if (!identifier) {

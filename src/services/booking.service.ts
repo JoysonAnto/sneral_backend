@@ -369,7 +369,6 @@ export class BookingService {
         // Check permissions
         const isSelf = booking.customer_id === userId || booking.partner?.user_id === userId;
         const isAdmin = userRole === 'SUPER_ADMIN' || userRole === 'ADMIN';
-
         // Special case for partners viewing broadcasted jobs
         let isEligiblePartner = false;
         if (userRole === 'SERVICE_PARTNER' && !isSelf && !isAdmin) {
@@ -377,7 +376,6 @@ export class BookingService {
                 where: { user_id: userId },
                 select: { id: true, category_id: true }
             });
-
             if (partner && booking.status === 'SEARCHING_PARTNER') {
                 // Check if any item in booking matches partner category
                 const hasMatchingCategory = booking.items.some(
@@ -439,8 +437,6 @@ export class BookingService {
         // Build where clause based on role
         let where: any = {};
         let currentPartner: any = null;
-
-
 
         if (userRole === 'CUSTOMER') {
             where.customer_id = userId;
@@ -505,7 +501,6 @@ export class BookingService {
                 const statusArray = status.split(',')
                     .map(s => s.trim().toUpperCase())
                     .filter(s => validStatuses.includes(s));
-
                 if (statusArray.length > 0) {
                     where.status = { in: statusArray };
                 }
@@ -513,7 +508,6 @@ export class BookingService {
                 where.status = status.toUpperCase();
             }
         }
-
         if (customerId) where.customer_id = customerId;
         if (partnerId) where.partner_id = partnerId;
         if (startDate || endDate) {
@@ -782,7 +776,6 @@ export class BookingService {
         try {
             const io = getIO();
             const b = booking as any;
-
             // Broadcast to Admin and specific customer
             io.of('/admin').emit('booking:created', {
                 id: b.id,
@@ -813,7 +806,6 @@ export class BookingService {
         // Parallel update stats for admin dashboard
         broadcastStatsUpdate();
     }
-
 
     private async broadcastBookingUpdate(booking: any) {
         try {
@@ -992,7 +984,7 @@ export class BookingService {
 
     async assignPartner(bookingId: string, partnerId: string, assignedBy: string) {
         logger.info(`[Dispatch] Starting assignment: booking=${bookingId}, partner=${partnerId}, actor=${assignedBy}`);
-        
+
         const booking = await prisma.booking.findUnique({
             where: { id: bookingId },
         });

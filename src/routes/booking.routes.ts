@@ -43,25 +43,6 @@ router.get('/', (req: any, res, next) => {
     }
     return checkPermission('BOOKING_VIEW')(req, res, next);
 }, bookingController.getAll);
-/**
-* @swagger
-* /jobs:
- *   get:
- *     summary: Fetch job history and current tasks
- *     tags: [Job (Booking) Lifecycle]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *         description: Filter by job status
- *     responses:
- *       200:
- *         description: List of jobs
- */
-router.get('/', bookingController.getAll);
 
 /**
  * @swagger
@@ -107,12 +88,10 @@ router.post(
 
 /**
  * @swagger
- * /jobs/{id}:
+ * /bookings/{id}:
  *   get:
- *     summary: Detailed view of a job
- *     tags: [Job (Booking) Lifecycle]
- *     security:
- *       - bearerAuth: []
+ *     summary: Get details of a specific booking
+ *     tags: [Bookings]
  *     parameters:
  *       - in: path
  *         name: id
@@ -175,21 +154,15 @@ router.post(
 
 /**
  * @swagger
- * /jobs/{id}/accept:
+ * /bookings/{id}/accept:
  *   post:
- *     summary: Accept a nearby job request
- *     tags: [Job (Booking) Lifecycle]
+ *     summary: Accept a booking invite
+ *     tags: [Bookings]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
  *     responses:
  *       200:
- *         description: Job accepted
+ *         description: Booking accepted
  */
 router.post(
     '/:id/accept',
@@ -199,21 +172,13 @@ router.post(
 
 /**
  * @swagger
- * /jobs/{id}/start:
+ * /bookings/{id}/reject:
  *   post:
- *     summary: Move job to IN_PROGRESS (Requires Customer OTP)
- *     tags: [Job (Booking) Lifecycle]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
+ *     summary: Reject a booking invite
+ *     tags: [Bookings]
  *     responses:
  *       200:
- *         description: Job started
+ *         description: Booking rejected
  */
 router.post(
     '/:id/reject',
@@ -222,45 +187,12 @@ router.post(
     bookingController.rejectBooking
 );
 
-// Complete booking (service partner only)
-router.post(
-    '/:id/complete',
-    authorize('SERVICE_PARTNER'),
-    bookingController.completeBooking
-);
-
-// Cancel booking
-router.post(
-    '/:id/cancel',
-    validate(cancelBookingValidator),
-    bookingController.cancel
-);
-
-// Rate booking (customer only)
-router.post(
-    '/:id/rate',
-    authorize('CUSTOMER'),
-    validate(rateBookingValidator),
-    bookingController.rate
-);
-
-// Service Progress & Completion Routes
-import { beforeServicePhotos, afterServicePhotos } from '../middleware/upload.middleware';
-
 /**
  * @swagger
- * /jobs/{id}/arrive:
+ * /bookings/{id}/arrive:
  *   post:
- *     summary: Mark arrival at customer location (Check-in)
- *     tags: [Job (Booking) Lifecycle]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
+ *     summary: Mark partner as arrived at destination
+ *     tags: [Bookings]
  *     responses:
  *       200:
  *         description: Arrival recorded
@@ -309,32 +241,21 @@ router.post(
  *   post:
  *     summary: Cancel a booking with reason
  *     tags: [Bookings]
- *   patch:
- *     summary: Cancel a booking with reason (supports both POST and PATCH)
- *     tags: [Bookings]
  *     responses:
  *       200:
  *         description: Booking cancelled
  */
-router.route('/:id/cancel')
-    .post(
-        authorize('CUSTOMER', 'SERVICE_PARTNER', 'BUSINESS_PARTNER', 'ADMIN', 'SUPER_ADMIN'),
-        validate(cancelBookingValidator),
-        bookingController.cancel
-    )
-    .patch(
-        authorize('CUSTOMER', 'SERVICE_PARTNER', 'BUSINESS_PARTNER', 'ADMIN', 'SUPER_ADMIN'),
-        validate(cancelBookingValidator),
-        bookingController.cancel
-    );
-
+router.post(
+    '/:id/cancel',
+    validate(cancelBookingValidator),
+    bookingController.cancel
+);
 
 /**
  * @swagger
  * /bookings/{id}/rate:
  *   post:
- *     summary: "[Deprecated] Use POST /bookings/{id}/reviews instead"
- *     description: Legacy endpoint kept for backward compatibility. Prefer /reviews.
+ *     summary: Provide rating and feedback for a finished job
  *     tags: [Bookings]
  *     responses:
  *       200:
@@ -342,12 +263,12 @@ router.route('/:id/cancel')
  */
 router.post(
     '/:id/rate',
-    authorize('CUSTOMER', 'SERVICE_PARTNER'),
+    authorize('CUSTOMER'),
     validate(rateBookingValidator),
     bookingController.rate
 );
 
-
+import { beforeServicePhotos, afterServicePhotos } from '../middleware/upload.middleware';
 
 /**
  * @swagger
@@ -358,21 +279,6 @@ router.post(
  *     responses:
  *       200:
  *         description: Photos uploaded successfully
- * /jobs/{id}/before-photos:
- *   post:
- *     summary: Upload photos before starting work
- *     tags: [Job (Booking) Lifecycle]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Photos uploaded
  */
 router.post(
     '/:id/before-photos',
@@ -382,21 +288,13 @@ router.post(
 
 /**
  * @swagger
- * /jobs/{id}/after-photos:
+ * /bookings/{id}/after-photos:
  *   post:
- *     summary: Upload photos of completed work
- *     tags: [Job (Booking) Lifecycle]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
+ *     summary: Upload evidence photos of completed work
+ *     tags: [Bookings]
  *     responses:
  *       200:
- *         description: Photos uploaded
+ *         description: Photos uploaded successfully
  */
 router.post(
     '/:id/after-photos',
@@ -448,21 +346,13 @@ router.post(
 
 /**
  * @swagger
- * /jobs/{id}/verify-otp:
+ * /bookings/{id}/verify-otp:
  *   post:
- *     summary: Finalize job and trigger payment release via Completion OTP
- *     tags: [Job (Booking) Lifecycle]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
+ *     summary: Verify Completion OTP (Partner Action)
+ *     tags: [Bookings]
  *     responses:
  *       200:
- *         description: Job completed
+ *         description: OTP verified and payment processed
  */
 router.post(
     '/:id/verify-otp',
