@@ -73,6 +73,7 @@ router.use('/kyc/cashfree', cashfreeRoutes);
 router.use('/kyc', kycRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/payouts', payoutRoutes);
+router.use('/roles', roleRoutes);
 
 // 5. LOCATION & TRACKING
 router.use('/locations', locationRoutes);

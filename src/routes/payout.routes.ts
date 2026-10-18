@@ -29,12 +29,15 @@ router.use(authenticateToken);
  *         application/json:
  *           schema:
  *             type: object
- *             required: [amount]
+ *             required:
+ *               - amount
  *             properties:
- *               amount: { type: number, minimum: 500 }
+ *               amount:
+ *                 type: number
+ *                 minimum: 500
  *     responses:
  *       200:
- *         description: Payout request submitted successfully
+ *         description: Payout request submitted
  */
 router.post(
     '/request',

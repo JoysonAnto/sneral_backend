@@ -916,10 +916,7 @@ enum BookingStatus {
   PARTNER_NOT_FOUND
   PENDING_ASSIGNMENT
   PARTNER_ARRIVED
-<<<<<<< HEAD
-=======
   ARRIVED
->>>>>>> c523a3c (fix bugs)
 }
 
 enum PaymentStatus {

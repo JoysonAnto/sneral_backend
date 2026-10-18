@@ -12,6 +12,7 @@ router.use(authenticateToken);
  * @swagger
  * /notifications:
  *   get:
+<<<<<<< HEAD
  *     summary: Fetch system alerts and job updates (paginated)
  *     tags: [Real-time Tracking & Alerts]
  *     security:
@@ -26,6 +27,12 @@ router.use(authenticateToken);
  *       - in: query
  *         name: unreadOnly
  *         schema: { type: string, enum: ['true', 'false'] }
+=======
+ *     summary: Fetch unread system alerts and job updates
+ *     tags: [Real-time Tracking & Alerts]
+ *     security:
+ *       - bearerAuth: []
+>>>>>>> ab6c12b (feat: add Swagger API documentation for Partner APIs)
  *     responses:
  *       200:
  *         description: List of notifications
@@ -36,7 +43,11 @@ router.get('/', notificationController.getNotifications);
  * @swagger
  * /notifications/{id}/read:
  *   patch:
+<<<<<<< HEAD
  *     summary: Dismiss a single notification
+=======
+ *     summary: Dismiss a notification
+>>>>>>> ab6c12b (feat: add Swagger API documentation for Partner APIs)
  *     tags: [Real-time Tracking & Alerts]
  *     security:
  *       - bearerAuth: []
@@ -44,7 +55,12 @@ router.get('/', notificationController.getNotifications);
  *       - in: path
  *         name: id
  *         required: true
+<<<<<<< HEAD
  *         schema: { type: string }
+=======
+ *         schema:
+ *           type: string
+>>>>>>> ab6c12b (feat: add Swagger API documentation for Partner APIs)
  *     responses:
  *       200:
  *         description: Notification marked as read
