@@ -49,8 +49,8 @@ async function startServer() {
         }
 
         // Start server
-        httpServer.listen(Number(PORT), '0.0.0.0', () => {
-            logger.info(`🚀 Server running on port ${PORT} at http://0.0.0.0:${PORT}`);
+        httpServer.listen(Number(PORT), () => {
+            logger.info(`🚀 Server running on port ${PORT} at http://localhost:${PORT}`);
             logger.info(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
         });
     } catch (error) {
