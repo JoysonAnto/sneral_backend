@@ -8,6 +8,7 @@ import { errorHandler } from './middleware/error.middleware';
 import routes from './routes';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerSpec } from './config/swagger';
+import { corsOptions } from './config/cors';
 
 const app: Application = express();
 
@@ -19,22 +20,16 @@ app.use((req, _res, next) => {
     next();
 });
 
-// Enhanced Security middleware for Production
+// 1. CORS Configuration (MUST precede Helmet and routes)
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+
+// 2. Enhanced Security middleware for Production (configured for Cross-Origin APIs)
 app.use(
     helmet({
-        contentSecurityPolicy: process.env.NODE_ENV === 'development' ? false : {
-            directives: {
-                defaultSrc: ["'self'"],
-                styleSrc: ["'self'", "'unsafe-inline'"],
-                scriptSrc: ["'self'", "'unsafe-inline'"],
-                imgSrc: ["'self'", 'data:', 'https:'],
-                connectSrc: ["'self'"],
-                fontSrc: ["'self'"],
-                objectSrc: ["'none'"],
-                mediaSrc: ["'self'"],
-                frameSrc: ["'none'"],
-            },
-        },
+        crossOriginResourcePolicy: { policy: 'cross-origin' },
+        crossOriginOpenerPolicy: false,
+        contentSecurityPolicy: false,
         hsts: {
             maxAge: 31536000,
             includeSubDomains: true,
@@ -45,39 +40,6 @@ app.use(
         },
     })
 );
-
-// CORS configuration
-const allowedOrigins = process.env.CORS_ORIGINS?.split(',') || [
-    'http://localhost:3000', // User Frontend
-    'http://localhost:3001', // Admin Dashboard
-    'http://localhost:3002', // Business Partner
-    'http://localhost:3003', // Service Partner
-    'http://localhost:4000',
-    'https://mortgages-wings-adoption-reel.trycloudflare.com',
-    'https://sneralbackend-production.up.railway.app'
-];
-
-const corsOptions: cors.CorsOptions = {
-    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-        // In development, allow all origins for easier debugging (especially with ngrok)
-        if (process.env.NODE_ENV === 'development') {
-            console.log(`🔓 [CORS] Dev mode: Allowing origin ${origin}`);
-            return callback(null, true);
-        }
-
-        if (!origin || allowedOrigins.includes(origin)) {
-            callback(null, true);
-        } else {
-            console.log(`❌ [CORS] Origin not allowed: ${origin}`);
-            callback(new Error('Not allowed by CORS'));
-        }
-    },
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning', 'x-requested-with'],
-    credentials: true,
-};
-
-app.use(cors(corsOptions));
 
 // Body parsers
 app.use(express.json({ limit: '10mb' }));

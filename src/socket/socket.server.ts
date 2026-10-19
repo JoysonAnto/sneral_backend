@@ -7,28 +7,15 @@ import { setupChatHandlers } from './handlers/chat.handler';
 import { setupNotificationHandlers } from './handlers/notification.handler';
 import logger from '../utils/logger';
 
+import { isOriginAllowed } from '../config/cors';
+
 let io: SocketIOServer;
 
 export const initializeSocket = (server: HTTPServer) => {
-    const allowedOrigins = process.env.CORS_ORIGINS?.split(',') || [
-        'http://localhost:3000', // User Frontend
-        'http://localhost:3001', // Admin Dashboard
-        'http://localhost:3002', // Business Partner
-        'http://localhost:3003', // Service Partner
-        'https://sneralbackend-production.up.railway.app'
-    ];
-
     io = new SocketIOServer(server, {
         cors: {
             origin: (origin, callback) => {
-                // In development, allow all origins for easier multi-system testing
-                if (process.env.NODE_ENV === 'development') {
-                    return callback(null, true);
-                }
-
-                if (!origin) return callback(null, true);
-
-                if (allowedOrigins.indexOf(origin) !== -1 || origin.startsWith('http://localhost:')) {
+                if (isOriginAllowed(origin)) {
                     callback(null, true);
                 } else {
                     logger.warn(`Rejected socket origin: ${origin}`);
