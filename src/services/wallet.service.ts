@@ -60,6 +60,8 @@ export class WalletService {
             pendingPayout: wallet.pending_payout || 0,
             availableBalance: wallet.balance - wallet.locked_balance - ((wallet as any).on_hold_balance || 0),
             totalEarned: totalEarnings._sum.amount || 0,
+            total_earned: totalEarnings._sum.amount || 0,
+            pending: (wallet as any).pending_payout || wallet.locked_balance || 0,
             transactions: transactions.map(t => ({
                 id: t.id,
                 type: t.type,
@@ -328,7 +330,7 @@ export class WalletService {
 
             // B. GST → Admin wallet (separate entry for clean audit trail)
             if (gstAmount > 0) {
-                await this.updateWallet(tx, superAdmin.id, gstAmount, 'CREDIT', 'TAX', bookingId,
+                await this.updateWallet(tx, superAdmin.id, gstAmount, 'CREDIT', 'TAX_DEDUCTION', bookingId,
                     `GST (${(earningsConfig.gstRate * 100).toFixed(1)}%) on commission for booking #${booking.booking_number}`);
             }
 
@@ -338,24 +340,23 @@ export class WalletService {
                     `Business share for booking #${booking.booking_number}`);
             }
 
-            // D. Service Partner — ON HOLD (released via withdrawal request)
+            // D. Service Partner — credited to wallet balance
             if (servicePartnerUser) {
                 const spWallet = await this.getOrCreateWallet(tx, servicePartnerUser.id);
                 await tx.wallet.update({
                     where: { user_id: servicePartnerUser.id },
                     data: {
-                        balance: { increment: servicePartnerShare },
-                        on_hold_balance: { increment: servicePartnerShare }
+                        balance: { increment: servicePartnerShare }
                     } as any
                 });
                 await tx.transaction.create({
                     data: {
                         user_id: servicePartnerUser.id,
                         type: 'BOOKING_PAYMENT',
-                        category: 'HOLD',
+                        category: 'CREDIT',
                         status: 'COMPLETED',
                         amount: servicePartnerShare,
-                        description: `Service payout for booking #${booking.booking_number} (On Hold) | Deducted: Commission ₹${platformCommission} + GST ₹${gstAmount}`,
+                        description: `Service payout for booking #${booking.booking_number} | Deducted: Commission ₹${platformCommission} + GST ₹${gstAmount}`,
                         booking_id: bookingId,
                         balance_before: spWallet.balance,
                         balance_after: spWallet.balance + servicePartnerShare
@@ -373,6 +374,26 @@ export class WalletService {
                 } as any
             });
         });
+
+        // Notify Service Partner via Socket.IO
+        if (servicePartnerUser) {
+            try {
+                const { getIO } = await import('../socket/socket.server');
+                const io = getIO();
+                io.of('/partner').to(servicePartnerUser.id).emit('PAYMENT_RECEIVED', {
+                    amount: servicePartnerShare,
+                    bookingId: booking.id,
+                    bookingNumber: booking.booking_number,
+                });
+                io.to(servicePartnerUser.id).emit('PAYMENT_RECEIVED', {
+                    amount: servicePartnerShare,
+                    bookingId: booking.id,
+                    bookingNumber: booking.booking_number,
+                });
+            } catch (err) {
+                logger.warn('Socket notification failed for PAYMENT_RECEIVED:', err);
+            }
+        }
     }
 
     // Helper to update wallet and create transaction

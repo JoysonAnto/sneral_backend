@@ -295,13 +295,26 @@ export class PaymentService {
                     user_id: userId,
                     booking_id: payment.booking_id,
                     type: 'BOOKING_PAYMENT',
+                    category: 'DEBIT',
+                    status: 'COMPLETED',
                     amount: baseAmount,
                     description: `Payment for booking #${payment.booking.booking_number}`,
                     balance_before: 0,
                     balance_after: 0,
-                },
+                } as any,
             });
         });
+
+        // If booking was already marked COMPLETED, distribute earnings now
+        if (payment.booking.status === 'COMPLETED') {
+            try {
+                const { WalletService } = await import('./wallet.service');
+                const walletService = new WalletService();
+                await walletService.distributeEarnings(payment.booking_id);
+            } catch (err) {
+                console.error(`Failed to distribute earnings for booking ${payment.booking_id}:`, err);
+            }
+        }
 
         return {
             status: 'COMPLETED',
@@ -378,13 +391,26 @@ export class PaymentService {
                         user_id: userId,
                         booking_id: payment.booking_id,
                         type: 'BOOKING_PAYMENT',
+                        category: 'DEBIT',
+                        status: 'COMPLETED',
                         amount: baseAmount,
                         description: `Payment for booking #${payment.booking.booking_number} via Cashfree`,
                         balance_before: 0,
                         balance_after: 0,
-                    },
+                    } as any,
                 });
             });
+
+            // If booking was already marked COMPLETED, distribute earnings now
+            if (payment.booking.status === 'COMPLETED') {
+                try {
+                    const { WalletService } = await import('./wallet.service');
+                    const walletService = new WalletService();
+                    await walletService.distributeEarnings(payment.booking_id);
+                } catch (err) {
+                    console.error(`Failed to distribute earnings for booking ${payment.booking_id}:`, err);
+                }
+            }
 
             return {
                 status: 'COMPLETED',

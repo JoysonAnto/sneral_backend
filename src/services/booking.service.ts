@@ -1660,7 +1660,7 @@ export class BookingService {
                         description: `Cash payment for remaining balance of booking #${booking.booking_number}`,
                         balance_before: 0,
                         balance_after: 0,
-                        category: 'CREDIT',
+                        category: 'DEBIT',
                         status: 'COMPLETED'
                     } as any
                 });
