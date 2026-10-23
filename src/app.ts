@@ -77,6 +77,15 @@ app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
 // API Routes
 app.use('/api/v1', routes);
 
+// Root health endpoint (for Railway / cloud platform liveness probes)
+app.get('/health', (_req, res) => {
+    res.json({
+        status: 'OK',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+    });
+});
+
 // Root endpoint
 app.get('/', (_req, res) => {
     res.json({

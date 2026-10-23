@@ -70,8 +70,9 @@ USER root
 RUN chmod +x entrypoint.sh && chown node:node entrypoint.sh
 USER node
 
-# Expose port (Render uses 10000)
-EXPOSE 10000
+# Expose port (Default 3000 for Railway and container routing)
+ENV PORT=3000
+EXPOSE 3000
 
 # Start command
 CMD ["./entrypoint.sh"]

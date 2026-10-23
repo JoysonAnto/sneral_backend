@@ -78,21 +78,7 @@ export const corsOptions: cors.CorsOptions = {
         }
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
-    allowedHeaders: [
-        'Content-Type',
-        'Authorization',
-        'X-Requested-With',
-        'Accept',
-        'Origin',
-        'Cache-Control',
-        'Pragma',
-        'sentry-trace',
-        'baggage',
-        'ngrok-skip-browser-warning',
-        'x-client-id',
-        'x-api-version',
-        'x-refresh-token',
-    ],
+    // Omitting allowedHeaders allows cors to dynamically reflect Access-Control-Request-Headers
     exposedHeaders: [
         'Authorization',
         'Content-Range',

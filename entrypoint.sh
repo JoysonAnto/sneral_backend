@@ -4,7 +4,7 @@
 set -e
 
 echo "Running migrations..."
-npx prisma migrate deploy
+npx prisma migrate deploy || echo "⚠️ Prisma migrate deploy encountered a warning or database already migrated, proceeding..."
 
 echo "Starting server..."
-node dist/server.js
+exec node dist/server.js

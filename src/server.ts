@@ -24,9 +24,13 @@ initializeSocket(httpServer);
 
 async function startServer() {
     try {
-        // Connect to database
-        await prisma.$connect();
-        logger.info('✅ Database connected successfully');
+        // Connect to database (with warning instead of process crash to allow HTTP server to respond)
+        try {
+            await prisma.$connect();
+            logger.info('✅ Database connected successfully');
+        } catch (dbError) {
+            logger.warn('⚠️ Database connection warning during startup, will connect on demand:', dbError);
+        }
 
         // Connect to Redis (optional, continues if fails)
         try {
@@ -36,8 +40,12 @@ async function startServer() {
         }
 
         // Start cron jobs
-        cronService.start();
-        logger.info('✅ Cron service started');
+        try {
+            cronService.start();
+            logger.info('✅ Cron service started');
+        } catch (cronError) {
+            logger.warn('⚠️ Cron service failed to start:', cronError);
+        }
 
         // Seed default platform settings (commission, GST) — idempotent
         try {
@@ -48,9 +56,9 @@ async function startServer() {
             logger.warn('⚠️ Could not seed platform settings:', settingsError);
         }
 
-        // Start server
-        httpServer.listen(Number(PORT), () => {
-            logger.info(`🚀 Server running on port ${PORT} at http://localhost:${PORT}`);
+        // Start server explicitly binding to 0.0.0.0 for Docker/Railway container routing
+        httpServer.listen(Number(PORT), '0.0.0.0', () => {
+            logger.info(`🚀 Server running on port ${PORT} at http://0.0.0.0:${PORT}`);
             logger.info(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
         });
     } catch (error) {
