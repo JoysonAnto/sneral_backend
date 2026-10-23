@@ -68,6 +68,7 @@ RUN mkdir -p uploads && chown -R node:node /app
 COPY entrypoint.sh ./
 USER root
 RUN chmod +x entrypoint.sh && chown node:node entrypoint.sh
+ENV PATH="/app/node_modules/.bin:$PATH"
 USER node
 
 # Expose port (Default 3000 for Railway and container routing)

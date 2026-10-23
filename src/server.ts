@@ -24,7 +24,13 @@ initializeSocket(httpServer);
 
 async function startServer() {
     try {
-        // Connect to database (with warning instead of process crash to allow HTTP server to respond)
+        // 1. Start server IMMEDIATELY on 0.0.0.0 so Railway / container health probes pass instantly
+        httpServer.listen(Number(PORT), '0.0.0.0', () => {
+            logger.info(`🚀 Server running on port ${PORT} at http://0.0.0.0:${PORT}`);
+            logger.info(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+        });
+
+        // 2. Connect to database (with warning instead of process crash)
         try {
             await prisma.$connect();
             logger.info('✅ Database connected successfully');
@@ -32,14 +38,14 @@ async function startServer() {
             logger.warn('⚠️ Database connection warning during startup, will connect on demand:', dbError);
         }
 
-        // Connect to Redis (optional, continues if fails)
+        // 3. Connect to Redis (optional, continues if fails)
         try {
             await connectRedis();
         } catch (redisError) {
             logger.warn('⚠️ Redis connection failed, continuing without cache');
         }
 
-        // Start cron jobs
+        // 4. Start cron jobs
         try {
             cronService.start();
             logger.info('✅ Cron service started');
@@ -47,7 +53,7 @@ async function startServer() {
             logger.warn('⚠️ Cron service failed to start:', cronError);
         }
 
-        // Seed default platform settings (commission, GST) — idempotent
+        // 5. Seed default platform settings (commission, GST) — idempotent
         try {
             const { PlatformSettingsService } = await import('./services/platform-settings.service');
             await new PlatformSettingsService().seedDefaults();
@@ -55,12 +61,6 @@ async function startServer() {
         } catch (settingsError) {
             logger.warn('⚠️ Could not seed platform settings:', settingsError);
         }
-
-        // Start server explicitly binding to 0.0.0.0 for Docker/Railway container routing
-        httpServer.listen(Number(PORT), '0.0.0.0', () => {
-            logger.info(`🚀 Server running on port ${PORT} at http://0.0.0.0:${PORT}`);
-            logger.info(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
-        });
     } catch (error) {
         logger.error('❌ Failed to start server:', error);
         process.exit(1);
