@@ -191,4 +191,25 @@ router.post(
     }
 );
 
+// Payout Methods & Wallet
+router.get('/payout-methods', authorize('SERVICE_PARTNER'), partnerController.getPayoutMethods);
+router.post('/payout-methods', authorize('SERVICE_PARTNER'), partnerController.addPayoutMethod);
+router.patch('/payout-methods/:id/default', authorize('SERVICE_PARTNER'), partnerController.setDefaultPayoutMethod);
+router.delete('/payout-methods/:id', authorize('SERVICE_PARTNER'), partnerController.deletePayoutMethod);
+router.post('/wallet/instant-payout', authorize('SERVICE_PARTNER'), partnerController.requestInstantPayout);
+
+// Preferences (Destination Mode, Auto-Transfer, Minimum Threshold)
+router.patch('/preferences', authorize('SERVICE_PARTNER'), partnerController.updatePreferences);
+
+// Referral Program
+router.get('/referral', authorize('SERVICE_PARTNER'), partnerController.getReferralInfo);
+
+// Merchandise Store
+router.get('/merchandise', authorize('SERVICE_PARTNER'), partnerController.getMerchandiseKits);
+router.post('/merchandise/order', authorize('SERVICE_PARTNER'), partnerController.orderMerchandiseKit);
+router.get('/merchandise/my-orders', authorize('SERVICE_PARTNER'), partnerController.getMerchandiseOrders);
+
+// High Demand Surge Areas
+router.get('/high-demand-areas', authorize('SERVICE_PARTNER'), partnerController.getHighDemandAreas);
+
 export default router;

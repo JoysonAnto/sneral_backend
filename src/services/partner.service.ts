@@ -791,7 +791,19 @@ export class PartnerService {
     async getDashboardStats(userId: string) {
         const partner = await prisma.servicePartner.findUnique({
             where: { user_id: userId },
-            select: { id: true, avg_rating: true }
+            select: {
+                id: true,
+                avg_rating: true,
+                destination_mode_active: true,
+                home_address: true,
+                home_latitude: true,
+                home_longitude: true,
+                referral_code: true,
+                minimum_payout_threshold: true,
+                auto_transfer_enabled: true,
+                auto_transfer_schedule: true,
+                skill_categories: true,
+            }
         });
 
         if (!partner) throw new NotFoundError('Service partner not found');
@@ -809,21 +821,77 @@ export class PartnerService {
             orderBy: { updated_at: 'desc' }
         });
 
-        // 2. Earnings Today
+        // 2. Earnings Today & All-Time
         const startOfDay = new Date();
         startOfDay.setHours(0, 0, 0, 0);
 
-        const earningsToday = await prisma.transaction.aggregate({
-            where: {
-                user_id: userId,
-                type: 'BOOKING_PAYMENT',
-                category: 'CREDIT',
-                created_at: { gte: startOfDay }
-            },
-            _sum: {
-                amount: true
-            }
-        });
+        const [
+            earningsTodayResult,
+            totalEarningsResult,
+            wallet,
+            todayTotalOrders,
+            todayCompletedOrders,
+            totalCompletedOrders,
+            totalOrders
+        ] = await Promise.all([
+            // Today's earnings
+            prisma.transaction.aggregate({
+                where: {
+                    user_id: userId,
+                    category: 'CREDIT',
+                    created_at: { gte: startOfDay }
+                },
+                _sum: { amount: true }
+            }),
+            // Total earnings all time
+            prisma.transaction.aggregate({
+                where: {
+                    user_id: userId,
+                    category: 'CREDIT'
+                },
+                _sum: { amount: true }
+            }),
+            // Wallet balance
+            prisma.wallet.findUnique({
+                where: { user_id: userId },
+                select: { balance: true }
+            }),
+            // Today's total orders assigned or accepted
+            prisma.booking.count({
+                where: {
+                    partner_id: partner.id,
+                    OR: [
+                        { created_at: { gte: startOfDay } },
+                        { partner_assigned_at: { gte: startOfDay } }
+                    ]
+                }
+            }),
+            // Today's completed orders
+            prisma.booking.count({
+                where: {
+                    partner_id: partner.id,
+                    status: 'COMPLETED',
+                    completed_at: { gte: startOfDay }
+                }
+            }),
+            // Total completed orders all-time
+            prisma.booking.count({
+                where: {
+                    partner_id: partner.id,
+                    status: 'COMPLETED'
+                }
+            }),
+            // Total orders all-time
+            prisma.booking.count({
+                where: {
+                    partner_id: partner.id
+                }
+            })
+        ]);
+
+        const earningsToday = earningsTodayResult._sum.amount || 0;
+        const totalEarnings = totalEarningsResult._sum.amount || 0;
+        const walletBalance = wallet?.balance || 0;
 
         return {
             role: 'SERVICE_PARTNER',
@@ -835,8 +903,45 @@ export class PartnerService {
                 customerName: currentJob.customer.full_name,
                 address: currentJob.service_address
             } : null,
-            earnings_today: earningsToday._sum.amount || 0,
-            rating: partner.avg_rating
+            earnings_today: earningsToday,
+            todayEarnings: earningsToday,
+            total_earnings: totalEarnings,
+            totalEarnings: totalEarnings,
+            wallet_balance: walletBalance,
+            walletBalance: walletBalance,
+            today_total_orders: todayTotalOrders,
+            todayOrders: todayTotalOrders,
+            today_completed_orders: todayCompletedOrders,
+            completed_orders: totalCompletedOrders,
+            completedOrders: totalCompletedOrders,
+            completedJobs: totalCompletedOrders,
+            total_orders: totalOrders,
+            totalOrders: totalOrders,
+            totalJobs: totalOrders,
+            rating: partner.avg_rating || 5.0,
+            avgRating: partner.avg_rating || 5.0,
+            destination_mode_active: partner.destination_mode_active,
+            destinationModeActive: partner.destination_mode_active,
+            home_address: partner.home_address,
+            homeAddress: partner.home_address,
+            minimum_payout_threshold: partner.minimum_payout_threshold,
+            minimumPayoutThreshold: partner.minimum_payout_threshold,
+            auto_transfer_enabled: partner.auto_transfer_enabled,
+            autoTransferEnabled: partner.auto_transfer_enabled,
+            auto_transfer_schedule: partner.auto_transfer_schedule,
+            autoTransferSchedule: partner.auto_transfer_schedule,
+            referral_code: partner.referral_code,
+            referralCode: partner.referral_code,
+            skill_categories: partner.skill_categories,
+            skillCategories: partner.skill_categories,
+            incentives: {
+                dailyOrdersTarget: 8,
+                dailyOrdersCompleted: todayCompletedOrders,
+                dailyOrdersBonusAmount: 500,
+                dailyOrdersProgressPercent: Math.min(100, Math.round((todayCompletedOrders / 8) * 100)),
+                continuousHoursTarget: 8,
+                continuousHoursBonusAmount: 300,
+            }
         };
     }
 
@@ -860,6 +965,404 @@ export class PartnerService {
         });
 
         return result._sum.amount || 0;
+    }
+
+    // Payout Methods
+    async getPayoutMethods(userId: string) {
+        const partner = await prisma.servicePartner.findUnique({
+            where: { user_id: userId },
+            include: { payout_methods: { orderBy: { created_at: 'desc' } } }
+        });
+        if (!partner) throw new NotFoundError('Service partner not found');
+        return partner.payout_methods;
+    }
+
+    async addPayoutMethod(userId: string, data: {
+        type: 'BANK_ACCOUNT' | 'UPI';
+        account_number?: string;
+        ifsc_code?: string;
+        bank_name?: string;
+        account_holder_name?: string;
+        upi_id?: string;
+        is_default?: boolean;
+    }) {
+        const partner = await prisma.servicePartner.findUnique({
+            where: { user_id: userId },
+            include: { payout_methods: true }
+        });
+        if (!partner) throw new NotFoundError('Service partner not found');
+
+        const isFirst = partner.payout_methods.length === 0;
+        const shouldBeDefault = data.is_default !== undefined ? data.is_default : isFirst;
+
+        if (shouldBeDefault) {
+            await prisma.partnerPayoutMethod.updateMany({
+                where: { partner_id: partner.id },
+                data: { is_default: false }
+            });
+        }
+
+        const newMethod = await prisma.partnerPayoutMethod.create({
+            data: {
+                partner_id: partner.id,
+                type: data.type || (data.upi_id ? 'UPI' : 'BANK'),
+                account_number: data.account_number,
+                ifsc_code: data.ifsc_code ? data.ifsc_code.toUpperCase().trim() : undefined,
+                bank_name: data.bank_name,
+                account_holder: data.account_holder_name || (data as any).account_holder,
+                upi_id: data.upi_id ? data.upi_id.trim() : undefined,
+                is_default: shouldBeDefault,
+                is_verified: true
+            }
+        });
+
+        return newMethod;
+    }
+
+    async setDefaultPayoutMethod(userId: string, methodId: string) {
+        const partner = await prisma.servicePartner.findUnique({
+            where: { user_id: userId }
+        });
+        if (!partner) throw new NotFoundError('Service partner not found');
+
+        await prisma.partnerPayoutMethod.updateMany({
+            where: { partner_id: partner.id },
+            data: { is_default: false }
+        });
+
+        const updated = await prisma.partnerPayoutMethod.update({
+            where: { id: methodId },
+            data: { is_default: true }
+        });
+
+        return updated;
+    }
+
+    async deletePayoutMethod(userId: string, methodId: string) {
+        const partner = await prisma.servicePartner.findUnique({
+            where: { user_id: userId }
+        });
+        if (!partner) throw new NotFoundError('Service partner not found');
+
+        await prisma.partnerPayoutMethod.deleteMany({
+            where: { id: methodId, partner_id: partner.id }
+        });
+
+        return { message: 'Payout method removed' };
+    }
+
+    async requestInstantPayout(userId: string, amount?: number, payoutMethodId?: string) {
+        const partner = await prisma.servicePartner.findUnique({
+            where: { user_id: userId },
+            include: {
+                payout_methods: true
+            }
+        });
+        if (!partner) throw new NotFoundError('Service partner not found');
+
+        const wallet = await prisma.wallet.findUnique({
+            where: { user_id: userId }
+        });
+        if (!wallet) throw new NotFoundError('Wallet not found');
+
+        const minThreshold = partner.minimum_payout_threshold || 500;
+        if (wallet.balance < minThreshold) {
+            throw new BadRequestError(`Minimum balance of ₹${minThreshold} required for instant payout. Current balance: ₹${wallet.balance}`);
+        }
+
+        const transferAmount = amount && amount > 0 ? Number(amount) : wallet.balance;
+        if (transferAmount > wallet.balance) {
+            throw new BadRequestError(`Requested amount ₹${transferAmount} exceeds current balance ₹${wallet.balance}`);
+        }
+
+        let selectedMethod = payoutMethodId
+            ? partner.payout_methods.find(m => m.id === payoutMethodId)
+            : partner.payout_methods.find(m => m.is_default) || partner.payout_methods[0];
+
+        // Deduct from wallet & create transaction
+        const updatedWallet = await prisma.$transaction(async (tx) => {
+            const w = await tx.wallet.update({
+                where: { user_id: userId },
+                data: {
+                    balance: { decrement: transferAmount },
+                    pending_payout: { increment: transferAmount }
+                }
+            });
+
+            await tx.transaction.create({
+                data: {
+                    user_id: userId,
+                    amount: transferAmount,
+                    type: 'PAYOUT',
+                    category: 'DEBIT',
+                    status: 'COMPLETED',
+                    balance_before: wallet.balance,
+                    balance_after: wallet.balance - transferAmount,
+                    description: `Instant Payout to ${selectedMethod ? (selectedMethod.type === 'UPI' ? selectedMethod.upi_id : selectedMethod.account_number) : 'Primary Bank Account'}`
+                }
+            });
+
+            return w;
+        });
+
+        return {
+            success: true,
+            amount: transferAmount,
+            transferred_to: selectedMethod || { type: 'BANK', note: 'Primary Account' },
+            new_balance: updatedWallet.balance,
+            message: `Instant transfer of ₹${transferAmount} initiated successfully!`
+        };
+    }
+
+    async updatePartnerPreferences(userId: string, data: any) {
+        const partner = await prisma.servicePartner.findUnique({
+            where: { user_id: userId }
+        });
+        if (!partner) throw new NotFoundError('Service partner not found');
+
+        const updateData: any = {};
+        if (data.destination_mode_active !== undefined) updateData.destination_mode_active = Boolean(data.destination_mode_active);
+        if (data.home_address !== undefined) updateData.home_address = data.home_address;
+        if (data.home_latitude !== undefined) updateData.home_latitude = Number(data.home_latitude);
+        if (data.home_longitude !== undefined) updateData.home_longitude = Number(data.home_longitude);
+        if (data.auto_transfer_enabled !== undefined) updateData.auto_transfer_enabled = Boolean(data.auto_transfer_enabled);
+        if (data.auto_transfer_schedule !== undefined) updateData.auto_transfer_schedule = data.auto_transfer_schedule;
+        if (data.minimum_payout_threshold !== undefined) updateData.minimum_payout_threshold = Number(data.minimum_payout_threshold);
+
+        const updated = await prisma.servicePartner.update({
+            where: { id: partner.id },
+            data: updateData
+        });
+
+        return updated;
+    }
+
+    async getReferralInfo(userId: string) {
+        let partner = await prisma.servicePartner.findUnique({
+            where: { user_id: userId }
+        });
+        if (!partner) throw new NotFoundError('Service partner not found');
+
+        if (!partner.referral_code) {
+            const randomCode = 'SP' + Math.random().toString(36).substring(2, 7).toUpperCase();
+            partner = await prisma.servicePartner.update({
+                where: { id: partner.id },
+                data: { referral_code: randomCode }
+            });
+        }
+
+        const totalReferred = await prisma.servicePartner.count({
+            where: { referred_by_code: partner.referral_code }
+        });
+
+        const completedReferred = await prisma.servicePartner.count({
+            where: {
+                referred_by_code: partner.referral_code,
+                kyc_status: 'APPROVED'
+            }
+        });
+
+        const pendingReferred = totalReferred - completedReferred;
+        const totalEarned = completedReferred * 1500;
+
+        return {
+            referral_code: partner.referral_code,
+            reward_per_referral: 1500,
+            total_referrals: totalReferred,
+            completed_referrals: completedReferred,
+            pending_referrals: pendingReferred,
+            total_earned: totalEarned,
+            share_url: `https://snearal.com/partner/join?ref=${partner.referral_code}`,
+            share_text: `Join Snearal as an On-Demand Service Partner! Use my invite code ${partner.referral_code} to get verified and earn daily instant payouts: https://snearal.com/partner/join?ref=${partner.referral_code}`
+        };
+    }
+
+    async getMerchandiseKits() {
+        let kits = await prisma.merchandiseKit.findMany({
+            where: { is_available: true },
+            orderBy: { price: 'asc' }
+        });
+
+        if (kits.length === 0) {
+            const defaults = [
+                {
+                    name: 'Starter Pro Partner Kit',
+                    description: 'Everything you need to kick off your Snearal journey: 2 Official Snearal Polos, Partner Cap & Retractable ID Badge.',
+                    price: 499,
+                    badge: 'POPULAR',
+                    image_url: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=800&auto=format&fit=crop&q=60',
+                    items_included: ['2x Snearal Moisture-Wicking Polo T-Shirts', '1x Official Embroidered Cap', '1x Verified Partner ID Card & Lanyard'],
+                    is_available: true
+                },
+                {
+                    name: 'Monsoon All-Weather Shield Kit',
+                    description: 'Never let rain stop your daily earnings. Premium heavy-duty waterproof raincoat and water-repellent equipment bag cover.',
+                    price: 899,
+                    badge: 'ESSENTIAL',
+                    image_url: 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=800&auto=format&fit=crop&q=60',
+                    items_included: ['1x Double-Layer Heavy-Duty Raincoat', '1x High-Visibility Rain Pants', '1x Waterproof Bag Rain Shield Cover'],
+                    is_available: true
+                },
+                {
+                    name: 'Master Technician Toolkit',
+                    description: 'Pro-grade multi-meter, insulated screwdriver set, precision voltage detector, and ballistic nylon heavy-duty tool backpack.',
+                    price: 1499,
+                    badge: 'PRO TOOLS',
+                    image_url: 'https://images.unsplash.com/photo-1581783898377-1c85bf937427?w=800&auto=format&fit=crop&q=60',
+                    items_included: ['1x Professional Digital Multimeter', '1x 8-Piece Insulated VDE Screwdriver Set', '1x Non-Contact AC Voltage Tester Pen', '1x Multi-Pocket Ballistic Nylon Tool Bag'],
+                    is_available: true
+                },
+                {
+                    name: 'Super Partner Elite Combo Pack',
+                    description: 'The ultimate kit for top performers. Complete apparel, all-weather gear, safety equipment, and priority badge branding.',
+                    price: 2199,
+                    badge: 'BEST VALUE',
+                    image_url: 'https://images.unsplash.com/photo-1504917599217-d4dc5ebe6122?w=800&auto=format&fit=crop&q=60',
+                    items_included: ['3x Snearal Pro Polos', '1x All-Weather Raincoat Set', '1x Partner Cap', '1x Complete Pro Toolkit', '1x Heavy Duty Bag', '1x Safety Gloves & Goggles Set'],
+                    is_available: true
+                }
+            ];
+
+            for (const item of defaults) {
+                await prisma.merchandiseKit.create({ data: item });
+            }
+
+            kits = await prisma.merchandiseKit.findMany({
+                where: { is_available: true },
+                orderBy: { price: 'asc' }
+            });
+        }
+
+        return kits;
+    }
+
+    async orderMerchandiseKit(userId: string, data: {
+        kit_id: string;
+        selected_size?: string;
+        payment_method: 'WALLET' | 'ONLINE';
+        delivery_address: string;
+        delivery_city: string;
+        delivery_state: string;
+        delivery_pincode: string;
+    }) {
+        const partner = await prisma.servicePartner.findUnique({
+            where: { user_id: userId }
+        });
+        if (!partner) throw new NotFoundError('Service partner not found');
+
+        const kit = await prisma.merchandiseKit.findUnique({
+            where: { id: data.kit_id }
+        });
+        if (!kit) throw new NotFoundError('Merchandise kit not found');
+
+        if (data.payment_method === 'WALLET') {
+            const wallet = await prisma.wallet.findUnique({
+                where: { user_id: userId }
+            });
+            if (!wallet || wallet.balance < kit.price) {
+                throw new BadRequestError(`Insufficient wallet balance (₹${wallet?.balance || 0}) for kit order of ₹${kit.price}`);
+            }
+
+            await prisma.$transaction(async (tx) => {
+                await tx.wallet.update({
+                    where: { user_id: userId },
+                    data: { balance: { decrement: kit.price } }
+                });
+
+                await tx.transaction.create({
+                    data: {
+                        user_id: userId,
+                        amount: kit.price,
+                        type: 'PAYOUT',
+                        category: 'DEBIT',
+                        status: 'COMPLETED',
+                        balance_before: wallet.balance,
+                        balance_after: wallet.balance - kit.price,
+                        description: `Merchandise Kit Purchase: ${kit.name}`
+                    }
+                });
+            });
+        }
+
+        const estDate = new Date();
+        estDate.setDate(estDate.getDate() + 4);
+
+        const order = await prisma.merchandiseOrder.create({
+            data: {
+                partner_id: partner.id,
+                kit_id: kit.id,
+                kit_name: kit.name,
+                amount: kit.price,
+                payment_method: data.payment_method,
+                payment_status: data.payment_method === 'WALLET' ? 'PAID' : 'PENDING',
+                status: 'CONFIRMED',
+                delivery_address: data.delivery_address,
+                city: data.delivery_city,
+                state: data.delivery_state,
+                postal_code: data.delivery_pincode
+            },
+            include: { kit: true }
+        });
+
+        return order;
+    }
+
+    async getMerchandiseOrders(userId: string) {
+        const partner = await prisma.servicePartner.findUnique({
+            where: { user_id: userId }
+        });
+        if (!partner) throw new NotFoundError('Service partner not found');
+
+        return await prisma.merchandiseOrder.findMany({
+            where: { partner_id: partner.id },
+            include: { kit: true },
+            orderBy: { created_at: 'desc' }
+        });
+    }
+
+    async getHighDemandAreas() {
+        return [
+            {
+                id: 'surge_1',
+                name: 'Tech Park Corridor & Outer Ring Road',
+                city: 'Bengaluru',
+                surgeMultiplier: 1.5,
+                demandLevel: 'VERY_HIGH',
+                activeOrdersWaiting: 14,
+                bonusPerOrder: 80,
+                recommendedSkills: ['AC Technician', 'Electrician', 'Plumber']
+            },
+            {
+                id: 'surge_2',
+                name: 'Koramangala & HSR Layout Sector 1-7',
+                city: 'Bengaluru',
+                surgeMultiplier: 1.3,
+                demandLevel: 'HIGH',
+                activeOrdersWaiting: 9,
+                bonusPerOrder: 50,
+                recommendedSkills: ['Washing Machine Technician', 'RO Technician']
+            },
+            {
+                id: 'surge_3',
+                name: 'Indiranagar & Domlur Central',
+                city: 'Bengaluru',
+                surgeMultiplier: 1.4,
+                demandLevel: 'HIGH',
+                activeOrdersWaiting: 11,
+                bonusPerOrder: 65,
+                recommendedSkills: ['Electrician', 'Refrigerator Technician', 'AC Technician']
+            },
+            {
+                id: 'surge_4',
+                name: 'Whitefield IT Hub & Hope Farm',
+                city: 'Bengaluru',
+                surgeMultiplier: 1.25,
+                demandLevel: 'MODERATE_HIGH',
+                activeOrdersWaiting: 8,
+                bonusPerOrder: 40,
+                recommendedSkills: ['Plumber', 'RO Technician']
+            }
+        ];
     }
 
     formatPartnerData(partner: any) {

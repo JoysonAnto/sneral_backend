@@ -68,7 +68,12 @@ class CloudinaryService {
      * Upload service image
      */
     async uploadServiceImage(buffer: Buffer, serviceName: string): Promise<string> {
-        const filename = `service_${serviceName.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`;
+        const sanitized = (serviceName || 'service')
+            .toLowerCase()
+            .trim()
+            .replace(/[^a-zA-Z0-9_-]/g, '_')
+            .slice(0, 40);
+        const filename = `service_${sanitized}_${Date.now()}`;
         const result = await this.uploadImage(buffer, 'snearal/services', filename);
         return result.secureUrl;
     }
@@ -77,7 +82,12 @@ class CloudinaryService {
      * Upload category icon
      */
     async uploadCategoryIcon(buffer: Buffer, categoryName: string): Promise<string> {
-        const filename = `category_${categoryName.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`;
+        const sanitized = (categoryName || 'category')
+            .toLowerCase()
+            .trim()
+            .replace(/[^a-zA-Z0-9_-]/g, '_')
+            .slice(0, 40);
+        const filename = `category_${sanitized}_${Date.now()}`;
         const result = await this.uploadImage(buffer, 'snearal/categories', filename);
         return result.secureUrl;
     }

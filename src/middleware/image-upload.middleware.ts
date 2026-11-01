@@ -27,32 +27,27 @@ export const imageUpload = multer({
 // Single image upload
 export const singleImageUpload = imageUpload.single('image');
 
-// Service image upload - accepts 'serviceImage', 'image', or 'file'
+// Service image upload - accepts 'serviceImage', 'image', 'file', 'service_image', etc.
 export const serviceImageUpload = (req: any, res: any, next: any) => {
-    imageUpload.fields([
-        { name: 'serviceImage', maxCount: 1 },
-        { name: 'image', maxCount: 1 },
-        { name: 'file', maxCount: 1 },
-    ])(req, res, (err: any) => {
+    imageUpload.any()(req, res, (err: any) => {
         if (err) return next(err);
-        if (req.files) {
-            req.file = req.files['serviceImage']?.[0] || req.files['image']?.[0] || req.files['file']?.[0];
+        if (req.files && Array.isArray(req.files) && req.files.length > 0) {
+            req.file = req.files.find((f: any) =>
+                ['serviceImage', 'image', 'file', 'service_image', 'imageUrl', 'image_url', 'photo'].includes(f.fieldname)
+            ) || req.files[0];
         }
         next();
     });
 };
 
-// Category icon upload - accepts 'categoryIcon', 'icon', 'image', or 'file'
+// Category icon upload - accepts 'categoryIcon', 'icon', 'image', 'file', 'category_icon', etc.
 export const categoryIconUpload = (req: any, res: any, next: any) => {
-    imageUpload.fields([
-        { name: 'categoryIcon', maxCount: 1 },
-        { name: 'icon', maxCount: 1 },
-        { name: 'image', maxCount: 1 },
-        { name: 'file', maxCount: 1 },
-    ])(req, res, (err: any) => {
+    imageUpload.any()(req, res, (err: any) => {
         if (err) return next(err);
-        if (req.files) {
-            req.file = req.files['categoryIcon']?.[0] || req.files['icon']?.[0] || req.files['image']?.[0] || req.files['file']?.[0];
+        if (req.files && Array.isArray(req.files) && req.files.length > 0) {
+            req.file = req.files.find((f: any) =>
+                ['categoryIcon', 'icon', 'image', 'file', 'category_icon', 'iconUrl', 'icon_url'].includes(f.fieldname)
+            ) || req.files[0];
         }
         next();
     });

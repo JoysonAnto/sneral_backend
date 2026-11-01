@@ -2,9 +2,12 @@ import prisma from '../config/database';
 import { NotFoundError, BadRequestError } from '../utils/errors';
 import logger from '../utils/logger';
 import { ServicePartner } from '@prisma/client';
+import { SpatialHexHelper } from '../utils/spatial-hex.helper';
 
 interface PartnerWithDistance extends ServicePartner {
-    distance: number; // Made required instead of optional
+    distance: number;
+    hexDistance: number;
+    isHeadingHome: boolean;
     user: {
         id: string;
         full_name: string;
@@ -23,31 +26,15 @@ export class PartnerMatchingService {
         lat2: number,
         lon2: number
     ): number {
-        const R = 6371; // Earth's radius in km
-        const dLat = this.toRad(lat2 - lat1);
-        const dLon = this.toRad(lon2 - lon1);
-
-        const a =
-            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(this.toRad(lat1)) *
-            Math.cos(this.toRad(lat2)) *
-            Math.sin(dLon / 2) *
-            Math.sin(dLon / 2);
-
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return R * c;
-    }
-
-    private toRad(degrees: number): number {
-        return degrees * (Math.PI / 180);
+        return SpatialHexHelper.haversineDistance(lat1, lon1, lat2, lon2);
     }
 
     /**
      * Find available partners for a booking based on:
-     * 1. Service category match
-     * 2. Location proximity (within service radius)
-     * 3. Availability status (AVAILABLE)
-     * 4. KYC approval status
+     * 1. Multi-skill category competence (primary category, skill_categories, or catalog service)
+     * 2. Hexagonal grid spatial indexing and location proximity
+     * 3. End-of-Day destination mode ("Go to Home Location")
+     * 4. Availability & KYC status
      */
     async findAvailablePartners(bookingId: string): Promise<PartnerWithDistance[]> {
         logger.info(`Finding available partners for booking: ${bookingId}`);
@@ -85,13 +72,21 @@ export class PartnerMatchingService {
             throw new BadRequestError('Booking location not specified');
         }
 
-        logger.info(`Searching for partners in category: ${serviceItem.service.category.name}`);
-        logger.info(`Booking location: ${bookingLat}, ${bookingLon}`);
+        // Calculate booking hexagonal grid cell and 2-ring neighborhood
+        const bookingHex = SpatialHexHelper.latLngToHex(bookingLat, bookingLon);
+        const bookingHexNeighbors = SpatialHexHelper.getHexNeighbors(bookingHex, 2);
 
-        // Find all available partners in the matching category who are active, not on hold or blacklisted, and don't have active bookings
+        logger.info(`Searching for partners in category: ${serviceItem.service.category.name} (${categoryId})`);
+        logger.info(`Booking location: ${bookingLat}, ${bookingLon} [Hex Index: ${bookingHex}]`);
+
+        // Find all available partners matching primary category OR multiple skill categories OR active service competencies
         const partners = await prisma.servicePartner.findMany({
             where: {
-                category_id: categoryId,
+                OR: [
+                    { category_id: categoryId },
+                    { skill_categories: { has: categoryId } },
+                    { services: { some: { service: { category_id: categoryId }, is_available: true } } }
+                ],
                 availability_status: 'AVAILABLE',
                 kyc_status: 'APPROVED',
                 is_on_hold: false,
@@ -118,39 +113,66 @@ export class PartnerMatchingService {
             },
         });
 
-        logger.info(`Found ${partners.length} potential partners in DB for category: ${categoryId}`);
-        partners.forEach(p => {
-            logger.info(`  - Partner: ${p.user.full_name}, Lat: ${p.current_latitude}, Lon: ${p.current_longitude}, Radius: ${p.service_radius}km, KYC: ${p.kyc_status}, Availability: ${p.availability_status}`);
-        });
+        logger.info(`Found ${partners.length} multi-skill competent partners in DB for category: ${categoryId}`);
 
-        // Calculate distance for each partner and filter by service radius
+        // Calculate distance, hex matching, and Destination Mode ("Go to Home Location")
         const partnersWithDistance: PartnerWithDistance[] = partners
             .map((partner) => {
-                const distance = (partner.current_latitude && partner.current_longitude) 
-                    ? this.calculateDistance(
+                const partnerLat = partner.current_latitude;
+                const partnerLon = partner.current_longitude;
+
+                const distance = (partnerLat && partnerLon) 
+                    ? this.calculateDistance(bookingLat, bookingLon, partnerLat, partnerLon)
+                    : 999999;
+
+                // Partner's current hex cell
+                const partnerHex = partner.h3_index || (partnerLat && partnerLon ? SpatialHexHelper.latLngToHex(partnerLat, partnerLon) : null);
+                const isInHexNeighborDisk = partnerHex ? bookingHexNeighbors.includes(partnerHex) : false;
+
+                // Check "Go to Home Location" destination mode
+                let isHeadingHome = true;
+                if (partner.destination_mode_active && partner.home_latitude && partner.home_longitude && partnerLat && partnerLon) {
+                    isHeadingHome = SpatialHexHelper.isTowardsHome(
+                        partnerLat,
+                        partnerLon,
                         bookingLat,
                         bookingLon,
-                        partner.current_latitude,
-                        partner.current_longitude
-                    )
-                    : 999999; // Far away if no location
+                        partner.home_latitude,
+                        partner.home_longitude
+                    );
+                }
 
                 return {
                     ...partner,
                     distance,
+                    hexDistance: isInHexNeighborDisk ? 0 : 1,
+                    isHeadingHome,
                 };
             })
             .filter((p): p is PartnerWithDistance => {
                 if (!p) return false;
-                // DEVELOPMENT BYPASS: In dev mode, we practically ignore the distance constraint to help cross-system testing
-                if (process.env.NODE_ENV === 'development') return true;
-                return p.distance <= (p.service_radius || 10);
-            })
-            .sort((a, b) => (a.distance || 0) - (b.distance || 0)); // Sort by distance
+                
+                // If partner is in Destination Mode, exclude orders that take them further away from home
+                if (p.destination_mode_active && !p.isHeadingHome) {
+                    logger.info(`  ❌ Partner ${p.user.full_name} skipped: Order direction does not match residential Home route`);
+                    return false;
+                }
 
-        logger.info(`${partnersWithDistance.length} partners within service radius`);
+                if (process.env.NODE_ENV === 'development') return true;
+                return p.distance <= (p.service_radius || 15);
+            })
+            .sort((a, b) => {
+                // Prioritize destination mode partners whose home route matches
+                if (a.destination_mode_active && !b.destination_mode_active) return -1;
+                if (!a.destination_mode_active && b.destination_mode_active) return 1;
+
+                // Then sort by distance
+                return (a.distance || 0) - (b.distance || 0);
+            });
+
+        logger.info(`${partnersWithDistance.length} partners selected for dispatching`);
         partnersWithDistance.forEach(p => {
-            logger.info(`  - ${p.user.full_name}: ${p.distance?.toFixed(2)}km away`);
+            logger.info(`  - ${p.user.full_name}: ${p.distance?.toFixed(2)}km away (Destination Mode: ${p.destination_mode_active ? 'ON' : 'OFF'})`);
         });
 
         return partnersWithDistance;

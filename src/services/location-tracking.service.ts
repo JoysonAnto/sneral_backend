@@ -1,9 +1,10 @@
 import prisma from '../config/database';
 import { getIO } from '../socket/socket.server';
+import { SpatialHexHelper } from '../utils/spatial-hex.helper';
 
 export class LocationTrackingService {
     /**
-     * Record partner location (when online)
+     * Record partner location (when online) and index to Hexagonal spatial grid
      */
     async recordPartnerLocation(
         partnerId: string,
@@ -13,12 +14,15 @@ export class LocationTrackingService {
         bookingId?: string
     ) {
         try {
-            // Update partner's current location
+            const h3Index = SpatialHexHelper.latLngToHex(latitude, longitude);
+
+            // Update partner's current location and hexagonal spatial index
             await prisma.servicePartner.update({
                 where: { id: partnerId },
                 data: {
                     current_latitude: latitude,
                     current_longitude: longitude,
+                    h3_index: h3Index,
                     last_location_update: new Date(),
                     availability_status: 'AVAILABLE', // Ensure marked as available if updating location
                 },

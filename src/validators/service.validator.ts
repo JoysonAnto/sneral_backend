@@ -5,17 +5,15 @@ export const createServiceValidator = [
         .trim()
         .notEmpty()
         .withMessage('Service name is required')
-        .isLength({ min: 3, max: 100 })
-        .withMessage('Service name must be between 3 and 100 characters'),
+        .isLength({ min: 2, max: 100 })
+        .withMessage('Service name must be between 2 and 100 characters'),
     body('description')
+        .optional({ checkFalsy: true })
         .trim()
-        .notEmpty()
-        .withMessage('Description is required')
-        .isLength({ min: 10, max: 1000 })
-        .withMessage('Description must be between 10 and 1000 characters'),
+        .isLength({ max: 1000 })
+        .withMessage('Description must be under 1000 characters'),
     body('categoryId')
-        .notEmpty()
-        .withMessage('Category ID is required')
+        .optional({ checkFalsy: true })
         .isUUID()
         .withMessage('Invalid category ID'),
     body('basePrice')
@@ -24,8 +22,7 @@ export const createServiceValidator = [
         .isFloat({ min: 0 })
         .withMessage('Base price must be a positive number'),
     body('duration')
-        .notEmpty()
-        .withMessage('Duration is required')
+        .optional({ checkFalsy: true })
         .isInt({ min: 1 })
         .withMessage('Duration must be a positive integer (minutes)'),
     body('imageUrl')
@@ -36,25 +33,25 @@ export const createServiceValidator = [
 
 export const updateServiceValidator = [
     body('name')
-        .optional()
+        .optional({ checkFalsy: true })
         .trim()
-        .isLength({ min: 3, max: 100 })
-        .withMessage('Service name must be between 3 and 100 characters'),
+        .isLength({ min: 2, max: 100 })
+        .withMessage('Service name must be between 2 and 100 characters'),
     body('description')
         .optional()
         .trim()
-        .isLength({ min: 10, max: 1000 })
-        .withMessage('Description must be between 10 and 1000 characters'),
+        .isLength({ max: 1000 })
+        .withMessage('Description must be under 1000 characters'),
     body('categoryId')
-        .optional()
+        .optional({ checkFalsy: true })
         .isUUID()
         .withMessage('Invalid category ID'),
     body('basePrice')
-        .optional()
+        .optional({ checkFalsy: true })
         .isFloat({ min: 0 })
         .withMessage('Base price must be a positive number'),
     body('duration')
-        .optional()
+        .optional({ checkFalsy: true })
         .isInt({ min: 1 })
         .withMessage('Duration must be a positive integer'),
     body('isActive')

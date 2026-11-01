@@ -105,6 +105,17 @@ model ServicePartner {
   created_at           DateTime                 @default(now())
   updated_at           DateTime                 @updatedAt
   category_id          String?
+  skill_categories     String[]                 @default([])
+  destination_mode_active Boolean               @default(false)
+  home_latitude        Float?
+  home_longitude       Float?
+  home_address         String?
+  h3_index             String?
+  auto_transfer_enabled Boolean                @default(false)
+  auto_transfer_schedule String                 @default("DAILY_EOD")
+  minimum_payout_threshold Float                @default(500)
+  referral_code        String?                  @unique
+  referred_by_code     String?
   kyc_rejection_reason String?
   last_location_update DateTime?
   availability_slots   AvailabilitySlot[]
@@ -114,6 +125,8 @@ model ServicePartner {
   team_associations    PartnerAssociation[]     @relation("ServicePartnerTeam")
   location_history     PartnerLocationHistory[]
   services             PartnerService[]
+  payout_methods       PartnerPayoutMethod[]
+  merchandise_orders   MerchandiseOrder[]
   business_partner     BusinessPartner?         @relation(fields: [business_partner_id], references: [id])
   category             Category?                @relation(fields: [category_id], references: [id])
   user                 User                     @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -121,6 +134,63 @@ model ServicePartner {
   @@index([availability_status])
   @@index([kyc_status])
   @@map("service_partners")
+}
+
+model PartnerPayoutMethod {
+  id              String         @id @default(uuid())
+  partner_id      String
+  type            String         @default("BANK") // 'BANK' or 'UPI'
+  account_holder  String?
+  account_number  String?
+  ifsc_code       String?
+  bank_name       String?
+  upi_id          String?
+  is_default      Boolean        @default(false)
+  is_verified     Boolean        @default(true)
+  created_at      DateTime       @default(now())
+  updated_at      DateTime       @updatedAt
+  partner         ServicePartner @relation(fields: [partner_id], references: [id], onDelete: Cascade)
+
+  @@index([partner_id])
+  @@map("partner_payout_methods")
+}
+
+model MerchandiseKit {
+  id              String             @id @default(uuid())
+  name            String
+  description     String
+  price           Float
+  image_url       String?
+  badge           String?
+  items_included  String[]           @default([])
+  is_available    Boolean            @default(true)
+  created_at      DateTime           @default(now())
+  updated_at      DateTime           @updatedAt
+  orders          MerchandiseOrder[]
+
+  @@map("merchandise_kits")
+}
+
+model MerchandiseOrder {
+  id               String          @id @default(uuid())
+  partner_id       String
+  kit_id           String
+  kit_name         String
+  amount           Float
+  payment_status   String          @default("PAID") // 'PENDING', 'PAID', 'FAILED'
+  payment_method   String          @default("WALLET") // 'WALLET', 'UPI'
+  delivery_address String
+  city             String?
+  state            String?
+  postal_code      String?
+  status           String          @default("CONFIRMED") // 'PENDING', 'CONFIRMED', 'SHIPPED', 'DELIVERED'
+  created_at       DateTime        @default(now())
+  updated_at       DateTime        @updatedAt
+  partner          ServicePartner  @relation(fields: [partner_id], references: [id], onDelete: Cascade)
+  kit              MerchandiseKit  @relation(fields: [kit_id], references: [id])
+
+  @@index([partner_id])
+  @@map("merchandise_orders")
 }
 
 model BusinessPartner {

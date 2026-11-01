@@ -14,6 +14,7 @@ interface RegisterData {
     categoryId?: string;
     businessName?: string;
     businessType?: string;
+    referralCode?: string;
 }
 
 export class AuthService {
@@ -70,12 +71,18 @@ export class AuthService {
             });
 
             if (role === 'SERVICE_PARTNER') {
+                const partnerCodePrefix = (fullName || 'PARTNER').replace(/[^a-zA-Z]/g, '').slice(0, 4).toUpperCase();
+                const randomCode = Math.floor(1000 + Math.random() * 9000);
+                const generatedCode = `SN-${partnerCodePrefix || 'PRO'}-${randomCode}`;
+
                 await tx.servicePartner.create({
                     data: {
                         user_id: user.id,
                         category_id: categoryId,
                         availability_status: 'OFFLINE',
                         kyc_status: 'PENDING',
+                        referral_code: generatedCode,
+                        referred_by_code: data.referralCode || null,
                     }
                 });
             } else if (role === 'BUSINESS_PARTNER') {
@@ -473,7 +480,7 @@ export class AuthService {
             include: {
                 profile: true,
                 service_partner: {
-                    include: { category: true }
+                    include: { category: true, payout_methods: true }
                 },
                 business_partner: {
                     include: { category: true }
@@ -541,43 +548,151 @@ export class AuthService {
     async updateProfile(userId: string, data: any) {
         const user = await prisma.user.findUnique({
             where: { id: userId },
+            include: { profile: true }
         });
 
         if (!user) {
             throw new BadRequestError('User not found');
         }
 
-        // Update user
+        // Update user core credentials
         await prisma.user.update({
             where: { id: userId },
             data: {
-                full_name: data.fullName || user.full_name,
-                phone_number: data.phoneNumber || user.phone_number,
+                full_name: data.fullName || data.full_name || user.full_name,
+                phone_number: data.phoneNumber || data.phone_number || user.phone_number,
             },
         });
 
-        // Update or create profile
-        if (data.address || data.city || data.state || data.bio) {
-            await prisma.profile.upsert({
-                where: { user_id: userId },
-                update: {
-                    address: data.address,
-                    city: data.city,
-                    state: data.state,
-                    postal_code: data.postalCode,
-                    avatar_url: data.avatarUrl,
-                    bio: data.bio,
-                },
-                create: {
-                    user_id: userId,
-                    address: data.address,
-                    city: data.city,
-                    state: data.state,
-                    postal_code: data.postalCode,
-                    avatar_url: data.avatarUrl,
-                    bio: data.bio,
-                },
-            });
+        // Resolve address and location parameters
+        const address = data.address || data.location || user.profile?.address;
+        const city = data.city || user.profile?.city;
+        const state = data.state || user.profile?.state;
+        const postalCode = data.postalCode || data.postal_code || data.pincode || user.profile?.postal_code;
+        const bio = data.bio !== undefined ? data.bio : user.profile?.bio;
+        const avatarUrl = data.avatarUrl || data.avatar_url || data.profile_pic || user.profile?.avatar_url;
+
+        // Upsert profile record
+        await prisma.profile.upsert({
+            where: { user_id: userId },
+            update: {
+                address,
+                city,
+                state,
+                postal_code: postalCode,
+                avatar_url: avatarUrl,
+                bio,
+            },
+            create: {
+                user_id: userId,
+                address,
+                city,
+                state,
+                postal_code: postalCode,
+                avatar_url: avatarUrl,
+                bio,
+            },
+        });
+
+        // If user is a Service Partner, update their service partner competencies and preferences
+        const sp = await prisma.servicePartner.findUnique({
+            where: { user_id: userId }
+        });
+
+        if (sp) {
+            const spUpdateData: any = {};
+
+            // Multi-skill categories
+            let skillCategories = data.skillCategories || data.skill_categories;
+            if (typeof skillCategories === 'string') {
+                try {
+                    skillCategories = JSON.parse(skillCategories);
+                } catch {
+                    skillCategories = skillCategories.split(',').map((s: string) => s.trim()).filter(Boolean);
+                }
+            }
+
+            if (Array.isArray(skillCategories) && skillCategories.length > 0) {
+                spUpdateData.skill_categories = skillCategories;
+                if (!sp.category_id && skillCategories[0]) {
+                    spUpdateData.category_id = skillCategories[0];
+                }
+            }
+
+            if (data.category_id || data.categoryId) {
+                spUpdateData.category_id = data.category_id || data.categoryId;
+            }
+
+            // Destination mode / Go to Home
+            if (data.destinationModeActive !== undefined || data.destination_mode_active !== undefined) {
+                spUpdateData.destination_mode_active = Boolean(data.destinationModeActive ?? data.destination_mode_active);
+            }
+            if (data.homeAddress !== undefined || data.home_address !== undefined) {
+                spUpdateData.home_address = data.homeAddress ?? data.home_address;
+            }
+            if (data.homeLatitude !== undefined || data.home_latitude !== undefined) {
+                spUpdateData.home_latitude = Number(data.homeLatitude ?? data.home_latitude);
+            }
+            if (data.homeLongitude !== undefined || data.home_longitude !== undefined) {
+                spUpdateData.home_longitude = Number(data.homeLongitude ?? data.home_longitude);
+            }
+
+            // Payout preferences
+            if (data.autoTransferEnabled !== undefined || data.auto_transfer_enabled !== undefined) {
+                spUpdateData.auto_transfer_enabled = Boolean(data.autoTransferEnabled ?? data.auto_transfer_enabled);
+            }
+            if (data.autoTransferSchedule || data.auto_transfer_schedule) {
+                spUpdateData.auto_transfer_schedule = data.autoTransferSchedule || data.auto_transfer_schedule;
+            }
+            if (data.minimumPayoutThreshold !== undefined || data.minimum_payout_threshold !== undefined) {
+                spUpdateData.minimum_payout_threshold = Number(data.minimumPayoutThreshold ?? data.minimum_payout_threshold);
+            }
+
+            // Generate referral code if missing
+            if (!sp.referral_code) {
+                const prefix = (user.full_name || 'PARTNER').replace(/[^a-zA-Z]/g, '').slice(0, 4).toUpperCase();
+                const randomPart = Math.floor(1000 + Math.random() * 9000);
+                spUpdateData.referral_code = `SN-${prefix}-${randomPart}`;
+            }
+
+            if (Object.keys(spUpdateData).length > 0) {
+                await prisma.servicePartner.update({
+                    where: { id: sp.id },
+                    data: spUpdateData
+                });
+            }
+
+            // Automatically sync partner services for all selected skill categories
+            if (Array.isArray(skillCategories) && skillCategories.length > 0) {
+                try {
+                    const servicesInCategories = await prisma.service.findMany({
+                        where: {
+                            category_id: { in: skillCategories },
+                            is_active: true
+                        },
+                        select: { id: true }
+                    });
+
+                    for (const s of servicesInCategories) {
+                        await prisma.partnerService.upsert({
+                            where: {
+                                service_id_partner_id: {
+                                    service_id: s.id,
+                                    partner_id: sp.id
+                                }
+                            },
+                            update: { is_available: true },
+                            create: {
+                                service_id: s.id,
+                                partner_id: sp.id,
+                                is_available: true
+                            }
+                        }).catch(() => {});
+                    }
+                } catch (syncErr) {
+                    console.error('Failed to auto-sync services for categories:', syncErr);
+                }
+            }
         }
 
         return this.getProfile(userId);

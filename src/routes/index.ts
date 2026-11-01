@@ -64,6 +64,7 @@ router.use('/addresses', addressRoutes);
 router.use('/services', serviceRoutes);
 router.use('/bookings', bookingRoutes);
 router.use('/jobs', bookingRoutes); // Alias for partner app
+router.use('/orders', bookingRoutes); // New ORDERS terminology alias
 router.use('/reviews', reviewRoutes); // Review endpoints under /reviews prefix
 
 // 4. PARTNER & WALLET ROUTES

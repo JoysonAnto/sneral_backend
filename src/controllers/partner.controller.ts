@@ -389,5 +389,108 @@ export class PartnerController {
             next(error);
         }
     };
+
+    getPayoutMethods = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const methods = await this.partnerService.getPayoutMethods(req.user!.userId);
+            res.json(successResponse(methods, 'Payout methods retrieved successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    addPayoutMethod = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const method = await this.partnerService.addPayoutMethod(req.user!.userId, req.body);
+            res.status(201).json(successResponse(method, 'Payout method added successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    setDefaultPayoutMethod = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const updated = await this.partnerService.setDefaultPayoutMethod(req.user!.userId, req.params.id);
+            res.json(successResponse(updated, 'Default payout method updated'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    deletePayoutMethod = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const result = await this.partnerService.deletePayoutMethod(req.user!.userId, req.params.id);
+            res.json(successResponse(result, 'Payout method deleted successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    requestInstantPayout = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const result = await this.partnerService.requestInstantPayout(
+                req.user!.userId,
+                req.body.amount,
+                req.body.payout_method_id || req.body.payoutMethodId
+            );
+            res.json(successResponse(result, result.message));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    updatePreferences = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const updated = await this.partnerService.updatePartnerPreferences(req.user!.userId, req.body);
+            res.json(successResponse(updated, 'Preferences updated successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    getReferralInfo = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const referral = await this.partnerService.getReferralInfo(req.user!.userId);
+            res.json(successResponse(referral, 'Referral details retrieved successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    getMerchandiseKits = async (_req: Request, res: Response, next: NextFunction) => {
+        try {
+            const kits = await this.partnerService.getMerchandiseKits();
+            res.json(successResponse(kits, 'Merchandise kits retrieved successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    orderMerchandiseKit = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const order = await this.partnerService.orderMerchandiseKit(req.user!.userId, req.body);
+            res.status(201).json(successResponse(order, 'Merchandise kit ordered successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    getMerchandiseOrders = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const orders = await this.partnerService.getMerchandiseOrders(req.user!.userId);
+            res.json(successResponse(orders, 'Merchandise orders retrieved successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    getHighDemandAreas = async (_req: Request, res: Response, next: NextFunction) => {
+        try {
+            const areas = await this.partnerService.getHighDemandAreas();
+            res.json(successResponse(areas, 'High demand areas retrieved successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
 }
 

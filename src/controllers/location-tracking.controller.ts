@@ -24,12 +24,18 @@ export class LocationTrackingController {
                 throw new Error('Service partner profile not found');
             }
 
-            const { latitude, longitude, accuracy, bookingId } = req.body;
+            const lat = req.body.latitude ?? req.body.lat;
+            const lng = req.body.longitude ?? req.body.lng;
+            const { accuracy, bookingId } = req.body;
+
+            if (lat === undefined || lng === undefined) {
+                throw new BadRequestError('Latitude and longitude coordinates are required');
+            }
 
             const location = await this.locationService.recordPartnerLocation(
                 partner.id,
-                latitude,
-                longitude,
+                Number(lat),
+                Number(lng),
                 accuracy,
                 bookingId
             );
