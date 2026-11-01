@@ -105,7 +105,13 @@ export class PayoutService {
         const skip = (page - 1) * limit;
 
         const where: any = {};
-        if (status) where.status = status;
+        if (status === 'SETTLED' || status === 'COMPLETED') {
+            where.status = 'COMPLETED';
+        } else if (status === 'NOT_SETTLED' || status === 'UNSETTLED') {
+            where.status = { in: ['PENDING', 'APPROVED'] };
+        } else if (status) {
+            where.status = status;
+        }
 
         const [requests, total] = await Promise.all([
             prisma.withdrawalRequest.findMany({

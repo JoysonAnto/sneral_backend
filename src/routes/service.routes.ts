@@ -136,6 +136,7 @@ router.patch(
     '/categories/:id',
     authenticateToken,
     checkPermission('SERVICE_MANAGE'),
+    categoryIconUpload,
     serviceController.updateCategory
 );
 

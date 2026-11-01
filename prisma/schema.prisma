@@ -47,6 +47,7 @@ model User {
   custom_role             Role?               @relation(fields: [role_id], references: [id])
   wallet                  Wallet?
   withdrawals             WithdrawalRequest[]
+  tickets                 Ticket[]
 
 
   @@index([email])
@@ -95,6 +96,12 @@ model ServicePartner {
   bank_account_number         String?
   bank_ifsc_code              String?
   bank_account_name           String?
+  is_on_hold                  Boolean                  @default(false)
+  hold_reason                 String?
+  is_blacklisted              Boolean                  @default(false)
+  blacklist_reason            String?
+  strike_count                Int                      @default(0)
+  admin_remarks               String?
   created_at           DateTime                 @default(now())
   updated_at           DateTime                 @updatedAt
   category_id          String?
@@ -129,6 +136,12 @@ model BusinessPartner {
   bank_account_number     String?
   bank_ifsc_code          String?
   bank_account_name       String?
+  is_on_hold              Boolean              @default(false)
+  hold_reason             String?
+  is_blacklisted          Boolean              @default(false)
+  blacklist_reason        String?
+  strike_count            Int                  @default(0)
+  admin_remarks           String?
   created_at              DateTime             @default(now())
   updated_at              DateTime             @updatedAt
   team_management_enabled Boolean              @default(false)
@@ -1055,3 +1068,46 @@ enum ReviewType {
   CUSTOMER_TO_PARTNER
   PARTNER_TO_CUSTOMER
 }
+
+model Ticket {
+  id               String         @id @default(uuid())
+  ticket_number    String         @unique
+  subject          String
+  description      String
+  category         String         @default("GENERAL")
+  priority         TicketPriority @default(MEDIUM)
+  status           TicketStatus   @default(OPEN)
+  customer_name    String?
+  customer_email   String?
+  customer_phone   String?
+  user_id          String?
+  booking_id       String?
+  partner_id       String?
+  assigned_to      String?
+  resolution_notes String?
+  resolved_at      DateTime?
+  created_at       DateTime       @default(now())
+  updated_at       DateTime       @updatedAt
+
+  user             User?          @relation(fields: [user_id], references: [id])
+
+  @@index([status])
+  @@index([priority])
+  @@index([user_id])
+  @@map("tickets")
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+

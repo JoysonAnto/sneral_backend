@@ -8,7 +8,7 @@ export class LocationController {
     // ====================
 
     getAllStates = asyncHandler(async (req: Request, res: Response) => {
-        const includeInactive = req.query.includeInactive === 'true';
+        const includeInactive = req.query.includeInactive !== 'false';
         const states = await LocationService.getAllStates(includeInactive);
 
         res.status(200).json({
@@ -55,7 +55,7 @@ export class LocationController {
 
     getAllDistricts = asyncHandler(async (req: Request, res: Response) => {
         const stateId = req.query.stateId as string | undefined;
-        const includeInactive = req.query.includeInactive === 'true';
+        const includeInactive = req.query.includeInactive !== 'false';
         const hasServicesOnly = req.query.hasServicesOnly === 'true';
         const districts = await LocationService.getAllDistricts(stateId, includeInactive, hasServicesOnly);
 
@@ -103,7 +103,7 @@ export class LocationController {
 
     getAllAreas = asyncHandler(async (req: Request, res: Response) => {
         const districtId = req.query.districtId as string | undefined;
-        const includeInactive = req.query.includeInactive === 'true';
+        const includeInactive = req.query.includeInactive !== 'false';
         const areas = await LocationService.getAllAreas(districtId, includeInactive);
 
         res.status(200).json({

@@ -88,12 +88,17 @@ export class PartnerMatchingService {
         logger.info(`Searching for partners in category: ${serviceItem.service.category.name}`);
         logger.info(`Booking location: ${bookingLat}, ${bookingLon}`);
 
-        // Find all available partners in the matching category who don't have active bookings
+        // Find all available partners in the matching category who are active, not on hold or blacklisted, and don't have active bookings
         const partners = await prisma.servicePartner.findMany({
             where: {
                 category_id: categoryId,
                 availability_status: 'AVAILABLE',
                 kyc_status: 'APPROVED',
+                is_on_hold: false,
+                is_blacklisted: false,
+                user: {
+                    is_active: true
+                },
                 bookings: {
                     none: {
                         status: {

@@ -16,13 +16,15 @@ interface CreateCategoryData {
     description?: string;
     iconUrl?: string;
     displayOrder?: number;
+    isActive?: boolean | string;
 }
 
 export class ServiceService {
     async getAllServices(filters: any) {
         const category = filters.category;
         const search = filters.search;
-        const active = filters.active || 'true';
+        const includeInactive = filters.includeInactive === true || filters.includeInactive === 'true' || filters.all === 'true';
+        const active = filters.active;
         const page = parseInt(filters.page as string) || 1;
         const limit = parseInt(filters.limit as string) || 20;
 
@@ -36,8 +38,11 @@ export class ServiceService {
         }
 
         // Filter by active status
-        if (active !== 'all') {
+        if (active === 'true' || active === 'false') {
             where.is_active = active === 'true';
+        } else if (!includeInactive && active !== 'all') {
+            // Default to active only for consumers not requesting inactive
+            where.is_active = true;
         }
 
         // Search by name or description
@@ -76,16 +81,24 @@ export class ServiceService {
                 id: service.category.id,
                 name: service.category.name,
                 iconUrl: service.category.icon_url,
+                icon_url: service.category.icon_url,
+                imageUrl: service.category.icon_url,
+                image_url: service.category.icon_url,
             },
             basePrice: service.base_price,
+            base_price: service.base_price,
             currency: 'INR',
             unit: 'per service',
             duration: service.duration,
             imageUrl: service.image_url,
+            image_url: service.image_url,
+            image: service.image_url,
             isActive: service.is_active,
+            is_active: service.is_active,
             avgRating: 4.5, // TODO: Calculate from actual ratings
             totalRatings: 0, // TODO: Count from actual ratings
             createdAt: service.created_at,
+            created_at: service.created_at,
         }));
 
         return {
@@ -126,13 +139,20 @@ export class ServiceService {
                 name: service.category.name,
                 description: service.category.description,
                 iconUrl: service.category.icon_url,
+                icon_url: service.category.icon_url,
+                imageUrl: service.category.icon_url,
+                image_url: service.category.icon_url,
             },
             basePrice: service.base_price,
+            base_price: service.base_price,
             currency: 'INR',
             unit: 'per service',
             duration: service.duration,
             imageUrl: service.image_url,
+            image_url: service.image_url,
+            image: service.image_url,
             isActive: service.is_active,
+            is_active: service.is_active,
             avgRating: 4.5, // TODO: Calculate from actual ratings
             totalRatings: 0, // TODO: Count from actual ratings
             createdAt: service.created_at,
@@ -172,12 +192,21 @@ export class ServiceService {
             category: {
                 id: service.category.id,
                 name: service.category.name,
+                iconUrl: service.category.icon_url,
+                icon_url: service.category.icon_url,
+                imageUrl: service.category.icon_url,
+                image_url: service.category.icon_url,
             },
             basePrice: service.base_price,
+            base_price: service.base_price,
             duration: service.duration,
             imageUrl: service.image_url,
+            image_url: service.image_url,
+            image: service.image_url,
             isActive: service.is_active,
+            is_active: service.is_active,
             createdAt: service.created_at,
+            updatedAt: service.updated_at,
         };
     }
 
@@ -223,11 +252,19 @@ export class ServiceService {
             category: {
                 id: updatedService.category.id,
                 name: updatedService.category.name,
+                iconUrl: updatedService.category.icon_url,
+                icon_url: updatedService.category.icon_url,
+                imageUrl: updatedService.category.icon_url,
+                image_url: updatedService.category.icon_url,
             },
             basePrice: updatedService.base_price,
+            base_price: updatedService.base_price,
             duration: updatedService.duration,
             imageUrl: updatedService.image_url,
+            image_url: updatedService.image_url,
+            image: updatedService.image_url,
             isActive: updatedService.is_active,
+            is_active: updatedService.is_active,
             updatedAt: updatedService.updated_at,
         };
     }
@@ -263,9 +300,10 @@ export class ServiceService {
     }
 
     // Category Management
-    async getAllCategories() {
+    async getAllCategories(includeInactive = false) {
+        const whereClause = includeInactive ? {} : { is_active: true };
         const categories = await prisma.category.findMany({
-            where: { is_active: true },
+            where: whereClause,
             orderBy: { display_order: 'asc' },
             include: {
                 _count: {
@@ -279,9 +317,14 @@ export class ServiceService {
             name: cat.name,
             description: cat.description,
             iconUrl: cat.icon_url,
+            icon_url: cat.icon_url,
+            imageUrl: cat.icon_url,
+            image_url: cat.icon_url,
             isActive: cat.is_active,
-            servicesCount: cat._count.services,
+            servicesCount: cat._count?.services || 0,
             displayOrder: cat.display_order,
+            createdAt: cat.created_at,
+            updatedAt: cat.updated_at,
         }));
     }
 
@@ -301,7 +344,7 @@ export class ServiceService {
                 description: data.description,
                 icon_url: data.iconUrl,
                 display_order: data.displayOrder || 0,
-                is_active: true,
+                is_active: data.isActive !== undefined ? (String(data.isActive) === 'true') : true,
             },
         });
 
@@ -310,8 +353,13 @@ export class ServiceService {
             name: category.name,
             description: category.description,
             iconUrl: category.icon_url,
+            icon_url: category.icon_url,
+            imageUrl: category.icon_url,
+            image_url: category.icon_url,
+            isActive: category.is_active,
             displayOrder: category.display_order,
             createdAt: category.created_at,
+            updatedAt: category.updated_at,
         };
     }
 
@@ -335,7 +383,19 @@ export class ServiceService {
             },
         });
 
-        return updated;
+        return {
+            id: updated.id,
+            name: updated.name,
+            description: updated.description,
+            iconUrl: updated.icon_url,
+            icon_url: updated.icon_url,
+            imageUrl: updated.icon_url,
+            image_url: updated.icon_url,
+            isActive: updated.is_active,
+            displayOrder: updated.display_order,
+            createdAt: updated.created_at,
+            updatedAt: updated.updated_at,
+        };
     }
 
     // ====================
@@ -612,13 +672,20 @@ export class ServiceService {
                 id: service.category.id,
                 name: service.category.name,
                 iconUrl: service.category.icon_url,
+                icon_url: service.category.icon_url,
+                imageUrl: service.category.icon_url,
+                image_url: service.category.icon_url,
             },
             basePrice: service.base_price,
+            base_price: service.base_price,
             currency: 'INR',
             unit: 'per service',
             duration: service.duration,
             imageUrl: service.image_url,
+            image_url: service.image_url,
+            image: service.image_url,
             isActive: service.is_active,
+            is_active: service.is_active,
             avgRating: 4.8, // Default high rating for featured
             totalRatings: 10,
             createdAt: service.created_at,
@@ -650,13 +717,20 @@ export class ServiceService {
                 id: service.category.id,
                 name: service.category.name,
                 iconUrl: service.category.icon_url,
+                icon_url: service.category.icon_url,
+                imageUrl: service.category.icon_url,
+                image_url: service.category.icon_url,
             },
             basePrice: service.base_price,
+            base_price: service.base_price,
             currency: 'INR',
             unit: 'per service',
             duration: service.duration,
             imageUrl: service.image_url,
+            image_url: service.image_url,
+            image: service.image_url,
             isActive: service.is_active,
+            is_active: service.is_active,
             avgRating: 4.9,
             totalRatings: 25,
             createdAt: service.created_at,

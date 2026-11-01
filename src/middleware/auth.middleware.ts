@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { UnauthorizedError } from '../utils/errors';
+import { UnauthorizedError, ForbiddenError } from '../utils/errors';
 import { UserRole } from '@prisma/client';
 import { verifyAccessToken } from '../utils/jwt.helper';
 
@@ -40,10 +40,9 @@ export const authenticateToken = async (
 
 export const authorize = (...allowedRoles: UserRole[]) => {
     return async (req: Request, _res: Response, next: NextFunction) => {
-        console.log(`🔍 [AUTH DEBUG] User: ${req.user?.userId}, Role: ${req.user?.role}, Allowed: ${allowedRoles.join('|')}, URL: ${req.originalUrl}`);
         if (!req.user || !allowedRoles.includes(req.user.role)) {
-            console.log(`❌ [AUTH DEBUG] Access denied!`);
-            throw new UnauthorizedError('Access denied - insufficient permissions');
+            console.log(`❌ [AUTH DEBUG] Access denied for role: ${req.user?.role}, required: ${allowedRoles.join('|')}`);
+            throw new ForbiddenError('Access denied - insufficient permissions');
         }
         next();
     };
@@ -62,7 +61,7 @@ export const checkPermission = (permission: string) => {
             return next();
         }
 
-        console.log(`❌ [AUTH DEBUG] Permission denied! Required: ${permission}, User role: ${req.user.role}, Permissions: ${userPermissions.join(', ') || 'none'}`);
-        throw new UnauthorizedError(`Access denied - missing required permission: ${permission}`);
+        console.log(`❌ [AUTH DEBUG] Permission denied! Required: ${permission}, User role: ${req.user.role}`);
+        throw new ForbiddenError(`Access denied - missing required permission: ${permission}`);
     };
 };

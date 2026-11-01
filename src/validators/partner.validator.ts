@@ -62,6 +62,33 @@ export const updatePartnerValidator = [
     body('bankAccountName')
         .optional()
         .trim(),
+    body('isOnHold')
+        .optional()
+        .isBoolean(),
+    body('is_on_hold')
+        .optional(),
+    body('holdReason')
+        .optional(),
+    body('hold_reason')
+        .optional(),
+    body('isBlacklisted')
+        .optional()
+        .isBoolean(),
+    body('is_blacklisted')
+        .optional(),
+    body('blacklistReason')
+        .optional(),
+    body('blacklist_reason')
+        .optional(),
+    body('strikeCount')
+        .optional()
+        .isInt({ min: 0 }),
+    body('strike_count')
+        .optional(),
+    body('adminRemarks')
+        .optional(),
+    body('admin_remarks')
+        .optional(),
 ];
 
 export const updateAvailabilityValidator = [

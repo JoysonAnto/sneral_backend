@@ -80,6 +80,8 @@ export const updateBookingStatusValidator = [
             'SEARCHING_PARTNER',
             'PARTNER_ASSIGNED',
             'PARTNER_ACCEPTED',
+            'PARTNER_ARRIVED',
+            'ARRIVED',
             'IN_PROGRESS',
             'COMPLETED',
             'CANCELLED',

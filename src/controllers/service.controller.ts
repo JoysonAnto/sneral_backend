@@ -37,24 +37,31 @@ export class ServiceController {
 
     createService = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            let imageUrl = req.body.imageUrl;
+            let imageUrl = req.body.imageUrl || req.body.image_url;
 
             // If file uploaded, upload to Cloudinary
             if (req.file) {
                 imageUrl = await CloudinaryService.uploadServiceImage(
                     req.file.buffer,
-                    req.body.name
+                    req.body.name || 'service'
                 );
             }
 
+            const categoryId = req.body.categoryId || req.body.category_id;
+
             const serviceData = {
                 ...req.body,
-                imageUrl,
+                ...(categoryId && { categoryId }),
+                ...(imageUrl && { imageUrl }),
                 // Ensure numeric fields are converted (FormData sends everything as strings)
                 ...(req.body.basePrice !== undefined && { basePrice: parseFloat(req.body.basePrice) }),
+                ...(req.body.base_price !== undefined && { basePrice: parseFloat(req.body.base_price) }),
                 ...(req.body.duration !== undefined && { duration: parseInt(req.body.duration) }),
                 ...(req.body.isActive !== undefined && {
                     isActive: req.body.isActive === 'true' || req.body.isActive === true
+                }),
+                ...(req.body.is_active !== undefined && {
+                    isActive: req.body.is_active === 'true' || req.body.is_active === true
                 }),
             };
 
@@ -67,7 +74,7 @@ export class ServiceController {
 
     updateService = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            let imageUrl = req.body.imageUrl;
+            let imageUrl = req.body.imageUrl || req.body.image_url;
 
             // If file uploaded, upload to Cloudinary
             if (req.file) {
@@ -77,14 +84,21 @@ export class ServiceController {
                 );
             }
 
-            const updateData = {
+            const categoryId = req.body.categoryId || req.body.category_id;
+
+            const updateData: any = {
                 ...req.body,
+                ...(categoryId && { categoryId }),
                 ...(imageUrl && { imageUrl }),
                 // Ensure numeric fields are converted (FormData sends everything as strings)
                 ...(req.body.basePrice !== undefined && { basePrice: parseFloat(req.body.basePrice) }),
+                ...(req.body.base_price !== undefined && { basePrice: parseFloat(req.body.base_price) }),
                 ...(req.body.duration !== undefined && { duration: parseInt(req.body.duration) }),
                 ...(req.body.isActive !== undefined && {
                     isActive: req.body.isActive === 'true' || req.body.isActive === true
+                }),
+                ...(req.body.is_active !== undefined && {
+                    isActive: req.body.is_active === 'true' || req.body.is_active === true
                 }),
             };
 
@@ -108,9 +122,10 @@ export class ServiceController {
     };
 
     // Categories
-    getAllCategories = async (_req: Request, res: Response, next: NextFunction) => {
+    getAllCategories = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const categories = await this.serviceService.getAllCategories();
+            const includeInactive = req.query.includeInactive === 'true' || req.query.all === 'true';
+            const categories = await this.serviceService.getAllCategories(includeInactive);
             res.json(successResponse(categories, 'Categories retrieved successfully'));
         } catch (error) {
             next(error);
@@ -119,24 +134,29 @@ export class ServiceController {
 
     createCategory = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            let iconUrl = req.body.iconUrl;
+            let iconUrl = req.body.iconUrl || req.body.icon_url;
 
             // If file uploaded, upload to Cloudinary
             if (req.file) {
                 iconUrl = await CloudinaryService.uploadCategoryIcon(
                     req.file.buffer,
-                    req.body.name
+                    req.body.name || 'category'
                 );
             }
+
+            const displayOrder = req.body.displayOrder !== undefined
+                ? parseInt(req.body.displayOrder)
+                : (req.body.display_order !== undefined ? parseInt(req.body.display_order) : 0);
+
+            const isActive = req.body.isActive !== undefined
+                ? (req.body.isActive === 'true' || req.body.isActive === true)
+                : (req.body.is_active !== undefined ? (req.body.is_active === 'true' || req.body.is_active === true) : true);
 
             const categoryData = {
                 ...req.body,
                 iconUrl,
-                // Ensure numeric/boolean fields are converted
-                ...(req.body.displayOrder !== undefined && { displayOrder: parseInt(req.body.displayOrder) }),
-                ...(req.body.isActive !== undefined && {
-                    isActive: req.body.isActive === 'true' || req.body.isActive === true
-                }),
+                displayOrder,
+                isActive,
             };
 
             const category = await this.serviceService.createCategory(categoryData);
@@ -148,11 +168,26 @@ export class ServiceController {
 
     updateCategory = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const updateData = {
+            let iconUrl = req.body.iconUrl || req.body.icon_url;
+
+            // If file uploaded, upload to Cloudinary
+            if (req.file) {
+                iconUrl = await CloudinaryService.uploadCategoryIcon(
+                    req.file.buffer,
+                    req.body.name || 'category_update'
+                );
+            }
+
+            const updateData: any = {
                 ...req.body,
+                ...(iconUrl && { iconUrl }),
                 ...(req.body.displayOrder !== undefined && { displayOrder: parseInt(req.body.displayOrder) }),
+                ...(req.body.display_order !== undefined && { displayOrder: parseInt(req.body.display_order) }),
                 ...(req.body.isActive !== undefined && {
                     isActive: req.body.isActive === 'true' || req.body.isActive === true
+                }),
+                ...(req.body.is_active !== undefined && {
+                    isActive: req.body.is_active === 'true' || req.body.is_active === true
                 }),
             };
 

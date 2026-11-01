@@ -62,6 +62,16 @@ export class ServiceLocationPricingService {
         // Map to include the effective price
         return services.map((service) => ({
             ...service,
+            imageUrl: service.image_url,
+            image_url: service.image_url,
+            image: service.image_url,
+            category: service.category ? {
+                ...service.category,
+                iconUrl: service.category.icon_url,
+                icon_url: service.category.icon_url,
+                imageUrl: service.category.icon_url,
+                image_url: service.category.icon_url,
+            } : null,
             effective_price:
                 service.location_pricing[0]?.price || service.base_price,
             has_location_discount:
@@ -109,6 +119,16 @@ export class ServiceLocationPricingService {
         const locationPricing = service.location_pricing[0];
         return {
             ...service,
+            imageUrl: service.image_url,
+            image_url: service.image_url,
+            image: service.image_url,
+            category: service.category ? {
+                ...service.category,
+                iconUrl: service.category.icon_url,
+                icon_url: service.category.icon_url,
+                imageUrl: service.category.icon_url,
+                image_url: service.category.icon_url,
+            } : null,
             effective_price: locationPricing?.price || service.base_price,
             has_location_discount:
                 locationPricing?.price && locationPricing.price < service.base_price,

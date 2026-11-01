@@ -23,6 +23,14 @@ export class PartnerService {
             throw new NotFoundError('Partner record not found');
         }
 
+        if (partner.is_on_hold) {
+            throw new BadRequestError('Your account is currently on hold. You cannot accept new bookings.');
+        }
+
+        if (partner.is_blacklisted) {
+            throw new BadRequestError('Your account has been blacklisted. You cannot accept new bookings.');
+        }
+
         const matching = new PartnerMatchingService();
 
         // Check if booking is still available (race condition protection)
@@ -263,6 +271,16 @@ export class PartnerService {
                 isActive: user.is_active,
                 category: (partnerData as any)?.category?.name,
                 categoryId: (partnerData as any)?.category_id,
+                isOnHold: (partnerData as any)?.is_on_hold || false,
+                is_on_hold: (partnerData as any)?.is_on_hold || false,
+                holdReason: (partnerData as any)?.hold_reason || null,
+                isBlacklisted: (partnerData as any)?.is_blacklisted || false,
+                is_blacklisted: (partnerData as any)?.is_blacklisted || false,
+                blacklistReason: (partnerData as any)?.blacklist_reason || null,
+                strikeCount: (partnerData as any)?.strike_count || 0,
+                strike_count: (partnerData as any)?.strike_count || 0,
+                adminRemarks: (partnerData as any)?.admin_remarks || null,
+                admin_remarks: (partnerData as any)?.admin_remarks || null,
             };
         });
 
@@ -335,6 +353,16 @@ export class PartnerService {
             totalEarnings,
             total_earnings: totalEarnings,
             custom_role: user.custom_role,
+            isOnHold: partner.is_on_hold || false,
+            is_on_hold: partner.is_on_hold || false,
+            holdReason: partner.hold_reason || null,
+            isBlacklisted: partner.is_blacklisted || false,
+            is_blacklisted: partner.is_blacklisted || false,
+            blacklistReason: partner.blacklist_reason || null,
+            strikeCount: partner.strike_count || 0,
+            strike_count: partner.strike_count || 0,
+            adminRemarks: partner.admin_remarks || null,
+            admin_remarks: partner.admin_remarks || null,
         };
     }
 
@@ -382,6 +410,38 @@ export class PartnerService {
             }
             if (data.bankAccountName !== undefined || data.bank_account_name !== undefined) {
                 partnerUpdateData.bank_account_name = data.bankAccountName ?? data.bank_account_name;
+            }
+
+            // Partner Sanctions: Hold, Blacklist, Strikes, Remarks
+            if (data.isOnHold !== undefined || data.is_on_hold !== undefined) {
+                partnerUpdateData.is_on_hold = Boolean(data.isOnHold ?? data.is_on_hold);
+            }
+            if (data.holdReason !== undefined || data.hold_reason !== undefined) {
+                partnerUpdateData.hold_reason = data.holdReason ?? data.hold_reason;
+            }
+            if (data.isBlacklisted !== undefined || data.is_blacklisted !== undefined) {
+                partnerUpdateData.is_blacklisted = Boolean(data.isBlacklisted ?? data.is_blacklisted);
+                if (partnerUpdateData.is_blacklisted) {
+                    partnerUpdateData.availability_status = 'OFFLINE';
+                }
+            }
+            if (data.blacklistReason !== undefined || data.blacklist_reason !== undefined) {
+                partnerUpdateData.blacklist_reason = data.blacklistReason ?? data.blacklist_reason;
+            }
+            if (data.strikeCount !== undefined || data.strike_count !== undefined) {
+                const strikes = parseInt(data.strikeCount ?? data.strike_count) || 0;
+                partnerUpdateData.strike_count = strikes;
+                const threshold = parseInt(data.strikeThreshold) || 3;
+                if ((data.autoBlacklist || strikes >= threshold) && strikes >= 3) {
+                    partnerUpdateData.is_blacklisted = true;
+                    if (!partnerUpdateData.blacklist_reason) {
+                        partnerUpdateData.blacklist_reason = `Partner blacklisted due to reaching ${strikes} strikes`;
+                    }
+                    partnerUpdateData.availability_status = 'OFFLINE';
+                }
+            }
+            if (data.adminRemarks !== undefined || data.admin_remarks !== undefined) {
+                partnerUpdateData.admin_remarks = data.adminRemarks ?? data.admin_remarks;
             }
 
             return await prisma.servicePartner.update({
@@ -434,6 +494,34 @@ export class PartnerService {
             }
             if (data.bankAccountName !== undefined || data.bank_account_name !== undefined) {
                 bpUpdateData.bank_account_name = data.bankAccountName ?? data.bank_account_name;
+            }
+
+            // Partner Sanctions: Hold, Blacklist, Strikes, Remarks
+            if (data.isOnHold !== undefined || data.is_on_hold !== undefined) {
+                bpUpdateData.is_on_hold = Boolean(data.isOnHold ?? data.is_on_hold);
+            }
+            if (data.holdReason !== undefined || data.hold_reason !== undefined) {
+                bpUpdateData.hold_reason = data.holdReason ?? data.hold_reason;
+            }
+            if (data.isBlacklisted !== undefined || data.is_blacklisted !== undefined) {
+                bpUpdateData.is_blacklisted = Boolean(data.isBlacklisted ?? data.is_blacklisted);
+            }
+            if (data.blacklistReason !== undefined || data.blacklist_reason !== undefined) {
+                bpUpdateData.blacklist_reason = data.blacklistReason ?? data.blacklist_reason;
+            }
+            if (data.strikeCount !== undefined || data.strike_count !== undefined) {
+                const strikes = parseInt(data.strikeCount ?? data.strike_count) || 0;
+                bpUpdateData.strike_count = strikes;
+                const threshold = parseInt(data.strikeThreshold) || 3;
+                if ((data.autoBlacklist || strikes >= threshold) && strikes >= 3) {
+                    bpUpdateData.is_blacklisted = true;
+                    if (!bpUpdateData.blacklist_reason) {
+                        bpUpdateData.blacklist_reason = `Partner blacklisted due to reaching ${strikes} strikes`;
+                    }
+                }
+            }
+            if (data.adminRemarks !== undefined || data.admin_remarks !== undefined) {
+                bpUpdateData.admin_remarks = data.adminRemarks ?? data.admin_remarks;
             }
 
             return await prisma.businessPartner.update({

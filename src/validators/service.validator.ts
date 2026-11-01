@@ -29,7 +29,7 @@ export const createServiceValidator = [
         .isInt({ min: 1 })
         .withMessage('Duration must be a positive integer (minutes)'),
     body('imageUrl')
-        .optional()
+        .optional({ checkFalsy: true })
         .isURL()
         .withMessage('Invalid image URL'),
 ];
@@ -76,7 +76,7 @@ export const createCategoryValidator = [
         .isLength({ max: 500 })
         .withMessage('Description too long'),
     body('iconUrl')
-        .optional()
+        .optional({ checkFalsy: true })
         .isURL()
         .withMessage('Invalid icon URL'),
 ];

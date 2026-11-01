@@ -415,9 +415,9 @@ export class AuthService {
         try {
             const decoded = verifyRefreshToken(refreshToken);
 
-            // Check if token exists in Redis
+            // Check if token exists in Redis (only if Redis is available and stored token is present)
             const storedToken = await getRedisValue(`refresh_token:${decoded.userId}`);
-            if (storedToken !== refreshToken) {
+            if (storedToken && storedToken !== refreshToken) {
                 throw new UnauthorizedError('Invalid refresh token');
             }
 

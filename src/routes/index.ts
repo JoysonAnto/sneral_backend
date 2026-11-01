@@ -28,6 +28,7 @@ import roleRoutes from './role.routes';
 import addressRoutes from './address.routes';
 import servicePartnerRoutes from './service-partner.routes';
 import reviewRoutes from './review.routes';
+import ticketRoutes from './ticket.routes';
 
 
 const router = Router();
@@ -86,6 +87,7 @@ router.use('/messages', messageRoutes);
 router.use('/admin', adminRoutes);
 router.use('/roles', roleRoutes);
 router.use('/business-partners', businessPartnerRoutes);
+router.use('/tickets', ticketRoutes);
 
 // 8. OFFLINE BILLING & TEAM (MESSY CATCH-ALLS - KEEP AT END)
 // Note: These routers use global middleware and should ideally be prefixed
