@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { ServiceService } from '../services/service.service';
 import { successResponse } from '../utils/response';
 import CloudinaryService from '../services/cloudinary.service';
+import { sanitizeServiceNote } from '../utils/sanitize';
 
 export class ServiceController {
     private serviceService: ServiceService;
@@ -48,11 +49,20 @@ export class ServiceController {
             }
 
             const categoryId = req.body.categoryId || req.body.category_id;
+            const rawDisplayOrder = req.body.displayOrder !== undefined ? req.body.displayOrder : req.body.display_order;
+            const parsedDisplayOrder = rawDisplayOrder !== undefined ? parseInt(rawDisplayOrder, 10) : 1;
+            const displayOrder = isNaN(parsedDisplayOrder) ? 1 : Math.max(1, parsedDisplayOrder);
+
+            const rawNote = req.body.note !== undefined ? req.body.note : undefined;
+            const note = rawNote !== undefined ? sanitizeServiceNote(rawNote) : null;
 
             const serviceData = {
                 ...req.body,
                 ...(categoryId && { categoryId }),
                 ...(imageUrl && { imageUrl }),
+                displayOrder,
+                display_order: displayOrder,
+                note,
                 // Ensure numeric fields are converted (FormData sends everything as strings)
                 ...(req.body.basePrice !== undefined && { basePrice: parseFloat(req.body.basePrice) }),
                 ...(req.body.base_price !== undefined && { basePrice: parseFloat(req.body.base_price) }),
@@ -85,11 +95,19 @@ export class ServiceController {
             }
 
             const categoryId = req.body.categoryId || req.body.category_id;
+            const rawDisplayOrder = req.body.displayOrder !== undefined ? req.body.displayOrder : req.body.display_order;
+            const parsedDisplayOrder = rawDisplayOrder !== undefined ? parseInt(rawDisplayOrder, 10) : undefined;
+            const displayOrder = parsedDisplayOrder !== undefined && !isNaN(parsedDisplayOrder) ? Math.max(1, parsedDisplayOrder) : undefined;
+
+            const rawNote = req.body.note !== undefined ? req.body.note : undefined;
+            const note = rawNote !== undefined ? sanitizeServiceNote(rawNote) : undefined;
 
             const updateData: any = {
                 ...req.body,
                 ...(categoryId && { categoryId }),
                 ...(imageUrl && { imageUrl }),
+                ...(displayOrder !== undefined && { displayOrder, display_order: displayOrder }),
+                ...(note !== undefined && { note }),
                 // Ensure numeric fields are converted (FormData sends everything as strings)
                 ...(req.body.basePrice !== undefined && { basePrice: parseFloat(req.body.basePrice) }),
                 ...(req.body.base_price !== undefined && { basePrice: parseFloat(req.body.base_price) }),

@@ -40,6 +40,10 @@ export class ServiceLocationPricingService {
     async getServicesWithPricing(districtId: string, areaId?: string) {
         const services = await prisma.service.findMany({
             where: { is_active: true },
+            orderBy: [
+                { display_order: 'asc' },
+                { id: 'asc' },
+            ],
             include: {
                 category: true,
                 location_pricing: {
@@ -59,9 +63,12 @@ export class ServiceLocationPricingService {
             },
         });
 
-        // Map to include the effective price
+        // Map to include the effective price and enhanced fields
         return services.map((service) => ({
             ...service,
+            displayOrder: service.display_order,
+            display_order: service.display_order,
+            note: service.note,
             imageUrl: service.image_url,
             image_url: service.image_url,
             image: service.image_url,
@@ -119,6 +126,9 @@ export class ServiceLocationPricingService {
         const locationPricing = service.location_pricing[0];
         return {
             ...service,
+            displayOrder: service.display_order,
+            display_order: service.display_order,
+            note: service.note,
             imageUrl: service.image_url,
             image_url: service.image_url,
             image: service.image_url,

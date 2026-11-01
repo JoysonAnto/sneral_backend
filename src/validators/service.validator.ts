@@ -29,6 +29,18 @@ export const createServiceValidator = [
         .optional({ checkFalsy: true })
         .isURL()
         .withMessage('Invalid image URL'),
+    body('displayOrder')
+        .optional({ checkFalsy: true })
+        .isInt({ min: 1 })
+        .withMessage('Display order must be an integer >= 1'),
+    body('display_order')
+        .optional({ checkFalsy: true })
+        .isInt({ min: 1 })
+        .withMessage('Display order must be an integer >= 1'),
+    body('note')
+        .optional()
+        .isString()
+        .withMessage('Note must be a string'),
 ];
 
 export const updateServiceValidator = [
@@ -54,6 +66,18 @@ export const updateServiceValidator = [
         .optional({ checkFalsy: true })
         .isInt({ min: 1 })
         .withMessage('Duration must be a positive integer'),
+    body('displayOrder')
+        .optional({ checkFalsy: true })
+        .isInt({ min: 1 })
+        .withMessage('Display order must be an integer >= 1'),
+    body('display_order')
+        .optional({ checkFalsy: true })
+        .isInt({ min: 1 })
+        .withMessage('Display order must be an integer >= 1'),
+    body('note')
+        .optional()
+        .isString()
+        .withMessage('Note must be a string'),
     body('isActive')
         .optional()
         .isBoolean()

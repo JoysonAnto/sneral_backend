@@ -263,6 +263,8 @@ model Service {
   base_price              Float
   duration                Int
   image_url               String?
+  display_order           Int                      @default(1)
+  note                    String?                  @db.Text
   is_active               Boolean                  @default(true)
   created_at              DateTime                 @default(now())
   updated_at              DateTime                 @updatedAt
@@ -275,6 +277,7 @@ model Service {
 
   @@index([category_id])
   @@index([is_active])
+  @@index([display_order])
   @@map("services")
 }
 

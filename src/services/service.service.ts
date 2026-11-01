@@ -9,6 +9,9 @@ interface CreateServiceData {
     duration: number;
     imageUrl?: string;
     isActive?: boolean | string;
+    displayOrder?: number;
+    display_order?: number;
+    note?: string | null;
 }
 
 interface CreateCategoryData {
@@ -67,7 +70,10 @@ export class ServiceService {
                         },
                     },
                 },
-                orderBy: { created_at: 'desc' },
+                orderBy: [
+                    { display_order: 'asc' },
+                    { id: 'asc' },
+                ],
             }),
             prisma.service.count({ where }),
         ]);
@@ -93,6 +99,9 @@ export class ServiceService {
             imageUrl: service.image_url,
             image_url: service.image_url,
             image: service.image_url,
+            displayOrder: service.display_order,
+            display_order: service.display_order,
+            note: service.note,
             isActive: service.is_active,
             is_active: service.is_active,
             avgRating: 4.5, // TODO: Calculate from actual ratings
@@ -151,6 +160,9 @@ export class ServiceService {
             imageUrl: service.image_url,
             image_url: service.image_url,
             image: service.image_url,
+            displayOrder: service.display_order,
+            display_order: service.display_order,
+            note: service.note,
             isActive: service.is_active,
             is_active: service.is_active,
             avgRating: 4.5, // TODO: Calculate from actual ratings
@@ -170,6 +182,10 @@ export class ServiceService {
             throw new NotFoundError('Category not found');
         }
 
+        const displayOrder = data.displayOrder !== undefined
+            ? parseInt(data.displayOrder as any, 10)
+            : (data.display_order !== undefined ? parseInt(data.display_order as any, 10) : 1);
+
         const service = await prisma.service.create({
             data: {
                 name: data.name,
@@ -178,6 +194,8 @@ export class ServiceService {
                 base_price: data.basePrice !== undefined ? parseFloat(data.basePrice as any) : 0,
                 duration: data.duration !== undefined ? parseInt(data.duration as any, 10) : 0,
                 image_url: data.imageUrl,
+                display_order: isNaN(displayOrder) ? 1 : Math.max(1, displayOrder),
+                note: data.note !== undefined ? data.note : null,
                 is_active: data.isActive !== undefined ? (data.isActive === 'true' || data.isActive === true) : true,
             },
             include: {
@@ -203,6 +221,9 @@ export class ServiceService {
             imageUrl: service.image_url,
             image_url: service.image_url,
             image: service.image_url,
+            displayOrder: service.display_order,
+            display_order: service.display_order,
+            note: service.note,
             isActive: service.is_active,
             is_active: service.is_active,
             createdAt: service.created_at,
@@ -229,6 +250,10 @@ export class ServiceService {
             }
         }
 
+        const rawOrder = data.displayOrder !== undefined ? data.displayOrder : data.display_order;
+        const parsedOrder = rawOrder !== undefined ? parseInt(rawOrder as any, 10) : undefined;
+        const displayOrder = parsedOrder !== undefined && !isNaN(parsedOrder) ? Math.max(1, parsedOrder) : undefined;
+
         const updatedService = await prisma.service.update({
             where: { id: serviceId },
             data: {
@@ -238,6 +263,8 @@ export class ServiceService {
                 ...(data.basePrice !== undefined && { base_price: parseFloat(data.basePrice as any) }),
                 ...(data.duration !== undefined && { duration: parseInt(data.duration as any, 10) }),
                 ...(data.imageUrl && { image_url: data.imageUrl }),
+                ...(displayOrder !== undefined && { display_order: displayOrder }),
+                ...(data.note !== undefined && { note: data.note }),
                 ...(data.isActive !== undefined && { is_active: (String(data.isActive) === 'true') }),
             },
             include: {
@@ -263,6 +290,9 @@ export class ServiceService {
             imageUrl: updatedService.image_url,
             image_url: updatedService.image_url,
             image: updatedService.image_url,
+            displayOrder: updatedService.display_order,
+            display_order: updatedService.display_order,
+            note: updatedService.note,
             isActive: updatedService.is_active,
             is_active: updatedService.is_active,
             updatedAt: updatedService.updated_at,
