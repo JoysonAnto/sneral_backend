@@ -34,7 +34,17 @@ router.post('/partners/:id/approve', checkPermission('KYC_MANAGE'), adminControl
 router.post('/partners/:id/reject', checkPermission('KYC_MANAGE'), adminController.rejectPartner);
 router.post('/partners/:id/request-action', checkPermission('KYC_MANAGE'), adminController.requestAction);
 
-// Category Management - Using ServiceController for robust logic (file upload, sanitization)
+// Catalogue Management - Services & Categories
+router.get(
+    '/categories',
+    checkPermission('SERVICE_MANAGE'),
+    serviceController.getAllCategories
+);
+router.get(
+    '/services',
+    checkPermission('SERVICE_MANAGE'),
+    serviceController.getAllServices
+);
 router.post(
     '/categories',
     checkPermission('SERVICE_MANAGE'),

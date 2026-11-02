@@ -23,20 +23,21 @@ interface CreateCategoryData {
 }
 
 export class ServiceService {
-    async getAllServices(filters: any) {
-        const category = filters.category;
-        const search = filters.search;
+    async getAllServices(filters: any = {}) {
+        const category = filters.category || filters.categoryId;
+        const search = filters.search ? String(filters.search).trim() : '';
         const includeInactive = filters.includeInactive === true || filters.includeInactive === 'true' || filters.all === 'true';
         const active = filters.active;
-        const page = parseInt(filters.page as string) || 1;
-        const limit = parseInt(filters.limit as string) || 20;
+        const isAll = filters.all === 'true' && filters.page === undefined && filters.current_page === undefined && filters.limit === undefined && filters.per_page === undefined;
+        const page = parseInt((filters.page || filters.current_page) as string) || 1;
+        const limit = isAll ? 1000 : (parseInt((filters.per_page || filters.limit) as string) || 10);
 
         const skip = (page - 1) * limit;
 
         let where: any = {};
 
         // Filter by category
-        if (category) {
+        if (category && category !== 'all' && category !== '') {
             where.category_id = category;
         }
 
@@ -110,12 +111,17 @@ export class ServiceService {
             created_at: service.created_at,
         }));
 
+        const totalPages = Math.max(1, Math.ceil(total / limit));
         return {
             services: servicesWithRatings,
             pagination: {
                 page: page,
                 limit: limit,
                 total,
+                totalPages,
+                current_page: page,
+                per_page: limit,
+                last_page: totalPages,
             },
         };
     }
@@ -330,19 +336,66 @@ export class ServiceService {
     }
 
     // Category Management
-    async getAllCategories(includeInactive = false) {
-        const whereClause = includeInactive ? {} : { is_active: true };
-        const categories = await prisma.category.findMany({
-            where: whereClause,
-            orderBy: { display_order: 'asc' },
-            include: {
-                _count: {
-                    select: { services: true },
-                },
-            },
-        });
+    async getAllCategories(filters: any = {}) {
+        let includeInactive = false;
+        let search = '';
+        let active: string | undefined = undefined;
+        let page = 1;
+        let limit = 10;
+        let isPaginated = false;
 
-        return categories.map(cat => ({
+        if (typeof filters === 'boolean') {
+            includeInactive = filters;
+        } else if (filters && typeof filters === 'object') {
+            includeInactive = filters.includeInactive === true || filters.includeInactive === 'true' || filters.all === 'true';
+            search = filters.search ? String(filters.search).trim() : '';
+            active = filters.active;
+
+            if (filters.page !== undefined || filters.current_page !== undefined || filters.per_page !== undefined || filters.limit !== undefined || filters.paginate === 'true') {
+                isPaginated = true;
+                page = parseInt((filters.page || filters.current_page) as string) || 1;
+                limit = parseInt((filters.per_page || filters.limit) as string) || 10;
+            }
+        }
+
+        const whereClause: any = {};
+
+        // Active status filtering
+        if (active === 'true' || active === 'false') {
+            whereClause.is_active = active === 'true';
+        } else if (!includeInactive && active !== 'all') {
+            whereClause.is_active = true;
+        }
+
+        // Search by name or description
+        if (search) {
+            whereClause.OR = [
+                { name: { contains: search, mode: 'insensitive' } },
+                { description: { contains: search, mode: 'insensitive' } },
+            ];
+        }
+
+        const skip = (page - 1) * limit;
+
+        const [categories, total] = await Promise.all([
+            prisma.category.findMany({
+                where: whereClause,
+                skip: isPaginated ? skip : undefined,
+                take: isPaginated ? limit : undefined,
+                orderBy: [
+                    { display_order: 'asc' },
+                    { id: 'asc' },
+                ],
+                include: {
+                    _count: {
+                        select: { services: true },
+                    },
+                },
+            }),
+            prisma.category.count({ where: whereClause }),
+        ]);
+
+        const formattedCategories = categories.map(cat => ({
             id: cat.id,
             name: cat.name,
             description: cat.description,
@@ -356,6 +409,24 @@ export class ServiceService {
             createdAt: cat.created_at,
             updatedAt: cat.updated_at,
         }));
+
+        if (isPaginated) {
+            const totalPages = Math.max(1, Math.ceil(total / limit));
+            return {
+                categories: formattedCategories,
+                pagination: {
+                    page,
+                    limit,
+                    total,
+                    totalPages,
+                    current_page: page,
+                    per_page: limit,
+                    last_page: totalPages,
+                },
+            };
+        }
+
+        return formattedCategories;
     }
 
     async createCategory(data: CreateCategoryData) {

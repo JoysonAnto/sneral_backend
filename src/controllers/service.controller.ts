@@ -142,9 +142,18 @@ export class ServiceController {
     // Categories
     getAllCategories = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const includeInactive = req.query.includeInactive === 'true' || req.query.all === 'true';
-            const categories = await this.serviceService.getAllCategories(includeInactive);
-            res.json(successResponse(categories, 'Categories retrieved successfully'));
+            const result = await this.serviceService.getAllCategories(req.query);
+            if (result && typeof result === 'object' && 'categories' in result) {
+                res.json(
+                    successResponse(
+                        result.categories,
+                        'Categories retrieved successfully',
+                        result.pagination
+                    )
+                );
+            } else {
+                res.json(successResponse(result, 'Categories retrieved successfully'));
+            }
         } catch (error) {
             next(error);
         }
