@@ -1,12 +1,15 @@
 import { Router } from 'express';
 import { AdminController } from '../controllers/admin.controller';
 import { ServiceController } from '../controllers/service.controller';
+import { PartnerController } from '../controllers/partner.controller';
 import { authenticateToken, checkPermission } from '../middleware/auth.middleware';
 import { categoryIconUpload } from '../middleware/image-upload.middleware';
+import { kycUpload } from '../middleware/upload.middleware';
 
 const router = Router();
 const adminController = new AdminController();
 const serviceController = new ServiceController();
+const partnerController = new PartnerController();
 
 // All routes require authentication
 router.use(authenticateToken);
@@ -15,8 +18,17 @@ router.use(authenticateToken);
 router.get('/dashboard/stats', checkPermission('REPORT_VIEW'), adminController.getDashboardStats);
 
 // Partner Management
+router.get('/partners', checkPermission('USER_MANAGE'), partnerController.getAllPartners);
+router.post('/partners', checkPermission('USER_MANAGE'), partnerController.createServicePartner);
 router.get('/partners/pending', checkPermission('KYC_MANAGE'), adminController.getPendingPartners);
+router.get('/partners/:id', checkPermission('USER_MANAGE'), partnerController.getPartnerById);
+router.put('/partners/:id', checkPermission('USER_MANAGE'), partnerController.updatePartner);
 router.patch('/partners/:id/status', checkPermission('USER_MANAGE'), adminController.togglePartnerStatus);
+router.get('/partners/:id/history', checkPermission('USER_MANAGE'), partnerController.getPartnerHistory);
+router.post('/partners/:id/documents', checkPermission('KYC_MANAGE'), kycUpload.single('file'), partnerController.uploadPartnerDocument);
+router.get('/partners/:id/documents', checkPermission('KYC_MANAGE'), partnerController.getPartnerDocuments);
+router.patch('/partners/documents/:id/verify', checkPermission('KYC_MANAGE'), partnerController.verifyPartnerDocument);
+router.delete('/partners/documents/:id', checkPermission('KYC_MANAGE'), partnerController.deletePartnerDocument);
 router.post('/partners/assign-category', checkPermission('USER_MANAGE'), adminController.assignPartnerCategory);
 router.post('/partners/:id/approve', checkPermission('KYC_MANAGE'), adminController.approvePartner);
 router.post('/partners/:id/reject', checkPermission('KYC_MANAGE'), adminController.rejectPartner);

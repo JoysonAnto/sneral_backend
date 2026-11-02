@@ -8,6 +8,7 @@ import {
     updateAvailabilityValidator,
     updatePartnerServiceValidator,
 } from '../validators/partner.validator';
+import { kycUpload } from '../middleware/upload.middleware';
 
 const router = Router();
 const partnerController = new PartnerController();
@@ -117,6 +118,56 @@ router.patch(
     validate(updatePartnerValidator),
     partnerController.updatePartner
 );
+
+router.put(
+    '/:id',
+    authorize('ADMIN', 'SUPER_ADMIN'),
+    partnerController.updatePartner
+);
+
+router.patch(
+    '/:id/status',
+    authorize('ADMIN', 'SUPER_ADMIN'),
+    partnerController.updatePartnerStatus
+);
+
+router.get(
+    '/:id/history',
+    authorize('ADMIN', 'SUPER_ADMIN'),
+    partnerController.getPartnerHistory
+);
+
+router.post(
+    '/:id/documents',
+    authorize('ADMIN', 'SUPER_ADMIN', 'SERVICE_PARTNER', 'BUSINESS_PARTNER'),
+    kycUpload.single('file'),
+    partnerController.uploadPartnerDocument
+);
+
+router.get(
+    '/:id/documents',
+    authorize('ADMIN', 'SUPER_ADMIN', 'SERVICE_PARTNER', 'BUSINESS_PARTNER'),
+    partnerController.getPartnerDocuments
+);
+
+router.patch(
+    '/documents/:id/verify',
+    authorize('ADMIN', 'SUPER_ADMIN'),
+    partnerController.verifyPartnerDocument
+);
+
+router.delete(
+    '/documents/:id',
+    authorize('ADMIN', 'SUPER_ADMIN'),
+    partnerController.deletePartnerDocument
+);
+
+router.post(
+    '/:id/services',
+    authorize('ADMIN', 'SUPER_ADMIN'),
+    partnerController.assignServices
+);
+
 
 /**
  * @swagger

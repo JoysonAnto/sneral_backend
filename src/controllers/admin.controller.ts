@@ -79,7 +79,13 @@ export class AdminController {
     togglePartnerStatus = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const { id } = req.params;
-            const { type, isActive } = req.body;
+            const { type, isActive, status, remarks } = req.body;
+            if (status) {
+                const { PartnerService } = await import('../services/partner.service');
+                const result = await new PartnerService().updatePartnerStatus(id, status, remarks, req.user?.userId);
+                res.json(successResponse(result, result.message));
+                return;
+            }
             const result = await this.adminService.togglePartnerStatus(id, type, isActive);
             res.json(successResponse(result, `Partner ${isActive ? 'activated' : 'deactivated'} successfully`));
         } catch (error) {

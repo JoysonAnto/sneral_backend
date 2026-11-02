@@ -4,6 +4,7 @@ import logger from '../utils/logger';
 import { NotFoundError, BadRequestError } from '../utils/errors';
 import { PartnerMatchingService } from '../services/partner-matching.service';
 import { getIO } from '../socket/socket.server';
+import { hashPassword } from '../utils/encryption';
 
 export class PartnerService {
     /**
@@ -29,6 +30,10 @@ export class PartnerService {
 
         if (partner.is_blacklisted) {
             throw new BadRequestError('Your account has been blacklisted. You cannot accept new bookings.');
+        }
+
+        if ((partner as any).partner_status === 'SUSPENDED' || (partner as any).partner_status === 'INACTIVE' || (partner as any).partner_status === 'REJECTED') {
+            throw new BadRequestError(`Your account is currently ${(partner as any).partner_status.toLowerCase()}. You cannot accept new bookings.`);
         }
 
         const matching = new PartnerMatchingService();
@@ -192,8 +197,23 @@ export class PartnerService {
     // =========================================================================
 
     async getAllPartners(filters: any, _role: string) {
-        const { search, status, type, categoryId, page = 1, limit = 10 } = filters;
-        const skip = (page - 1) * limit;
+        const {
+            search,
+            status,
+            partnerStatus,
+            type,
+            categoryId,
+            serviceId,
+            documentStatus,
+            city,
+            page = 1,
+            limit = 10,
+            per_page
+        } = filters;
+
+        const pageNum = Number(page) || 1;
+        const pageSize = Number(per_page || limit) || 10;
+        const skip = (pageNum - 1) * pageSize;
 
         const where: any = {
             role: { in: ['SERVICE_PARTNER', 'BUSINESS_PARTNER'] as any[] },
@@ -202,36 +222,82 @@ export class PartnerService {
 
         const andConditions: any[] = [];
 
-        if (status) {
+        // Partner Type (Individual or Business)
+        if (type) {
+            if (type === 'INDIVIDUAL' || type === 'SERVICE_PARTNER') {
+                where.role = 'SERVICE_PARTNER';
+            } else if (type === 'BUSINESS' || type === 'BUSINESS_PARTNER') {
+                where.role = 'BUSINESS_PARTNER';
+            }
+        }
+
+        // Partner Status (PENDING, UNDER_REVIEW, APPROVED, ACTIVE, INACTIVE, REJECTED, SUSPENDED)
+        const pStatus = partnerStatus || (['PENDING', 'UNDER_REVIEW', 'APPROVED', 'ACTIVE', 'INACTIVE', 'REJECTED', 'SUSPENDED'].includes(status?.toUpperCase()) ? status.toUpperCase() : null);
+        if (pStatus) {
             andConditions.push({
                 OR: [
-                    { service_partner: { kyc_status: status } },
-                    { business_partner: { kyc_status: status } },
+                    { service_partner: { partner_status: pStatus as any } },
+                    { business_partner: { partner_status: pStatus as any } },
                 ],
             });
         }
 
+        // Document Verification Status (PENDING, APPROVED / VERIFIED, REJECTED)
+        const docStatus = documentStatus || (!pStatus && status ? status : null);
+        if (docStatus) {
+            const mappedStatus = docStatus.toUpperCase() === 'VERIFIED' ? 'APPROVED' : docStatus.toUpperCase();
+            andConditions.push({
+                OR: [
+                    { service_partner: { kyc_status: mappedStatus as any } },
+                    { business_partner: { kyc_status: mappedStatus as any } },
+                ],
+            });
+        }
+
+        // Category Filter (Primary Category or assigned services category)
         if (categoryId) {
             andConditions.push({
                 OR: [
                     { service_partner: { category_id: categoryId } },
+                    { service_partner: { services: { some: { service: { category_id: categoryId } } } } },
                     { business_partner: { category_id: categoryId } },
+                    { business_partner: { partner_services: { some: { service: { category_id: categoryId } } } } },
                 ],
             });
         }
 
+        // Service Filter
+        if (serviceId) {
+            andConditions.push({
+                OR: [
+                    { service_partner: { services: { some: { service_id: serviceId } } } },
+                    { business_partner: { partner_services: { some: { service_id: serviceId } } } },
+                ],
+            });
+        }
+
+        // City Filter
+        if (city) {
+            andConditions.push({
+                OR: [
+                    { profile: { city: { contains: city, mode: 'insensitive' } } },
+                    { business_partner: { city: { contains: city, mode: 'insensitive' } } },
+                ],
+            });
+        }
+
+        // Search: Name, Mobile, Email, Partner ID
         if (search) {
             andConditions.push({
                 OR: [
                     { full_name: { contains: search, mode: 'insensitive' } },
                     { email: { contains: search, mode: 'insensitive' } },
                     { phone_number: { contains: search } },
+                    { id: { contains: search, mode: 'insensitive' } },
+                    { service_partner: { id: { contains: search, mode: 'insensitive' } } },
+                    { business_partner: { id: { contains: search, mode: 'insensitive' } } },
                 ],
             });
-        }
-
-        if (type) {
-            where.role = type;
         }
 
         if (andConditions.length > 0) {
@@ -242,45 +308,113 @@ export class PartnerService {
             prisma.user.findMany({
                 where,
                 include: {
+                    profile: true,
                     service_partner: {
-                        include: { category: true }
+                        include: {
+                            category: true,
+                            services: {
+                                include: {
+                                    service: {
+                                        include: { category: true }
+                                    }
+                                }
+                            },
+                            kyc_documents: true,
+                        }
                     },
                     business_partner: {
-                        include: { category: true }
+                        include: {
+                            category: true,
+                            partner_services: {
+                                include: {
+                                    service: {
+                                        include: { category: true }
+                                    }
+                                }
+                            },
+                            kyc_documents: true,
+                        }
                     },
                 },
                 skip,
-                take: Number(limit),
+                take: pageSize,
                 orderBy: { created_at: 'desc' }
             }),
             prisma.user.count({ where })
         ]);
 
-        // Map users to a common partner structure
+        // Map users to partner structure
         const partners = users.map(user => {
-            const partnerData = user.service_partner || user.business_partner;
+            const partnerData: any = user.service_partner || user.business_partner;
+            const profile = user.profile;
+            const assignedServices = (partnerData?.services || partnerData?.partner_services || []).map((ps: any) => ({
+                id: ps.service?.id,
+                name: ps.service?.name,
+                categoryName: ps.service?.category?.name,
+                categoryId: ps.service?.category_id,
+                price: ps.custom_price || ps.service?.base_price,
+            }));
+
+            // Distinct categories
+            const categoryNamesSet = new Set<string>();
+            if (partnerData?.category?.name) categoryNamesSet.add(partnerData.category.name);
+            assignedServices.forEach((s: any) => {
+                if (s.categoryName) categoryNamesSet.add(s.categoryName);
+            });
+
             return {
-                id: partnerData?.id || user.id, // Use partner ID if available
+                id: partnerData?.id || user.id,
+                partnerId: partnerData?.id,
                 userId: user.id,
                 fullName: user.full_name,
                 email: user.email,
                 phoneNumber: user.phone_number,
+                alternatePhone: partnerData?.alternate_phone,
                 role: user.role,
+                partnerType: user.role === 'BUSINESS_PARTNER' ? 'BUSINESS' : 'INDIVIDUAL',
+                partnerStatus: partnerData?.partner_status || 'PENDING',
+                status: partnerData?.partner_status || 'PENDING',
                 kycStatus: partnerData?.kyc_status || 'PENDING',
+                availabilityStatus: partnerData?.availability_status || 'OFFLINE',
                 createdAt: user.created_at,
                 isActive: user.is_active,
-                category: (partnerData as any)?.category?.name,
-                categoryId: (partnerData as any)?.category_id,
-                isOnHold: (partnerData as any)?.is_on_hold || false,
-                is_on_hold: (partnerData as any)?.is_on_hold || false,
-                holdReason: (partnerData as any)?.hold_reason || null,
-                isBlacklisted: (partnerData as any)?.is_blacklisted || false,
-                is_blacklisted: (partnerData as any)?.is_blacklisted || false,
-                blacklistReason: (partnerData as any)?.blacklist_reason || null,
-                strikeCount: (partnerData as any)?.strike_count || 0,
-                strike_count: (partnerData as any)?.strike_count || 0,
-                adminRemarks: (partnerData as any)?.admin_remarks || null,
-                admin_remarks: (partnerData as any)?.admin_remarks || null,
+                category: partnerData?.category?.name || Array.from(categoryNamesSet)[0] || 'Unassigned',
+                categoryId: partnerData?.category_id,
+                categoryNames: Array.from(categoryNamesSet),
+                services: assignedServices,
+                servicesCount: assignedServices.length,
+                experienceYears: partnerData?.experience_years || 0,
+                coverageAreas: partnerData?.coverage_areas || [],
+                city: profile?.city || partnerData?.city || 'Chennai',
+                state: profile?.state || partnerData?.state || 'Tamil Nadu',
+                address: profile?.address || partnerData?.address,
+                addressLine2: partnerData?.address_line2,
+                postalCode: profile?.postal_code || partnerData?.postal_code,
+                gender: profile?.gender,
+                dateOfBirth: profile?.date_of_birth,
+                avatarUrl: profile?.avatar_url,
+                documentsCount: partnerData?.kyc_documents?.length || 0,
+                documents: partnerData?.kyc_documents || [],
+                bankDetails: {
+                    accountHolderName: partnerData?.bank_account_name,
+                    bankName: partnerData?.bank_name,
+                    accountNumber: partnerData?.bank_account_number,
+                    ifscCode: partnerData?.bank_ifsc_code,
+                    upiId: partnerData?.upi_id,
+                },
+                isOnHold: partnerData?.is_on_hold || false,
+                is_on_hold: partnerData?.is_on_hold || false,
+                holdReason: partnerData?.hold_reason || null,
+                isBlacklisted: partnerData?.is_blacklisted || false,
+                is_blacklisted: partnerData?.is_blacklisted || false,
+                blacklistReason: partnerData?.blacklist_reason || null,
+                strikeCount: partnerData?.strike_count || 0,
+                strike_count: partnerData?.strike_count || 0,
+                adminRemarks: partnerData?.admin_remarks || null,
+                admin_remarks: partnerData?.admin_remarks || null,
+                totalBookings: partnerData?.total_bookings || 0,
+                completedBookings: partnerData?.completed_bookings || 0,
+                avgRating: partnerData?.avg_rating || 0,
             };
         });
 
@@ -288,61 +422,180 @@ export class PartnerService {
             partners,
             pagination: {
                 total,
-                page: Number(page),
-                limit: Number(limit),
-                totalPages: Math.ceil(total / limit)
+                page: pageNum,
+                limit: pageSize,
+                totalPages: Math.ceil(total / pageSize)
             }
         };
     }
 
-    async getPartnerById(id: string, _userId: string, _role: string) {
-        // Try to find in servicePartner
-        let partner = await prisma.servicePartner.findUnique({
-            where: { id },
-            include: { user: true, kyc_documents: true }
-        }) as any;
+    async getPartnerById(id: string, _userId?: string, _role?: string) {
+        // Try finding in servicePartner
+        let partner: any = await prisma.servicePartner.findFirst({
+            where: {
+                OR: [{ id }, { user_id: id }]
+            },
+            include: {
+                user: {
+                    include: { profile: true }
+                },
+                category: true,
+                services: {
+                    include: {
+                        service: {
+                            include: { category: true }
+                        }
+                    }
+                },
+                kyc_documents: {
+                    orderBy: { created_at: 'desc' }
+                },
+                status_history: {
+                    orderBy: { created_at: 'desc' }
+                },
+                bookings: {
+                    take: 10,
+                    orderBy: { created_at: 'desc' },
+                    include: {
+                        customer: {
+                            select: { id: true, full_name: true, phone_number: true, email: true }
+                        },
+                        items: {
+                            include: { service: true }
+                        }
+                    }
+                }
+            }
+        });
+
+        let partnerType: 'INDIVIDUAL' | 'BUSINESS' = 'INDIVIDUAL';
 
         // If not found, try businessPartner
         if (!partner) {
-            partner = await prisma.businessPartner.findUnique({
-                where: { id },
-                include: { user: true, service_partners: true }
-            }) as any;
+            partner = await prisma.businessPartner.findFirst({
+                where: {
+                    OR: [{ id }, { user_id: id }]
+                },
+                include: {
+                    user: {
+                        include: { profile: true }
+                    },
+                    category: true,
+                    partner_services: {
+                        include: {
+                            service: {
+                                include: { category: true }
+                            }
+                        }
+                    },
+                    kyc_documents: {
+                        orderBy: { created_at: 'desc' }
+                    },
+                    status_history: {
+                        orderBy: { created_at: 'desc' }
+                    },
+                    bookings: {
+                        take: 10,
+                        orderBy: { created_at: 'desc' },
+                        include: {
+                            customer: {
+                                select: { id: true, full_name: true, phone_number: true, email: true }
+                            },
+                            items: {
+                                include: { service: true }
+                            }
+                        }
+                    }
+                }
+            });
+            partnerType = 'BUSINESS';
         }
 
         if (!partner) throw new NotFoundError('Partner not found');
 
         const user = partner.user;
-        const partnerType = partner.business_name ? 'BUSINESS' : 'SERVICE';
-        const totalEarnings = await this.getTotalEarnings(partner.id, partnerType);
+        const profile = user.profile;
+        const totalEarnings = await this.getTotalEarnings(partner.id, partnerType === 'BUSINESS' ? 'BUSINESS' : 'SERVICE');
+
+        const assignedServices = (partner.services || partner.partner_services || []).map((ps: any) => ({
+            id: ps.service?.id,
+            partnerServiceId: ps.id,
+            name: ps.service?.name,
+            categoryName: ps.service?.category?.name,
+            categoryId: ps.service?.category_id,
+            price: ps.custom_price || ps.service?.base_price,
+            duration: ps.service?.duration,
+            isAvailable: ps.is_available,
+        })) || [];
 
         return {
             id: partner.id,
+            partnerId: partner.id,
             userId: user.id,
             fullName: user.full_name,
             email: user.email,
             phoneNumber: user.phone_number,
+            alternatePhone: partner.alternate_phone,
             role: user.role,
+            partnerType,
+            partnerStatus: partner.partner_status || 'PENDING',
+            status: partner.partner_status || 'PENDING',
             kycStatus: partner.kyc_status,
             kyc_status: partner.kyc_status,
             kycVerifiedAt: partner.kyc_verified_at,
-            availabilityStatus: partner.availability_status,
-            availability_status: partner.availability_status,
+            availabilityStatus: partner.availability_status || 'OFFLINE',
+            availability_status: partner.availability_status || 'OFFLINE',
             serviceRadius: partner.service_radius,
             commissionRate: partner.commission_rate || 0.1,
+            experienceYears: partner.experience_years || 0,
+            coverageAreas: partner.coverage_areas || [],
             businessName: partner.business_name,
             businessType: partner.business_type,
             gstNumber: partner.gst_number,
             panNumber: partner.pan_number,
-            bankDetails: partner.bank_details || {
+            
+            // Address Info
+            address: profile?.address || partner.address,
+            addressLine1: profile?.address || partner.address,
+            addressLine2: partner.address_line2,
+            city: profile?.city || partner.city,
+            state: profile?.state || partner.state,
+            postalCode: profile?.postal_code || partner.postal_code,
+            latitude: profile?.latitude || partner.current_latitude,
+            longitude: profile?.longitude || partner.current_longitude,
+
+            // Personal Info
+            gender: profile?.gender,
+            dateOfBirth: profile?.date_of_birth,
+            avatarUrl: profile?.avatar_url,
+
+            // Category & Services
+            category: partner.category?.name,
+            categoryId: partner.category_id,
+            services: assignedServices,
+
+            // Bank Details
+            bankDetails: {
+                accountHolderName: partner.bank_account_name || user.full_name,
+                bankName: partner.bank_name,
                 accountNumber: partner.bank_account_number,
                 ifscCode: partner.bank_ifsc_code,
-                accountName: partner.bank_account_name,
+                upiId: partner.upi_id,
             },
+
+            // Documents
+            documents: partner.kyc_documents || [],
+            kyc_documents: partner.kyc_documents || [],
+
+            // History
+            statusHistory: partner.status_history || [],
+            status_history: partner.status_history || [],
+
+            // Bookings
+            bookings: partner.bookings || [],
+
             createdAt: user.created_at,
             isActive: user.is_active,
-            servicePartnersCount: partner.service_partners?.length,
-            // Metrics
             totalBookings: partner.total_bookings || 0,
             total_bookings: partner.total_bookings || 0,
             completedBookings: partner.completed_bookings || 0,
@@ -352,7 +605,6 @@ export class PartnerService {
             completionRate: partner.completion_rate || 0,
             totalEarnings,
             total_earnings: totalEarnings,
-            custom_role: user.custom_role,
             isOnHold: partner.is_on_hold || false,
             is_on_hold: partner.is_on_hold || false,
             holdReason: partner.hold_reason || null,
@@ -366,172 +618,630 @@ export class PartnerService {
         };
     }
 
-    async createServicePartner(_data: any, _userId: string, _role: string) {
-        // Implementation for creating SP
-        return { message: 'Partner created successfully', id: 'new-id' };
-    }
+    async createServicePartner(data: any, adminUserId?: string, _role?: string) {
+        const fullName = data.fullName || data.partnerName || data.name;
+        const phoneNumber = data.phoneNumber || data.mobileNumber || data.mobile;
 
-    async updatePartner(id: string, data: any, _userId: string, _role: string) {
-        // Try finding by servicePartner id or user_id
-        let sp = await prisma.servicePartner.findFirst({
-            where: {
-                OR: [{ id }, { user_id: id }]
-            },
-            include: { user: true }
+        if (!fullName) {
+            throw new BadRequestError('Partner Name is required');
+        }
+        if (!phoneNumber) {
+            throw new BadRequestError('Mobile Number is required');
+        }
+
+        const addressLine1 = data.addressLine1 || data.address;
+        const city = data.city;
+        const state = data.state;
+        const postalCode = data.postalCode || data.pincode;
+
+        if (!addressLine1 || !city || !state || !postalCode) {
+            throw new BadRequestError('Complete address (Address Line 1, City, State, Pincode) is required');
+        }
+
+        // Clean phone number
+        const cleanedPhone = phoneNumber.replace(/\s+/g, '');
+
+        // Check if phone already registered
+        const existingUserByPhone = await prisma.user.findFirst({
+            where: { phone_number: cleanedPhone, is_deleted: false }
         });
+        if (existingUserByPhone) {
+            throw new BadRequestError(`A user with mobile number ${cleanedPhone} already exists`);
+        }
 
-        if (sp) {
-            // Update user details if provided
-            if (data.fullName || data.full_name || data.phoneNumber || data.phone_number) {
-                await prisma.user.update({
-                    where: { id: sp.user_id },
+        const email = data.emailAddress || data.email || `partner.${cleanedPhone}@snearal.com`;
+        const existingUserByEmail = await prisma.user.findFirst({
+            where: { email: email.toLowerCase(), is_deleted: false }
+        });
+        if (existingUserByEmail) {
+            throw new BadRequestError(`A user with email ${email} already exists`);
+        }
+
+        const isBusiness = data.partnerType === 'BUSINESS' || data.partnerType === 'BUSINESS_PARTNER';
+        const userRole = isBusiness ? 'BUSINESS_PARTNER' : 'SERVICE_PARTNER';
+
+        // Hash default password
+        const hashedPassword = await hashPassword('Partner@123');
+
+        // Resolve primary category
+        let primaryCategoryId = data.categoryId;
+        if (!primaryCategoryId && Array.isArray(data.categoryIds) && data.categoryIds.length > 0) {
+            primaryCategoryId = data.categoryIds[0];
+        }
+
+        // Transactional creation
+        const result = await prisma.$transaction(async (tx) => {
+            // 1. Create User
+            const user = await tx.user.create({
+                data: {
+                    full_name: fullName,
+                    phone_number: cleanedPhone,
+                    email: email.toLowerCase(),
+                    password: hashedPassword,
+                    role: userRole,
+                    phone_verified: true,
+                    email_verified: Boolean(data.emailAddress || data.email),
+                    is_active: true,
+                }
+            });
+
+            // 2. Create Profile
+            await tx.profile.create({
+                data: {
+                    user_id: user.id,
+                    address: addressLine1,
+                    city,
+                    state,
+                    postal_code: postalCode,
+                    gender: data.gender || null,
+                    date_of_birth: data.dateOfBirth ? new Date(data.dateOfBirth) : null,
+                    avatar_url: data.profilePhoto || null,
+                    latitude: data.latitude ? parseFloat(data.latitude) : null,
+                    longitude: data.longitude ? parseFloat(data.longitude) : null,
+                }
+            });
+
+            const initialStatus = data.partnerStatus || data.status || 'ACTIVE';
+            const coverageAreas = Array.isArray(data.coverageAreas) 
+                ? data.coverageAreas 
+                : (typeof data.coverageAreas === 'string' ? data.coverageAreas.split(',').map((s: string) => s.trim()).filter(Boolean) : []);
+
+            let partnerRecord: any;
+
+            if (isBusiness) {
+                partnerRecord = await tx.businessPartner.create({
                     data: {
-                        ...(data.fullName || data.full_name ? { full_name: data.fullName || data.full_name } : {}),
-                        ...(data.phoneNumber || data.phone_number ? { phone_number: data.phoneNumber || data.phone_number } : {}),
+                        user_id: user.id,
+                        business_name: data.businessName || fullName,
+                        category_id: primaryCategoryId || null,
+                        partner_status: initialStatus as any,
+                        experience_years: data.experience ? parseInt(data.experience) : (data.experienceYears ? parseInt(data.experienceYears) : 0),
+                        alternate_phone: data.alternateContactNumber || data.alternatePhone || null,
+                        coverage_areas: coverageAreas,
+                        address: addressLine1,
+                        address_line2: data.addressLine2 || null,
+                        city,
+                        state,
+                        postal_code: postalCode,
+                        bank_name: data.bankName || null,
+                        bank_account_name: data.accountHolderName || fullName,
+                        bank_account_number: data.accountNumber || null,
+                        bank_ifsc_code: data.ifscCode || null,
+                        upi_id: data.upiId || null,
+                    }
+                });
+
+                // Status history
+                await tx.partnerStatusHistory.create({
+                    data: {
+                        business_partner_id: partnerRecord.id,
+                        previous_status: null,
+                        new_status: initialStatus,
+                        remarks: data.remarks || 'Partner registered by Administrator',
+                        updated_by: adminUserId || 'ADMIN',
+                    }
+                });
+            } else {
+                partnerRecord = await tx.servicePartner.create({
+                    data: {
+                        user_id: user.id,
+                        category_id: primaryCategoryId || null,
+                        partner_status: initialStatus as any,
+                        availability_status: 'AVAILABLE',
+                        experience_years: data.experience ? parseInt(data.experience) : (data.experienceYears ? parseInt(data.experienceYears) : 0),
+                        alternate_phone: data.alternateContactNumber || data.alternatePhone || null,
+                        coverage_areas: coverageAreas,
+                        address_line2: data.addressLine2 || null,
+                        bank_name: data.bankName || null,
+                        bank_account_name: data.accountHolderName || fullName,
+                        bank_account_number: data.accountNumber || null,
+                        bank_ifsc_code: data.ifscCode || null,
+                        upi_id: data.upiId || null,
+                        current_latitude: data.latitude ? parseFloat(data.latitude) : null,
+                        current_longitude: data.longitude ? parseFloat(data.longitude) : null,
+                        service_radius: data.serviceRadius ? parseFloat(data.serviceRadius) : 15,
+                    }
+                });
+
+                // Status history
+                await tx.partnerStatusHistory.create({
+                    data: {
+                        service_partner_id: partnerRecord.id,
+                        previous_status: null,
+                        new_status: initialStatus,
+                        remarks: data.remarks || 'Partner registered by Administrator',
+                        updated_by: adminUserId || 'ADMIN',
                     }
                 });
             }
 
-            const partnerUpdateData: any = {};
-            if (data.serviceRadius !== undefined || data.service_radius !== undefined) {
-                partnerUpdateData.service_radius = parseFloat(data.serviceRadius ?? data.service_radius);
-            }
-            if (data.availabilityStatus || data.availability_status) {
-                partnerUpdateData.availability_status = data.availabilityStatus || data.availability_status;
-            }
-            if (data.kycStatus || data.kyc_status) {
-                partnerUpdateData.kyc_status = data.kycStatus || data.kyc_status;
-            }
-            if (data.bankAccountNumber !== undefined || data.bank_account_number !== undefined) {
-                partnerUpdateData.bank_account_number = data.bankAccountNumber ?? data.bank_account_number;
-            }
-            if (data.bankIfscCode !== undefined || data.bank_ifsc_code !== undefined) {
-                partnerUpdateData.bank_ifsc_code = data.bankIfscCode ?? data.bank_ifsc_code;
-            }
-            if (data.bankAccountName !== undefined || data.bank_account_name !== undefined) {
-                partnerUpdateData.bank_account_name = data.bankAccountName ?? data.bank_account_name;
+            // 3. Assign Services (Multiple services across multiple categories)
+            const serviceIds: string[] = Array.isArray(data.serviceIds) ? data.serviceIds : (Array.isArray(data.services) ? data.services : []);
+            if (serviceIds.length > 0) {
+                for (const sId of serviceIds) {
+                    if (isBusiness) {
+                        await tx.partnerService.create({
+                            data: {
+                                business_partner_id: partnerRecord.id,
+                                service_id: sId,
+                                is_available: true,
+                            }
+                        });
+                    } else {
+                        await tx.partnerService.create({
+                            data: {
+                                partner_id: partnerRecord.id,
+                                service_id: sId,
+                                is_available: true,
+                            }
+                        });
+                    }
+                }
             }
 
-            // Partner Sanctions: Hold, Blacklist, Strikes, Remarks
-            if (data.isOnHold !== undefined || data.is_on_hold !== undefined) {
-                partnerUpdateData.is_on_hold = Boolean(data.isOnHold ?? data.is_on_hold);
+            return {
+                id: partnerRecord.id,
+                userId: user.id,
+                fullName: user.full_name,
+                phoneNumber: user.phone_number,
+                email: user.email,
+                role: user.role,
+                partnerStatus: initialStatus,
+                message: 'Partner created successfully',
+            };
+        });
+
+        logger.info(`Partner ${fullName} created successfully with ID: ${result.id}`);
+        return result;
+    }
+
+    async updatePartner(id: string, data: any, adminUserId?: string, _role?: string) {
+        // Try finding in servicePartner
+        let sp = await prisma.servicePartner.findFirst({
+            where: { OR: [{ id }, { user_id: id }] },
+            include: { user: { include: { profile: true } } }
+        });
+
+        if (sp) {
+            // Update User details
+            const userUpdate: any = {};
+            if (data.fullName || data.partnerName || data.name) {
+                userUpdate.full_name = data.fullName || data.partnerName || data.name;
             }
-            if (data.holdReason !== undefined || data.hold_reason !== undefined) {
-                partnerUpdateData.hold_reason = data.holdReason ?? data.hold_reason;
+            if (data.phoneNumber || data.mobileNumber || data.mobile) {
+                userUpdate.phone_number = data.phoneNumber || data.mobileNumber || data.mobile;
             }
-            if (data.isBlacklisted !== undefined || data.is_blacklisted !== undefined) {
-                partnerUpdateData.is_blacklisted = Boolean(data.isBlacklisted ?? data.is_blacklisted);
-                if (partnerUpdateData.is_blacklisted) {
-                    partnerUpdateData.availability_status = 'OFFLINE';
+            if (data.email || data.emailAddress) {
+                userUpdate.email = (data.email || data.emailAddress).toLowerCase();
+            }
+            if (Object.keys(userUpdate).length > 0) {
+                await prisma.user.update({
+                    where: { id: sp.user_id },
+                    data: userUpdate,
+                });
+            }
+
+            // Update Profile details
+            const profileUpdate: any = {};
+            if (data.addressLine1 || data.address) profileUpdate.address = data.addressLine1 || data.address;
+            if (data.city) profileUpdate.city = data.city;
+            if (data.state) profileUpdate.state = data.state;
+            if (data.postalCode || data.pincode) profileUpdate.postal_code = data.postalCode || data.pincode;
+            if (data.gender) profileUpdate.gender = data.gender;
+            if (data.dateOfBirth) profileUpdate.date_of_birth = new Date(data.dateOfBirth);
+            if (data.profilePhoto || data.avatarUrl) profileUpdate.avatar_url = data.profilePhoto || data.avatarUrl;
+            if (data.latitude) profileUpdate.latitude = parseFloat(data.latitude);
+            if (data.longitude) profileUpdate.longitude = parseFloat(data.longitude);
+
+            if (Object.keys(profileUpdate).length > 0) {
+                await prisma.profile.upsert({
+                    where: { user_id: sp.user_id },
+                    update: profileUpdate,
+                    create: { user_id: sp.user_id, ...profileUpdate }
+                });
+            }
+
+            // Update Partner specific fields
+            const partnerUpdate: any = {};
+            if (data.experience !== undefined || data.experienceYears !== undefined) {
+                partnerUpdate.experience_years = parseInt(data.experience ?? data.experienceYears) || 0;
+            }
+            if (data.alternateContactNumber !== undefined || data.alternatePhone !== undefined) {
+                partnerUpdate.alternate_phone = data.alternateContactNumber ?? data.alternatePhone;
+            }
+            if (data.coverageAreas !== undefined) {
+                partnerUpdate.coverage_areas = Array.isArray(data.coverageAreas) 
+                    ? data.coverageAreas 
+                    : (typeof data.coverageAreas === 'string' ? data.coverageAreas.split(',').map((s: string) => s.trim()).filter(Boolean) : []);
+            }
+            if (data.addressLine2 !== undefined) partnerUpdate.address_line2 = data.addressLine2;
+            if (data.serviceRadius !== undefined) partnerUpdate.service_radius = parseFloat(data.serviceRadius);
+            if (data.categoryId) partnerUpdate.category_id = data.categoryId;
+
+            // Bank details
+            if (data.bankName !== undefined) partnerUpdate.bank_name = data.bankName;
+            if (data.accountHolderName !== undefined || data.bankAccountName !== undefined) {
+                partnerUpdate.bank_account_name = data.accountHolderName ?? data.bankAccountName;
+            }
+            if (data.accountNumber !== undefined || data.bankAccountNumber !== undefined) {
+                partnerUpdate.bank_account_number = data.accountNumber ?? data.bankAccountNumber;
+            }
+            if (data.ifscCode !== undefined || data.bankIfscCode !== undefined) {
+                partnerUpdate.bank_ifsc_code = data.ifscCode ?? data.bankIfscCode;
+            }
+            if (data.upiId !== undefined) partnerUpdate.upi_id = data.upiId;
+
+            // Sanctions & Status
+            const newStatus = data.partnerStatus || data.status;
+            if (newStatus && newStatus !== sp.partner_status) {
+                partnerUpdate.partner_status = newStatus;
+                if (newStatus === 'SUSPENDED' || newStatus === 'INACTIVE' || newStatus === 'REJECTED') {
+                    partnerUpdate.availability_status = 'OFFLINE';
                 }
-            }
-            if (data.blacklistReason !== undefined || data.blacklist_reason !== undefined) {
-                partnerUpdateData.blacklist_reason = data.blacklistReason ?? data.blacklist_reason;
-            }
-            if (data.strikeCount !== undefined || data.strike_count !== undefined) {
-                const strikes = parseInt(data.strikeCount ?? data.strike_count) || 0;
-                partnerUpdateData.strike_count = strikes;
-                const threshold = parseInt(data.strikeThreshold) || 3;
-                if ((data.autoBlacklist || strikes >= threshold) && strikes >= 3) {
-                    partnerUpdateData.is_blacklisted = true;
-                    if (!partnerUpdateData.blacklist_reason) {
-                        partnerUpdateData.blacklist_reason = `Partner blacklisted due to reaching ${strikes} strikes`;
+                // Record status change history
+                await prisma.partnerStatusHistory.create({
+                    data: {
+                        service_partner_id: sp.id,
+                        previous_status: sp.partner_status,
+                        new_status: newStatus,
+                        remarks: data.remarks || 'Status updated by Administrator',
+                        updated_by: adminUserId || 'ADMIN',
                     }
-                    partnerUpdateData.availability_status = 'OFFLINE';
-                }
+                });
             }
-            if (data.adminRemarks !== undefined || data.admin_remarks !== undefined) {
-                partnerUpdateData.admin_remarks = data.adminRemarks ?? data.admin_remarks;
+
+            if (data.isOnHold !== undefined || data.is_on_hold !== undefined) {
+                partnerUpdate.is_on_hold = Boolean(data.isOnHold ?? data.is_on_hold);
+            }
+            if (data.holdReason !== undefined) partnerUpdate.hold_reason = data.holdReason;
+            if (data.isBlacklisted !== undefined || data.is_blacklisted !== undefined) {
+                partnerUpdate.is_blacklisted = Boolean(data.isBlacklisted ?? data.is_blacklisted);
+                if (partnerUpdate.is_blacklisted) partnerUpdate.availability_status = 'OFFLINE';
+            }
+            if (data.blacklistReason !== undefined) partnerUpdate.blacklist_reason = data.blacklistReason;
+            if (data.strikeCount !== undefined) partnerUpdate.strike_count = parseInt(data.strikeCount) || 0;
+            if (data.adminRemarks !== undefined) partnerUpdate.admin_remarks = data.adminRemarks;
+
+            // Sync Service assignments if serviceIds provided
+            if (Array.isArray(data.serviceIds)) {
+                await this.syncPartnerServices(sp.id, data.serviceIds, 'INDIVIDUAL');
             }
 
             return await prisma.servicePartner.update({
                 where: { id: sp.id },
-                data: partnerUpdateData,
-                include: { user: true }
+                data: partnerUpdate,
+                include: { user: { include: { profile: true } } }
             });
         }
 
-        // Try business partner
+        // Try businessPartner
         let bp = await prisma.businessPartner.findFirst({
-            where: {
-                OR: [{ id }, { user_id: id }]
-            },
-            include: { user: true }
+            where: { OR: [{ id }, { user_id: id }] },
+            include: { user: { include: { profile: true } } }
         });
 
         if (bp) {
-            if (data.fullName || data.full_name || data.phoneNumber || data.phone_number) {
+            // Update User details
+            const userUpdate: any = {};
+            if (data.fullName || data.partnerName || data.name) {
+                userUpdate.full_name = data.fullName || data.partnerName || data.name;
+            }
+            if (data.phoneNumber || data.mobileNumber || data.mobile) {
+                userUpdate.phone_number = data.phoneNumber || data.mobileNumber || data.mobile;
+            }
+            if (data.email || data.emailAddress) {
+                userUpdate.email = (data.email || data.emailAddress).toLowerCase();
+            }
+            if (Object.keys(userUpdate).length > 0) {
                 await prisma.user.update({
                     where: { id: bp.user_id },
+                    data: userUpdate,
+                });
+            }
+
+            // Update Profile details
+            const profileUpdate: any = {};
+            if (data.addressLine1 || data.address) profileUpdate.address = data.addressLine1 || data.address;
+            if (data.city) profileUpdate.city = data.city;
+            if (data.state) profileUpdate.state = data.state;
+            if (data.postalCode || data.pincode) profileUpdate.postal_code = data.postalCode || data.pincode;
+            if (data.gender) profileUpdate.gender = data.gender;
+            if (data.dateOfBirth) profileUpdate.date_of_birth = new Date(data.dateOfBirth);
+            if (data.profilePhoto || data.avatarUrl) profileUpdate.avatar_url = data.profilePhoto || data.avatarUrl;
+
+            if (Object.keys(profileUpdate).length > 0) {
+                await prisma.profile.upsert({
+                    where: { user_id: bp.user_id },
+                    update: profileUpdate,
+                    create: { user_id: bp.user_id, ...profileUpdate }
+                });
+            }
+
+            const bpUpdate: any = {};
+            if (data.businessName) bpUpdate.business_name = data.businessName;
+            if (data.experience !== undefined || data.experienceYears !== undefined) {
+                bpUpdate.experience_years = parseInt(data.experience ?? data.experienceYears) || 0;
+            }
+            if (data.alternateContactNumber !== undefined || data.alternatePhone !== undefined) {
+                bpUpdate.alternate_phone = data.alternateContactNumber ?? data.alternatePhone;
+            }
+            if (data.coverageAreas !== undefined) {
+                bpUpdate.coverage_areas = Array.isArray(data.coverageAreas) 
+                    ? data.coverageAreas 
+                    : (typeof data.coverageAreas === 'string' ? data.coverageAreas.split(',').map((s: string) => s.trim()).filter(Boolean) : []);
+            }
+            if (data.addressLine2 !== undefined) bpUpdate.address_line2 = data.addressLine2;
+            if (data.city) bpUpdate.city = data.city;
+            if (data.state) bpUpdate.state = data.state;
+            if (data.postalCode || data.pincode) bpUpdate.postal_code = data.postalCode || data.pincode;
+            if (data.categoryId) bpUpdate.category_id = data.categoryId;
+
+            // Bank details
+            if (data.bankName !== undefined) bpUpdate.bank_name = data.bankName;
+            if (data.accountHolderName !== undefined || data.bankAccountName !== undefined) {
+                bpUpdate.bank_account_name = data.accountHolderName ?? data.bankAccountName;
+            }
+            if (data.accountNumber !== undefined || data.bankAccountNumber !== undefined) {
+                bpUpdate.bank_account_number = data.accountNumber ?? data.bankAccountNumber;
+            }
+            if (data.ifscCode !== undefined || data.bankIfscCode !== undefined) {
+                bpUpdate.bank_ifsc_code = data.ifscCode ?? data.bankIfscCode;
+            }
+            if (data.upiId !== undefined) bpUpdate.upi_id = data.upiId;
+
+            // Status
+            const newStatus = data.partnerStatus || data.status;
+            if (newStatus && newStatus !== bp.partner_status) {
+                bpUpdate.partner_status = newStatus;
+                await prisma.partnerStatusHistory.create({
                     data: {
-                        ...(data.fullName || data.full_name ? { full_name: data.fullName || data.full_name } : {}),
-                        ...(data.phoneNumber || data.phone_number ? { phone_number: data.phoneNumber || data.phone_number } : {}),
+                        business_partner_id: bp.id,
+                        previous_status: bp.partner_status,
+                        new_status: newStatus,
+                        remarks: data.remarks || 'Status updated by Administrator',
+                        updated_by: adminUserId || 'ADMIN',
                     }
                 });
             }
 
-            const bpUpdateData: any = {};
-            if (data.businessName || data.business_name) {
-                bpUpdateData.business_name = data.businessName || data.business_name;
-            }
-            if (data.businessType || data.business_type) {
-                bpUpdateData.business_type = data.businessType || data.business_type;
-            }
-            if (data.gstNumber !== undefined || data.gst_number !== undefined) {
-                bpUpdateData.gst_number = data.gstNumber ?? data.gst_number;
-            }
-            if (data.commissionRate !== undefined || data.commission_rate !== undefined) {
-                bpUpdateData.commission_rate = parseFloat(data.commissionRate ?? data.commission_rate);
-            }
-            if (data.kycStatus || data.kyc_status) {
-                bpUpdateData.kyc_status = data.kycStatus || data.kyc_status;
-            }
-            if (data.bankAccountNumber !== undefined || data.bank_account_number !== undefined) {
-                bpUpdateData.bank_account_number = data.bankAccountNumber ?? data.bank_account_number;
-            }
-            if (data.bankIfscCode !== undefined || data.bank_ifsc_code !== undefined) {
-                bpUpdateData.bank_ifsc_code = data.bankIfscCode ?? data.bank_ifsc_code;
-            }
-            if (data.bankAccountName !== undefined || data.bank_account_name !== undefined) {
-                bpUpdateData.bank_account_name = data.bankAccountName ?? data.bank_account_name;
-            }
+            if (data.isOnHold !== undefined) bpUpdate.is_on_hold = Boolean(data.isOnHold);
+            if (data.holdReason !== undefined) bpUpdate.hold_reason = data.holdReason;
+            if (data.isBlacklisted !== undefined) bpUpdate.is_blacklisted = Boolean(data.isBlacklisted);
+            if (data.blacklistReason !== undefined) bpUpdate.blacklist_reason = data.blacklistReason;
+            if (data.strikeCount !== undefined) bpUpdate.strike_count = parseInt(data.strikeCount) || 0;
+            if (data.adminRemarks !== undefined) bpUpdate.admin_remarks = data.adminRemarks;
 
-            // Partner Sanctions: Hold, Blacklist, Strikes, Remarks
-            if (data.isOnHold !== undefined || data.is_on_hold !== undefined) {
-                bpUpdateData.is_on_hold = Boolean(data.isOnHold ?? data.is_on_hold);
-            }
-            if (data.holdReason !== undefined || data.hold_reason !== undefined) {
-                bpUpdateData.hold_reason = data.holdReason ?? data.hold_reason;
-            }
-            if (data.isBlacklisted !== undefined || data.is_blacklisted !== undefined) {
-                bpUpdateData.is_blacklisted = Boolean(data.isBlacklisted ?? data.is_blacklisted);
-            }
-            if (data.blacklistReason !== undefined || data.blacklist_reason !== undefined) {
-                bpUpdateData.blacklist_reason = data.blacklistReason ?? data.blacklist_reason;
-            }
-            if (data.strikeCount !== undefined || data.strike_count !== undefined) {
-                const strikes = parseInt(data.strikeCount ?? data.strike_count) || 0;
-                bpUpdateData.strike_count = strikes;
-                const threshold = parseInt(data.strikeThreshold) || 3;
-                if ((data.autoBlacklist || strikes >= threshold) && strikes >= 3) {
-                    bpUpdateData.is_blacklisted = true;
-                    if (!bpUpdateData.blacklist_reason) {
-                        bpUpdateData.blacklist_reason = `Partner blacklisted due to reaching ${strikes} strikes`;
-                    }
-                }
-            }
-            if (data.adminRemarks !== undefined || data.admin_remarks !== undefined) {
-                bpUpdateData.admin_remarks = data.adminRemarks ?? data.admin_remarks;
+            // Sync Service assignments if serviceIds provided
+            if (Array.isArray(data.serviceIds)) {
+                await this.syncPartnerServices(bp.id, data.serviceIds, 'BUSINESS');
             }
 
             return await prisma.businessPartner.update({
                 where: { id: bp.id },
-                data: bpUpdateData,
-                include: { user: true }
+                data: bpUpdate,
+                include: { user: { include: { profile: true } } }
             });
         }
 
         throw new NotFoundError('Partner not found');
+    }
+
+    async updatePartnerStatus(id: string, newStatus: string, remarks?: string, adminUserId?: string) {
+        const allowedStatuses = ['PENDING', 'UNDER_REVIEW', 'APPROVED', 'ACTIVE', 'INACTIVE', 'REJECTED', 'SUSPENDED'];
+        const normalizedStatus = newStatus?.toUpperCase();
+        if (!allowedStatuses.includes(normalizedStatus)) {
+            throw new BadRequestError(`Invalid partner status: ${newStatus}. Allowed: ${allowedStatuses.join(', ')}`);
+        }
+
+        // Try service partner
+        let sp = await prisma.servicePartner.findFirst({
+            where: { OR: [{ id }, { user_id: id }] }
+        });
+
+        if (sp) {
+            const prevStatus = sp.partner_status;
+            const updateData: any = { partner_status: normalizedStatus as any };
+
+            if (normalizedStatus === 'SUSPENDED' || normalizedStatus === 'INACTIVE' || normalizedStatus === 'REJECTED') {
+                updateData.availability_status = 'OFFLINE';
+            }
+
+            await prisma.servicePartner.update({
+                where: { id: sp.id },
+                data: updateData,
+            });
+
+            await prisma.partnerStatusHistory.create({
+                data: {
+                    service_partner_id: sp.id,
+                    previous_status: prevStatus,
+                    new_status: normalizedStatus,
+                    remarks: remarks || `Status changed from ${prevStatus} to ${normalizedStatus}`,
+                    updated_by: adminUserId || 'ADMIN',
+                }
+            });
+
+            logger.info(`Partner ${sp.id} status updated from ${prevStatus} to ${normalizedStatus}`);
+            return {
+                id: sp.id,
+                previousStatus: prevStatus,
+                newStatus: normalizedStatus,
+                message: `Partner status updated to ${normalizedStatus}`,
+            };
+        }
+
+        // Try business partner
+        let bp = await prisma.businessPartner.findFirst({
+            where: { OR: [{ id }, { user_id: id }] }
+        });
+
+        if (bp) {
+            const prevStatus = bp.partner_status;
+            await prisma.businessPartner.update({
+                where: { id: bp.id },
+                data: { partner_status: normalizedStatus as any },
+            });
+
+            await prisma.partnerStatusHistory.create({
+                data: {
+                    business_partner_id: bp.id,
+                    previous_status: prevStatus,
+                    new_status: normalizedStatus,
+                    remarks: remarks || `Status changed from ${prevStatus} to ${normalizedStatus}`,
+                    updated_by: adminUserId || 'ADMIN',
+                }
+            });
+
+            logger.info(`Business Partner ${bp.id} status updated from ${prevStatus} to ${normalizedStatus}`);
+            return {
+                id: bp.id,
+                previousStatus: prevStatus,
+                newStatus: normalizedStatus,
+                message: `Partner status updated to ${normalizedStatus}`,
+            };
+        }
+
+        throw new NotFoundError('Partner not found');
+    }
+
+    async getPartnerStatusHistory(partnerId: string) {
+        return await prisma.partnerStatusHistory.findMany({
+            where: {
+                OR: [
+                    { service_partner_id: partnerId },
+                    { business_partner_id: partnerId },
+                ]
+            },
+            orderBy: { created_at: 'desc' }
+        });
+    }
+
+    async syncPartnerServices(partnerId: string, serviceIds: string[], type: 'INDIVIDUAL' | 'BUSINESS') {
+        const isBusiness = type === 'BUSINESS';
+        const partnerCondition = isBusiness ? { business_partner_id: partnerId } : { partner_id: partnerId };
+
+        const existingAssignments = await prisma.partnerService.findMany({
+            where: partnerCondition,
+        });
+
+        const existingServiceIds = new Set(existingAssignments.map(a => a.service_id));
+        const newServiceIds = new Set(serviceIds);
+
+        // Delete removed
+        const toDelete = existingAssignments.filter(a => !newServiceIds.has(a.service_id));
+        if (toDelete.length > 0) {
+            await prisma.partnerService.deleteMany({
+                where: { id: { in: toDelete.map(d => d.id) } }
+            });
+        }
+
+        // Add new
+        for (const sId of serviceIds) {
+            if (!existingServiceIds.has(sId)) {
+                await prisma.partnerService.create({
+                    data: {
+                        ...(isBusiness ? { business_partner_id: partnerId } : { partner_id: partnerId }),
+                        service_id: sId,
+                        is_available: true,
+                    }
+                });
+            }
+        }
+    }
+
+    async uploadPartnerDocument(partnerId: string, file: any, documentType: string, remarks?: string, _adminUserId?: string) {
+        // Resolve partner
+        let sp = await prisma.servicePartner.findFirst({
+            where: { OR: [{ id: partnerId }, { user_id: partnerId }] }
+        });
+        let bp = null;
+        if (!sp) {
+            bp = await prisma.businessPartner.findFirst({
+                where: { OR: [{ id: partnerId }, { user_id: partnerId }] }
+            });
+        }
+
+        if (!sp && !bp) throw new NotFoundError('Partner not found');
+
+        const documentUrl = `/uploads/kyc/${file.filename}`;
+
+        const doc = await prisma.kycDocument.create({
+            data: {
+                ...(sp ? { service_partner_id: sp.id } : { business_partner_id: bp!.id }),
+                document_type: documentType,
+                document_url: documentUrl,
+                original_filename: file.originalname,
+                file_size: file.size,
+                mime_type: file.mimetype,
+                remarks: remarks || null,
+                status: 'PENDING_VERIFICATION',
+            }
+        });
+
+        return doc;
+    }
+
+    async verifyPartnerDocument(documentId: string, status: 'VERIFIED' | 'REJECTED', remarks?: string, adminUserId?: string) {
+        const doc = await prisma.kycDocument.findUnique({
+            where: { id: documentId }
+        });
+        if (!doc) throw new NotFoundError('Document not found');
+
+        const kycStatus = status === 'VERIFIED' ? 'VERIFIED' : 'REJECTED';
+
+        return await prisma.kycDocument.update({
+            where: { id: documentId },
+            data: {
+                status: kycStatus as any,
+                verified_by: adminUserId || 'ADMIN',
+                verified_at: new Date(),
+                remarks: remarks || null,
+                rejection_reason: status === 'REJECTED' ? remarks : null,
+            }
+        });
+    }
+
+    async deletePartnerDocument(documentId: string) {
+        const doc = await prisma.kycDocument.findUnique({
+            where: { id: documentId }
+        });
+        if (!doc) throw new NotFoundError('Document not found');
+
+        return await prisma.kycDocument.delete({
+            where: { id: documentId }
+        });
+    }
+
+    async getPartnerDocuments(partnerId: string) {
+        return await prisma.kycDocument.findMany({
+            where: {
+                OR: [
+                    { service_partner_id: partnerId },
+                    { business_partner_id: partnerId }
+                ]
+            },
+            orderBy: { created_at: 'desc' }
+        });
     }
 
     async updateAvailability(id: string, data: any) {

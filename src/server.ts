@@ -61,6 +61,14 @@ async function startServer() {
         } catch (settingsError) {
             logger.warn('⚠️ Could not seed platform settings:', settingsError);
         }
+
+        // 6. Run safe idempotent partner migration
+        try {
+            const { runPartnerMigration } = await import('./utils/partner-migration');
+            await runPartnerMigration();
+        } catch (migrationErr) {
+            logger.warn('⚠️ Partner migration warning:', migrationErr);
+        }
     } catch (error) {
         logger.error('❌ Failed to start server:', error);
         process.exit(1);

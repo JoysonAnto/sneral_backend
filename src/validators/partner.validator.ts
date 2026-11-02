@@ -2,27 +2,26 @@ import { body } from 'express-validator';
 
 export const createPartnerValidator = [
     body('email')
+        .optional()
         .isEmail()
         .withMessage('Please provide a valid email')
         .normalizeEmail(),
     body('password')
-        .isLength({ min: 8 })
-        .withMessage('Password must be at least 8 characters long'),
+        .optional(),
     body('fullName')
-        .trim()
-        .notEmpty()
-        .withMessage('Full name is required'),
+        .optional()
+        .trim(),
+    body('partnerName')
+        .optional()
+        .trim(),
     body('phoneNumber')
-        .isMobilePhone('any')
-        .withMessage('Please provide a valid phone number'),
+        .optional(),
+    body('mobileNumber')
+        .optional(),
     body('services')
         .optional()
         .isArray()
         .withMessage('Services must be an array'),
-    body('services.*')
-        .optional()
-        .isUUID()
-        .withMessage('Invalid service ID'),
 ];
 
 export const updatePartnerValidator = [

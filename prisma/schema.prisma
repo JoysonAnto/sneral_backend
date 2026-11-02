@@ -119,6 +119,14 @@ model ServicePartner {
   referred_by_code     String?
   kyc_rejection_reason String?
   last_location_update DateTime?
+  partner_status       PartnerStatus            @default(PENDING)
+  experience_years     Int                      @default(0)
+  alternate_phone      String?
+  coverage_areas       String[]                 @default([])
+  address_line2        String?
+  upi_id               String?
+  bank_name            String?
+  status_history       PartnerStatusHistory[]
   availability_slots   AvailabilitySlot[]
   bookings             Booking[]                @relation("PartnerBookings")
   business_hours       BusinessHours[]
@@ -219,10 +227,18 @@ model BusinessPartner {
   category_id             String?
   kyc_rejection_reason    String?
   address                 String?
+  address_line2           String?
   city                    String?
   logo_url                String?
   postal_code             String?
   state                   String?
+  partner_status          PartnerStatus        @default(PENDING)
+  experience_years        Int                  @default(0)
+  alternate_phone         String?
+  coverage_areas          String[]             @default([])
+  upi_id                  String?
+  bank_name               String?
+  status_history          PartnerStatusHistory[]
   availability_slots      AvailabilitySlot[]
   bookings                Booking[]            @relation("BusinessPartnerBookings")
   business_hours          BusinessHours[]
@@ -642,6 +658,10 @@ model KycDocument {
   document_number     String?
   document_url        String
   status              KycStatus        @default(PENDING_VERIFICATION)
+  original_filename   String?
+  file_size           Int?
+  mime_type           String?
+  remarks             String?
   verified_at         DateTime?
   verified_by         String?
   rejection_reason    String?
@@ -1040,6 +1060,34 @@ enum PartnerAvailability {
   AVAILABLE
   BUSY
   OFFLINE
+}
+
+enum PartnerStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  ACTIVE
+  INACTIVE
+  REJECTED
+  SUSPENDED
+}
+
+model PartnerStatusHistory {
+  id                  String           @id @default(uuid())
+  service_partner_id  String?
+  business_partner_id String?
+  previous_status     String?
+  new_status          String
+  remarks             String?
+  updated_by          String?
+  created_at          DateTime         @default(now())
+
+  service_partner     ServicePartner?  @relation(fields: [service_partner_id], references: [id], onDelete: Cascade)
+  business_partner    BusinessPartner? @relation(fields: [business_partner_id], references: [id], onDelete: Cascade)
+
+  @@index([service_partner_id])
+  @@index([business_partner_id])
+  @@map("partner_status_history")
 }
 
 enum WithdrawalStatus {

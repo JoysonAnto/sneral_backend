@@ -492,5 +492,93 @@ export class PartnerController {
             next(error);
         }
     };
+
+    updatePartnerStatus = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { status, remarks } = req.body;
+            const result = await this.partnerService.updatePartnerStatus(
+                req.params.id,
+                status,
+                remarks,
+                req.user?.userId
+            );
+            res.json(successResponse(result, result.message));
+        } catch (error) {
+            return next(error);
+        }
+    };
+
+    getPartnerHistory = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const history = await this.partnerService.getPartnerStatusHistory(req.params.id);
+            res.json(successResponse(history, 'Partner status history retrieved successfully'));
+        } catch (error) {
+            return next(error);
+        }
+    };
+
+    uploadPartnerDocument = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            if (!req.file) {
+                return res.status(400).json({ success: false, message: 'Document file is required' });
+            }
+            const { document_type, documentType, remarks } = req.body;
+            const doc = await this.partnerService.uploadPartnerDocument(
+                req.params.id,
+                req.file,
+                document_type || documentType || 'OTHER',
+                remarks,
+                req.user?.userId
+            );
+            res.status(201).json(successResponse(doc, 'Document uploaded successfully'));
+        } catch (error) {
+            return next(error);
+        }
+    };
+
+    getPartnerDocuments = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const documents = await this.partnerService.getPartnerDocuments(req.params.id);
+            res.json(successResponse(documents, 'Partner documents retrieved successfully'));
+        } catch (error) {
+            return next(error);
+        }
+    };
+
+    verifyPartnerDocument = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { status, remarks } = req.body;
+            const doc = await this.partnerService.verifyPartnerDocument(
+                req.params.id,
+                status,
+                remarks,
+                req.user?.userId
+            );
+            res.json(successResponse(doc, `Document ${status === 'VERIFIED' ? 'verified' : 'rejected'} successfully`));
+        } catch (error) {
+            return next(error);
+        }
+    };
+
+    deletePartnerDocument = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            await this.partnerService.deletePartnerDocument(req.params.id);
+            res.json(successResponse(null, 'Document deleted successfully'));
+        } catch (error) {
+            return next(error);
+        }
+    };
+
+    assignServices = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { serviceIds, service_ids } = req.body;
+            const ids = serviceIds || service_ids || [];
+            await this.partnerService.syncPartnerServices(req.params.id, ids, 'INDIVIDUAL');
+            const updated = await this.partnerService.getPartnerById(req.params.id);
+            res.json(successResponse(updated, 'Services assigned successfully'));
+        } catch (error) {
+            return next(error);
+        }
+    };
 }
 

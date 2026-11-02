@@ -88,6 +88,7 @@ export class PartnerMatchingService {
                     { services: { some: { service: { category_id: categoryId }, is_available: true } } }
                 ],
                 availability_status: 'AVAILABLE',
+                partner_status: { notIn: ['SUSPENDED', 'INACTIVE', 'REJECTED'] as any },
                 kyc_status: 'APPROVED',
                 is_on_hold: false,
                 is_blacklisted: false,
