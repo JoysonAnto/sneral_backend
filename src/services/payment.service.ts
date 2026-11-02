@@ -103,6 +103,15 @@ export class PaymentService {
                 },
             });
 
+            // Confirm coupon redemption if applicable
+            try {
+                const { CouponService } = await import('./coupon.service');
+                const couponService = new CouponService();
+                await couponService.confirmCouponRedemption(data.bookingId);
+            } catch (couponErr) {
+                console.error(`Failed to confirm coupon redemption for booking ${data.bookingId}:`, couponErr);
+            }
+
             return {
                 paymentId: payment.id,
                 amount: payment.amount,
@@ -243,6 +252,16 @@ export class PaymentService {
                 where: { id: paymentId },
                 data: { payment_status: 'FAILED' },
             });
+
+            // Release coupon redemption if applicable
+            try {
+                const { CouponService } = await import('./coupon.service');
+                const couponService = new CouponService();
+                await couponService.releaseCouponRedemption(payment.booking_id);
+            } catch (couponErr) {
+                console.error(`Failed to release coupon redemption for booking ${payment.booking_id}:`, couponErr);
+            }
+
             throw new BadRequestError('Invalid payment signature');
         }
 
@@ -314,6 +333,15 @@ export class PaymentService {
             } catch (err) {
                 console.error(`Failed to distribute earnings for booking ${payment.booking_id}:`, err);
             }
+        }
+
+        // Confirm coupon redemption if applicable
+        try {
+            const { CouponService } = await import('./coupon.service');
+            const couponService = new CouponService();
+            await couponService.confirmCouponRedemption(payment.booking_id);
+        } catch (couponErr) {
+            console.error(`Failed to confirm coupon redemption for booking ${payment.booking_id}:`, couponErr);
         }
 
         return {
@@ -412,6 +440,15 @@ export class PaymentService {
                 }
             }
 
+            // Confirm coupon redemption if applicable
+            try {
+                const { CouponService } = await import('./coupon.service');
+                const couponService = new CouponService();
+                await couponService.confirmCouponRedemption(payment.booking_id);
+            } catch (couponErr) {
+                console.error(`Failed to confirm coupon redemption for booking ${payment.booking_id}:`, couponErr);
+            }
+
             return {
                 status: 'COMPLETED',
                 paymentId: payment.id,
@@ -424,6 +461,15 @@ export class PaymentService {
                     where: { id: payment.id },
                     data: { payment_status: 'FAILED' }
                 });
+
+                // Release coupon redemption if applicable
+                try {
+                    const { CouponService } = await import('./coupon.service');
+                    const couponService = new CouponService();
+                    await couponService.releaseCouponRedemption(payment.booking_id);
+                } catch (couponErr) {
+                    console.error(`Failed to release coupon redemption for booking ${payment.booking_id}:`, couponErr);
+                }
             }
             
             return {

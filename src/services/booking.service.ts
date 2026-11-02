@@ -38,6 +38,8 @@ interface CreateBookingData {
     isScheduled?: boolean;
     bookingType?: 'instant' | 'scheduled';
     scheduledDateTime?: string;
+    couponCode?: string;
+    couponId?: string;
 }
 
 export class BookingService {
@@ -83,13 +85,38 @@ export class BookingService {
         const createdBookings = [];
         const groupId = itemsByCategory.size > 1 ? `GRP${Date.now()}` : null; // Only group if multiple bookings
 
+        // Validate coupon if provided
+        let appliedCoupon: any = null;
+        let remainingCouponDiscount = 0;
+        if (data.couponCode || data.couponId) {
+            const { CouponService } = await import('./coupon.service');
+            const couponService = new CouponService();
+
+            let grossOrderAmount = 0;
+            for (const item of data.items) {
+                const service = serviceMap.get(item.serviceId)!;
+                const dynamicMultiplier = data.dynamicMultiplier || 1.0;
+                grossOrderAmount += service.base_price * dynamicMultiplier * item.quantity;
+            }
+
+            const valResult = await couponService.validateCoupon(customerId, {
+                code: data.couponCode,
+                couponId: data.couponId,
+                amount: grossOrderAmount,
+                items: data.items,
+            });
+
+            appliedCoupon = valResult.coupon;
+            remainingCouponDiscount = valResult.discountAmount;
+        }
+
         // 3. Create Booking for each Category
         for (const [_categoryId, categoryServices] of itemsByCategory) {
             // Generate Booking Number
             const bookingNumber = `BK${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
             // Calculate Totals for this Booking
-            let totalAmount = 0;
+            let originalSubtotal = 0;
             const bookingItemsData = [];
 
             for (const service of categoryServices) {
@@ -98,7 +125,7 @@ export class BookingService {
                 const unitPrice = service.base_price;
                 const lineTotal = unitPrice * dynamicMultiplier * itemData.quantity; // Assuming multiplier applies to unit price
 
-                totalAmount += lineTotal;
+                originalSubtotal += lineTotal;
                 bookingItemsData.push({
                     service_id: service.id,
                     quantity: itemData.quantity,
@@ -107,6 +134,11 @@ export class BookingService {
                 });
             }
 
+            // Deduct coupon discount if applicable
+            const bookingDiscount = appliedCoupon ? Math.min(remainingCouponDiscount, originalSubtotal) : 0;
+            remainingCouponDiscount -= bookingDiscount;
+
+            const totalAmount = Math.max(0, originalSubtotal - bookingDiscount);
             const advanceAmount = totalAmount * 0.3;
             const remainingAmount = totalAmount - advanceAmount;
 
@@ -125,6 +157,8 @@ export class BookingService {
                     total_amount: totalAmount,
                     advance_amount: advanceAmount,
                     remaining_amount: remainingAmount,
+                    coupon_id: bookingDiscount > 0 && appliedCoupon ? appliedCoupon.id : null,
+                    discount_amount: bookingDiscount,
                     payment_method: data.paymentMethod as any,
                     payment_status: data.paymentMethod === 'CASH' ? 'PENDING' : 'PENDING', // PENDING for online too until webhook
                     special_instructions: data.specialInstructions,
@@ -150,6 +184,28 @@ export class BookingService {
                     customer: { select: { id: true, email: true, full_name: true, phone_number: true } }
                 }
             });
+
+            // Create coupon redemption record if coupon was applied
+            if (appliedCoupon && bookingDiscount > 0) {
+                try {
+                    const { CouponService } = await import('./coupon.service');
+                    const couponService = new CouponService();
+                    await couponService.reserveCouponRedemption(
+                        appliedCoupon.id,
+                        customerId,
+                        booking.id,
+                        bookingDiscount,
+                        originalSubtotal
+                    );
+
+                    // If CASH payment, confirm immediately
+                    if (data.paymentMethod === 'CASH') {
+                        await couponService.confirmCouponRedemption(booking.id);
+                    }
+                } catch (redemptionErr) {
+                    logger.error(`Failed to record coupon redemption for booking ${booking.id}:`, redemptionErr);
+                }
+            }
 
             // Explicitly notify all connected admins across all regions immediately
             this.broadcastBookingCreated(booking);

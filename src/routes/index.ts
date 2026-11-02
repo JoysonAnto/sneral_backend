@@ -29,6 +29,8 @@ import addressRoutes from './address.routes';
 import servicePartnerRoutes from './service-partner.routes';
 import reviewRoutes from './review.routes';
 import ticketRoutes from './ticket.routes';
+import couponRoutes from './coupon.routes';
+import adminCouponRoutes from './admin-coupon.routes';
 
 
 const router = Router();
@@ -66,6 +68,7 @@ router.use('/bookings', bookingRoutes);
 router.use('/jobs', bookingRoutes); // Alias for partner app
 router.use('/orders', bookingRoutes); // New ORDERS terminology alias
 router.use('/reviews', reviewRoutes); // Review endpoints under /reviews prefix
+router.use('/coupons', couponRoutes);
 
 // 4. PARTNER & WALLET ROUTES
 router.use('/partners', partnerRoutes);
@@ -86,6 +89,7 @@ router.use('/messages', messageRoutes);
 
 // 7. ADMIN & ROLES
 router.use('/admin', adminRoutes);
+router.use('/admin/coupons', adminCouponRoutes);
 router.use('/roles', roleRoutes);
 router.use('/business-partners', businessPartnerRoutes);
 router.use('/tickets', ticketRoutes);

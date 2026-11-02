@@ -66,6 +66,14 @@ export const createBookingValidator = [
         .optional()
         .isISO8601()
         .withMessage('Invalid scheduled date time format'),
+    body('couponCode')
+        .optional()
+        .isString()
+        .trim(),
+    body('couponId')
+        .optional()
+        .isUUID()
+        .withMessage('Invalid coupon ID'),
 ];
 
 export const updateBookingStatusValidator = [

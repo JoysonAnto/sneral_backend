@@ -48,6 +48,7 @@ model User {
   wallet                  Wallet?
   withdrawals             WithdrawalRequest[]
   tickets                 Ticket[]
+  coupon_redemptions      CouponRedemption[]
 
 
   @@index([email])
@@ -436,12 +437,17 @@ model Booking {
   location_history      PartnerLocationHistory[]
   payments              Payment[]
   reviews               Review[]
+  coupon_id             String?
+  discount_amount       Float                    @default(0)
+  coupon                Coupon?                  @relation(fields: [coupon_id], references: [id])
+  coupon_redemptions    CouponRedemption[]
 
   @@index([customer_id])
   @@index([partner_id])
   @@index([status])
   @@index([scheduled_date])
   @@index([group_id])
+  @@index([coupon_id])
   @@map("bookings")
 }
 
@@ -1182,5 +1188,68 @@ enum TicketStatus {
   IN_PROGRESS
   RESOLVED
   CLOSED
+}
+
+enum DiscountType {
+  FIXED
+  PERCENTAGE
+}
+
+enum CouponRedemptionStatus {
+  PENDING
+  REDEEMED
+  FAILED
+  CANCELLED
+}
+
+model Coupon {
+  id                   String              @id @default(uuid())
+  code                 String              @unique
+  name                 String
+  description          String?
+  discount_type        DiscountType        @default(FIXED)
+  discount_value       Float
+  max_discount         Float?
+  min_order_amount     Float               @default(0)
+  start_date           DateTime
+  expiry_date          DateTime
+  total_usage_limit    Int?
+  per_user_usage_limit Int                 @default(1)
+  new_user_only        Boolean             @default(false)
+  applicable_services  String[]            @default([])
+  terms_conditions     String?
+  is_active            Boolean             @default(true)
+  used_count           Int                 @default(0)
+  created_at           DateTime            @default(now())
+  updated_at           DateTime            @updatedAt
+  bookings             Booking[]
+  redemptions          CouponRedemption[]
+
+  @@index([code])
+  @@index([is_active])
+  @@index([expiry_date])
+  @@map("coupons")
+}
+
+model CouponRedemption {
+  id              String                 @id @default(uuid())
+  coupon_id       String
+  user_id         String
+  booking_id      String?
+  discount_amount Float
+  order_amount    Float
+  status          CouponRedemptionStatus @default(PENDING)
+  redeemed_at     DateTime?
+  created_at      DateTime               @default(now())
+  updated_at      DateTime               @updatedAt
+  coupon          Coupon                 @relation(fields: [coupon_id], references: [id], onDelete: Cascade)
+  user            User                   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  booking         Booking?               @relation(fields: [booking_id], references: [id], onDelete: SetNull)
+
+  @@index([coupon_id])
+  @@index([user_id])
+  @@index([booking_id])
+  @@index([status])
+  @@map("coupon_redemptions")
 }
 
