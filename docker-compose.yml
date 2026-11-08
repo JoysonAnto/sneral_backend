@@ -62,6 +62,8 @@ services:
     restart: unless-stopped
     ports:
       - "${PORT:-4000}:4000"
+    env_file:
+      - .env
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: 4000
@@ -69,19 +71,6 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      JWT_SECRET: ${JWT_SECRET}
-      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET}
-      SENTRY_DSN: ${SENTRY_DSN:-}
-      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
-      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
-      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
-      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
-      EMAIL_HOST: ${EMAIL_HOST:-smtp.gmail.com}
-      EMAIL_PORT: ${EMAIL_PORT:-587}
-      EMAIL_USER: ${EMAIL_USER:-}
-      EMAIL_PASSWORD: ${EMAIL_PASSWORD:-}
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001}
     depends_on:
       postgres:
         condition: service_healthy
@@ -97,14 +86,6 @@ services:
       retries: 3
       start_period: 40s
     command: sh -c "npx prisma migrate deploy && node dist/server.js"
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 2G
-        reservations:
-          cpus: '1.0'
-          memory: 1G
 
 volumes:
   postgres_data:
