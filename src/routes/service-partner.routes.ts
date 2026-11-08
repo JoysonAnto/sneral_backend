@@ -212,4 +212,13 @@ router.get('/merchandise/my-orders', authorize('SERVICE_PARTNER'), partnerContro
 // High Demand Surge Areas
 router.get('/high-demand-areas', authorize('SERVICE_PARTNER'), partnerController.getHighDemandAreas);
 
+// Direct / Walk-In Job Creation by Partner
+router.post('/direct-job', authorize('SERVICE_PARTNER'), partnerController.createDirectJob);
+
+// Daily Milestone Rewards Progress
+router.get('/rewards/today', authorize('SERVICE_PARTNER'), partnerController.getTodayRewards);
+
+// Referral Program Stats
+router.get('/referral/stats', authorize('SERVICE_PARTNER'), partnerController.getReferralStats);
+
 export default router;

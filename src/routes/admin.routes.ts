@@ -100,5 +100,38 @@ router.get('/analytics', checkPermission('REPORT_VIEW'), adminController.getDash
 router.get('/settings', checkPermission('REPORT_VIEW'), adminController.getPlatformSettings);
 router.put('/settings', checkPermission('SERVICE_MANAGE'), adminController.updatePlatformSettings);
 
+// ============================================
+// SURGE AREAS MANAGEMENT
+// ============================================
+import { adminManagementController } from '../controllers/admin-management.controller';
+
+router.get('/surge-areas', checkPermission('SERVICE_MANAGE'), adminManagementController.getSurgeAreas);
+router.post('/surge-areas', checkPermission('SERVICE_MANAGE'), adminManagementController.createSurgeArea);
+router.patch('/surge-areas/:id', checkPermission('SERVICE_MANAGE'), adminManagementController.updateSurgeArea);
+router.delete('/surge-areas/:id', checkPermission('SERVICE_MANAGE'), adminManagementController.deleteSurgeArea);
+
+// ============================================
+// MILESTONE REWARDS MANAGEMENT
+// ============================================
+router.get('/rewards/rules', checkPermission('SERVICE_MANAGE'), adminManagementController.getRewardRules);
+router.post('/rewards/rules', checkPermission('SERVICE_MANAGE'), adminManagementController.createRewardRule);
+router.patch('/rewards/rules/:id', checkPermission('SERVICE_MANAGE'), adminManagementController.updateRewardRule);
+router.delete('/rewards/rules/:id', checkPermission('SERVICE_MANAGE'), adminManagementController.deleteRewardRule);
+router.get('/rewards/claims', checkPermission('REPORT_VIEW'), adminManagementController.getRewardClaims);
+
+// ============================================
+// REFERRAL PROGRAM MANAGEMENT
+// ============================================
+router.get('/referrals/config', checkPermission('SERVICE_MANAGE'), adminManagementController.getReferralConfig);
+router.put('/referrals/config', checkPermission('SERVICE_MANAGE'), adminManagementController.updateReferralConfig);
+router.get('/referrals/logs', checkPermission('REPORT_VIEW'), adminManagementController.getReferralLogs);
+
+// ============================================
+// AGENCY / BUSINESS PARTNER FLEET
+// ============================================
+router.get('/agencies', checkPermission('USER_MANAGE'), adminManagementController.getAgencies);
+router.get('/agencies/:id/technicians', checkPermission('USER_MANAGE'), adminManagementController.getAgencyTechnicians);
+router.post('/agencies/:id/technicians', checkPermission('USER_MANAGE'), adminManagementController.linkTechnicianToAgency);
+
 export default router;
 

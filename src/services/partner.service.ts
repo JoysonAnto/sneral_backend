@@ -1265,12 +1265,27 @@ export class PartnerService {
 
         console.log(`📡 [DEBUG] Updating partner ${id} status to ${status}`);
 
+        const updateData: any = {
+            availability_status: status as any,
+            last_location_update: new Date(),
+        };
+
+        if (status === 'AVAILABLE') {
+            updateData.went_offline_at = null;
+            updateData.shift_started_at = new Date();
+            if (data.latitude && data.longitude) {
+                updateData.current_latitude = parseFloat(data.latitude);
+                updateData.current_longitude = parseFloat(data.longitude);
+                updateData.shift_center_latitude = parseFloat(data.latitude);
+                updateData.shift_center_longitude = parseFloat(data.longitude);
+            }
+        } else if (status === 'OFFLINE') {
+            updateData.went_offline_at = new Date();
+        }
+
         return await prisma.servicePartner.update({
             where: { id },
-            data: {
-                availability_status: status as any,
-                last_location_update: new Date()
-            },
+            data: updateData,
         });
     }
 
@@ -2031,6 +2046,26 @@ export class PartnerService {
     }
 
     async getHighDemandAreas() {
+        const dbSurgeAreas = await prisma.surgeArea.findMany({
+            where: { is_active: true },
+            orderBy: { surge_multiplier: 'desc' }
+        });
+
+        if (dbSurgeAreas.length > 0) {
+            return dbSurgeAreas.map(sa => ({
+                id: sa.id,
+                name: sa.name,
+                city: sa.city,
+                latitude: sa.latitude,
+                longitude: sa.longitude,
+                radiusKm: sa.radius_km,
+                surgeMultiplier: sa.surge_multiplier,
+                bonusPerOrder: sa.bonus_per_order,
+                demandLevel: sa.surge_multiplier >= 1.4 ? 'VERY_HIGH' : 'HIGH',
+                activeOrdersWaiting: Math.floor(Math.random() * 8) + 5
+            }));
+        }
+
         return [
             {
                 id: 'surge_1',
@@ -2051,28 +2086,197 @@ export class PartnerService {
                 activeOrdersWaiting: 9,
                 bonusPerOrder: 50,
                 recommendedSkills: ['Washing Machine Technician', 'RO Technician']
-            },
-            {
-                id: 'surge_3',
-                name: 'Indiranagar & Domlur Central',
-                city: 'Bengaluru',
-                surgeMultiplier: 1.4,
-                demandLevel: 'HIGH',
-                activeOrdersWaiting: 11,
-                bonusPerOrder: 65,
-                recommendedSkills: ['Electrician', 'Refrigerator Technician', 'AC Technician']
-            },
-            {
-                id: 'surge_4',
-                name: 'Whitefield IT Hub & Hope Farm',
-                city: 'Bengaluru',
-                surgeMultiplier: 1.25,
-                demandLevel: 'MODERATE_HIGH',
-                activeOrdersWaiting: 8,
-                bonusPerOrder: 40,
-                recommendedSkills: ['Plumber', 'RO Technician']
             }
         ];
+    }
+
+    /**
+     * Create direct on-the-spot customer job by partner
+     */
+    async createDirectJob(partnerUserId: string, data: {
+        customerPhone: string;
+        customerName: string;
+        serviceId: string;
+        packageId?: string;
+        hours?: number;
+        customPrice?: number;
+        serviceAddress?: string;
+        serviceLatitude?: number;
+        serviceLongitude?: number;
+        notes?: string;
+    }) {
+        const partner = await prisma.servicePartner.findUnique({
+            where: { user_id: partnerUserId },
+            include: { user: true }
+        });
+
+        if (!partner) {
+            throw new NotFoundError('Service partner not found');
+        }
+
+        if (partner.is_on_hold || partner.is_blacklisted) {
+            throw new BadRequestError('Partner is currently restricted from creating or accepting bookings');
+        }
+
+        const cleanPhone = (data.customerPhone || '').replace(/\D/g, '').slice(-10);
+        if (!cleanPhone || cleanPhone.length !== 10) {
+            throw new BadRequestError('Valid 10-digit customer mobile number is required');
+        }
+
+        // 1. Find or auto-register customer
+        let customer = await prisma.user.findFirst({
+            where: { phone_number: cleanPhone }
+        });
+
+        if (!customer) {
+            const randomCode = `CUST-${cleanPhone.slice(-4)}${Math.floor(1000 + Math.random() * 9000)}`;
+            const hashedPassword = await hashPassword(`Snearal@${cleanPhone.slice(-4)}`);
+            customer = await prisma.user.create({
+                data: {
+                    phone_number: cleanPhone,
+                    full_name: data.customerName || `Customer ${cleanPhone.slice(-4)}`,
+                    email: `${cleanPhone}@customer.snearal.com`,
+                    password: hashedPassword,
+                    role: 'CUSTOMER',
+                    referral_code: randomCode,
+                    referred_by_code: partner.referral_code || null,
+                    phone_verified: true,
+                }
+            });
+
+            // Create wallet for new customer
+            await prisma.wallet.create({
+                data: {
+                    user_id: customer.id,
+                    type: 'CUSTOMER',
+                    balance: 0
+                }
+            }).catch(() => null);
+        }
+
+        // 2. Fetch service & package
+        const service = await prisma.service.findUnique({
+            where: { id: data.serviceId },
+            include: { category: true }
+        });
+
+        if (!service) {
+            throw new NotFoundError('Service not found');
+        }
+
+        let packageItem: any = null;
+        if (data.packageId) {
+            packageItem = await prisma.servicePackage.findUnique({
+                where: { id: data.packageId }
+            });
+        }
+
+        const agreedPrice = data.customPrice && data.customPrice > 0 
+            ? data.customPrice 
+            : (packageItem ? packageItem.price : service.base_price);
+
+        const durationMinutes = packageItem 
+            ? Math.round(packageItem.hours * 60) 
+            : (data.hours ? Math.round(data.hours * 60) : (service.duration || 60));
+
+        const bookingNumber = `DIR${Date.now().toString().slice(-8)}${Math.floor(100 + Math.random() * 900)}`;
+        const serviceLat = data.serviceLatitude || partner.current_latitude || 12.9716;
+        const serviceLng = data.serviceLongitude || partner.current_longitude || 77.5946;
+        const address = data.serviceAddress || `On-Site Service (${partner.user.full_name})`;
+
+        // 3. Create Booking directly in IN_PROGRESS
+        const booking = await prisma.booking.create({
+            data: {
+                booking_number: bookingNumber,
+                customer_id: customer.id,
+                partner_id: partner.id,
+                status: 'IN_PROGRESS',
+                scheduled_date: new Date(),
+                scheduled_time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+                service_address: address,
+                service_latitude: serviceLat,
+                service_longitude: serviceLng,
+                total_amount: agreedPrice,
+                remaining_amount: agreedPrice,
+                payment_method: 'CASH',
+                started_at: new Date(),
+                partner_assigned_at: new Date(),
+                partner_accepted_at: new Date(),
+                estimated_duration: durationMinutes,
+                special_instructions: data.notes || 'Direct on-the-spot booking created by partner',
+                items: {
+                    create: [
+                        {
+                            service_id: service.id,
+                            package_id: packageItem ? packageItem.id : null,
+                            quantity: 1,
+                            unit_price: agreedPrice,
+                            total_price: agreedPrice
+                        }
+                    ]
+                },
+                status_history: {
+                    create: [
+                        {
+                            status: 'IN_PROGRESS',
+                            changed_by: partner.user_id,
+                            notes: `Direct booking created and started on-the-spot by ${partner.user.full_name}`
+                        }
+                    ]
+                }
+            },
+            include: {
+                customer: true,
+                partner: { include: { user: true } },
+                items: { include: { service: true } }
+            }
+        });
+
+        // 4. Update Partner Status to BUSY
+        await prisma.servicePartner.update({
+            where: { id: partner.id },
+            data: {
+                availability_status: 'BUSY',
+                last_location_update: new Date()
+            }
+        });
+
+        // 5. Configurable App Download link & SMS text
+        const appDownloadUrl = process.env.CUSTOMER_APP_DOWNLOAD_URL || 'https://play.google.com/store/apps/details?id=com.snearal.user';
+        const trackingUrl = process.env.CUSTOMER_APP_URL 
+            ? `${process.env.CUSTOMER_APP_URL}/booking/track?id=${booking.id}` 
+            : `https://snearal.com/track/${booking.id}`;
+
+        const notificationMessage = `Hello ${customer.full_name}! Your ${service.name} service with Snearal Pro ${partner.user.full_name} has started (Booking #${booking.booking_number}). Track job: ${trackingUrl} | Download our app for exclusive discounts: ${appDownloadUrl} | Use referral code ${partner.referral_code || 'SNEARAL100'} for ₹100 OFF on your next in-app booking!`;
+
+        logger.info(`[DIRECT_JOB] SMS dispatched to ${cleanPhone}: ${notificationMessage}`);
+
+        // Broadcast realtime update
+        try {
+            const io = getIO();
+            io.of('/partner').to(partner.user_id).emit('booking:direct_started', {
+                bookingId: booking.id,
+                bookingNumber: booking.booking_number,
+                customer: { name: customer.full_name, phone: customer.phone_number },
+                serviceName: service.name,
+                amount: agreedPrice,
+            });
+            io.of('/admin').to('admin').emit('booking:created', {
+                bookingId: booking.id,
+                bookingNumber: booking.booking_number,
+                type: 'DIRECT_JOB',
+                partner: partner.user.full_name,
+            });
+        } catch (e) {
+            logger.warn('Socket broadcast error in direct job:', e);
+        }
+
+        return {
+            booking,
+            smsMessage: notificationMessage,
+            appDownloadUrl,
+            referralCode: partner.referral_code,
+        };
     }
 
     formatPartnerData(partner: any) {

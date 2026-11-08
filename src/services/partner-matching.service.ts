@@ -36,8 +36,8 @@ export class PartnerMatchingService {
      * 3. End-of-Day destination mode ("Go to Home Location")
      * 4. Availability & KYC status
      */
-    async findAvailablePartners(bookingId: string): Promise<PartnerWithDistance[]> {
-        logger.info(`Finding available partners for booking: ${bookingId}`);
+    async findAvailablePartners(bookingId: string, maxRadiusKm?: number): Promise<PartnerWithDistance[]> {
+        logger.info(`Finding available partners for booking: ${bookingId} (Max Radius: ${maxRadiusKm || 'standard'} km)`);
 
         // Get booking details with service and category
         const booking = await prisma.booking.findUnique({
@@ -159,8 +159,9 @@ export class PartnerMatchingService {
                     return false;
                 }
 
-                if (process.env.NODE_ENV === 'development') return true;
-                return p.distance <= (p.service_radius || 15);
+                if (process.env.NODE_ENV === 'development' && !maxRadiusKm) return true;
+                const effectiveRadius = maxRadiusKm || p.service_radius || 15;
+                return p.distance <= effectiveRadius;
             })
             .sort((a, b) => {
                 // Prioritize destination mode partners whose home route matches
@@ -177,6 +178,83 @@ export class PartnerMatchingService {
         });
 
         return partnersWithDistance;
+    }
+
+    /**
+     * Find busy partners within maxRadiusKm who are currently in progress
+     * and nearing completion (elapsed >= 70% of duration)
+     */
+    async findBusyPartnersEndingSoon(bookingId: string, maxRadiusKm: number = 12): Promise<PartnerWithDistance[]> {
+        const booking = await prisma.booking.findUnique({
+            where: { id: bookingId },
+            include: {
+                items: { include: { service: true } }
+            }
+        });
+
+        if (!booking || !booking.service_latitude || !booking.service_longitude) return [];
+        const categoryId = booking.items[0]?.service?.category_id;
+        const bLat = booking.service_latitude;
+        const bLng = booking.service_longitude;
+        const now = Date.now();
+
+        const busyPartners = await prisma.servicePartner.findMany({
+            where: {
+                OR: [
+                    { category_id: categoryId },
+                    { skill_categories: { has: categoryId } },
+                    { services: { some: { service: { category_id: categoryId }, is_available: true } } }
+                ],
+                availability_status: 'BUSY',
+                partner_status: { notIn: ['SUSPENDED', 'INACTIVE', 'REJECTED'] as any },
+                is_on_hold: false,
+                is_blacklisted: false,
+                user: { is_active: true },
+                bookings: {
+                    some: {
+                        status: 'IN_PROGRESS'
+                    }
+                }
+            },
+            include: {
+                user: { select: { id: true, full_name: true, phone_number: true } },
+                bookings: {
+                    where: { status: 'IN_PROGRESS' },
+                    include: { items: { include: { service: true } } }
+                }
+            }
+        });
+
+        const qualified: PartnerWithDistance[] = [];
+
+        for (const p of busyPartners) {
+            const pLat = p.current_latitude;
+            const pLng = p.current_longitude;
+            if (!pLat || !pLng) continue;
+
+            const distance = this.calculateDistance(bLat, bLng, pLat, pLng);
+            if (distance > maxRadiusKm) continue;
+
+            const activeBooking = p.bookings[0];
+            if (!activeBooking) continue;
+
+            const startedTime = activeBooking.started_at ? activeBooking.started_at.getTime() : activeBooking.created_at.getTime();
+            const elapsedMins = (now - startedTime) / 60000;
+            const estDuration = activeBooking.estimated_duration || 60;
+            const percentElapsed = (elapsedMins / estDuration) * 100;
+
+            // Qualified if at least 70% elapsed or within 15 minutes of expected finish
+            if (percentElapsed >= 70 || (estDuration - elapsedMins) <= 15) {
+                qualified.push({
+                    ...p,
+                    distance,
+                    hexDistance: 0,
+                    isHeadingHome: false
+                });
+            }
+        }
+
+        return qualified.sort((a, b) => a.distance - b.distance);
     }
 
     /**

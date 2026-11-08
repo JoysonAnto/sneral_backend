@@ -152,6 +152,33 @@ router.post(
     bookingController.assignPartner
 );
 
+router.get(
+    '/:id/dispatch-candidates',
+    (req: any, res, next) => {
+        if (req.user?.role === 'BUSINESS_PARTNER') return next();
+        return checkPermission('BOOKING_MANAGE')(req, res, next);
+    },
+    bookingController.getDispatchCandidates
+);
+
+router.post(
+    '/:id/wake-up-partner',
+    (req: any, res, next) => {
+        if (req.user?.role === 'BUSINESS_PARTNER') return next();
+        return checkPermission('BOOKING_MANAGE')(req, res, next);
+    },
+    bookingController.sendWakeUpAlert
+);
+
+router.post(
+    '/:id/assign-override',
+    (req: any, res, next) => {
+        if (req.user?.role === 'BUSINESS_PARTNER') return next();
+        return checkPermission('BOOKING_MANAGE')(req, res, next);
+    },
+    bookingController.forceOnlineAndAssign
+);
+
 /**
  * @swagger
  * /bookings/{id}/accept:

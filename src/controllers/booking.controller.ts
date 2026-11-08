@@ -93,6 +93,42 @@ export class BookingController {
         }
     };
 
+    getDispatchCandidates = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { manualDispatchService } = await import('../services/manual-dispatch.service');
+            const data = await manualDispatchService.getDispatchCandidates(req.params.id);
+            res.json(successResponse(data, 'Dispatch candidates fetched successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    sendWakeUpAlert = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { manualDispatchService } = await import('../services/manual-dispatch.service');
+            const { partnerId } = req.body;
+            const result = await manualDispatchService.sendWakeUpAlert(req.params.id, partnerId);
+            res.json(successResponse(result, 'Wake up alert sent to partner successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    forceOnlineAndAssign = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { manualDispatchService } = await import('../services/manual-dispatch.service');
+            const { partnerId } = req.body;
+            const booking = await manualDispatchService.forceOnlineAndAssign(
+                req.params.id,
+                partnerId,
+                req.user!.userId
+            );
+            res.json(successResponse(booking, 'Partner assigned and brought online successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
     acceptBooking = async (req: Request, res: Response, next: NextFunction) => {
         try {
             console.log(`🔍 [ACCEPT DEBUG] Partner ${req.user?.userId} attempting to accept booking ${req.params.id}`);

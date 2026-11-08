@@ -30,6 +30,8 @@ model User {
   is_active               Boolean             @default(true)
   role_id                 String?
   fcm_token               String?
+  referral_code           String?             @unique
+  referred_by_code        String?
   avg_rating              Float               @default(0)
   total_reviews           Int                 @default(0)
   audit_logs              AuditLog[]
@@ -49,6 +51,8 @@ model User {
   withdrawals             WithdrawalRequest[]
   tickets                 Ticket[]
   coupon_redemptions      CouponRedemption[]
+  referrals_made          ReferralTracking[]  @relation("ReferrerUser")
+  referrals_received      ReferralTracking[]  @relation("RefereeUser")
 
 
   @@index([email])
@@ -119,6 +123,10 @@ model ServicePartner {
   referred_by_code     String?
   kyc_rejection_reason String?
   last_location_update DateTime?
+  shift_center_latitude  Float?
+  shift_center_longitude Float?
+  shift_started_at       DateTime?
+  went_offline_at        DateTime?
   partner_status       PartnerStatus            @default(PENDING)
   experience_years     Int                      @default(0)
   alternate_phone      String?
@@ -136,6 +144,7 @@ model ServicePartner {
   services             PartnerService[]
   payout_methods       PartnerPayoutMethod[]
   merchandise_orders   MerchandiseOrder[]
+  reward_claims        PartnerRewardClaim[]
   business_partner     BusinessPartner?         @relation(fields: [business_partner_id], references: [id])
   category             Category?                @relation(fields: [category_id], references: [id])
   user                 User                     @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -443,6 +452,8 @@ model Booking {
   is_scheduled          Boolean                  @default(false)
   booking_type          BookingType              @default(INSTANT)
   scheduled_date_time   DateTime?
+  is_queued             Boolean                  @default(false)
+  current_search_radius Float?                   @default(2.0)
   activity_logs         BookingActivityLog[]
   items                 BookingItem[]
   status_history        BookingStatusHistory[]
@@ -1030,6 +1041,8 @@ enum TransactionType {
   CASHBACK
   TAX_DEDUCTION
   PENALTY
+  REWARD_BONUS
+  REFERRAL_BONUS
 }
 
 enum UserRole {
@@ -1324,4 +1337,132 @@ model CouponRedemption {
   @@index([status])
   @@map("coupon_redemptions")
 }
+
+// ============================================
+// SURGE & HIGH DEMAND ZONES
+// ============================================
+model SurgeArea {
+  id               String    @id @default(uuid())
+  name             String
+  city             String
+  latitude         Float
+  longitude        Float
+  radius_km        Float     @default(5)
+  surge_multiplier Float     @default(1.3)
+  bonus_per_order  Float     @default(50)
+  is_active        Boolean   @default(true)
+  starts_at        DateTime?
+  expires_at       DateTime?
+  created_at       DateTime  @default(now())
+  updated_at       DateTime  @updatedAt
+
+  @@index([city])
+  @@index([is_active])
+  @@map("surge_areas")
+}
+
+// ============================================
+// PARTNER MILESTONE REWARDS
+// ============================================
+enum RewardCycle {
+  DAILY
+  WEEKLY
+}
+
+enum RewardType {
+  WALLET_MONEY
+  REWARD_POINTS
+}
+
+model PartnerRewardRule {
+  id             String               @id @default(uuid())
+  title          String
+  target_jobs    Int?
+  target_hours   Float?
+  condition_type String               @default("OR") // "OR" or "AND"
+  reward_type    RewardType           @default(WALLET_MONEY)
+  reward_amount  Float
+  cycle          RewardCycle          @default(DAILY)
+  is_active      Boolean              @default(true)
+  created_at     DateTime             @default(now())
+  updated_at     DateTime             @updatedAt
+  claims         PartnerRewardClaim[]
+
+  @@map("partner_reward_rules")
+}
+
+model PartnerRewardClaim {
+  id                       String            @id @default(uuid())
+  partner_id               String
+  rule_id                  String
+  cycle_date               String            // "YYYY-MM-DD"
+  reward_amount            Float
+  transaction_id           String?
+  completed_jobs_at_claim  Int
+  completed_hours_at_claim Float
+  created_at               DateTime          @default(now())
+
+  partner                  ServicePartner    @relation(fields: [partner_id], references: [id], onDelete: Cascade)
+  rule                     PartnerRewardRule @relation(fields: [rule_id], references: [id], onDelete: Cascade)
+
+  @@unique([partner_id, rule_id, cycle_date])
+  @@index([partner_id])
+  @@index([cycle_date])
+  @@map("partner_reward_claims")
+}
+
+// ============================================
+// DUAL REFERRAL PROGRAM (CUSTOMER & PARTNER)
+// ============================================
+enum ReferralType {
+  CUSTOMER_TO_CUSTOMER
+  PARTNER_TO_PARTNER
+  PARTNER_TO_CUSTOMER
+}
+
+enum ReferralStatus {
+  PENDING
+  QUALIFIED
+  REWARDED
+  CANCELLED
+}
+
+model ReferralTracking {
+  id                   String         @id @default(uuid())
+  referrer_user_id     String
+  referee_user_id      String
+  referral_type        ReferralType   @default(CUSTOMER_TO_CUSTOMER)
+  referral_code        String
+  status               ReferralStatus @default(PENDING)
+  referrer_reward      Float          @default(100)
+  referee_reward       Float          @default(100)
+  qualification_target Int            @default(1) // 1 job for customer, 5 jobs for partner
+  qualifying_count     Int            @default(0)
+  rewarded_at          DateTime?
+  created_at           DateTime       @default(now())
+  updated_at           DateTime       @updatedAt
+
+  referrer             User           @relation("ReferrerUser", fields: [referrer_user_id], references: [id], onDelete: Cascade)
+  referee              User           @relation("RefereeUser", fields: [referee_user_id], references: [id], onDelete: Cascade)
+
+  @@unique([referrer_user_id, referee_user_id, referral_type])
+  @@index([referral_code])
+  @@index([status])
+  @@map("referral_trackings")
+}
+
+model ReferralConfig {
+  id                       String   @id @default(uuid())
+  customer_referrer_reward Float    @default(100)
+  customer_referee_reward  Float    @default(100)
+  partner_referrer_reward  Float    @default(1000)
+  partner_qualifying_jobs  Int      @default(5)
+  partner_referee_reward   Float    @default(500)
+  is_active                Boolean  @default(true)
+  created_at               DateTime @default(now())
+  updated_at               DateTime @updatedAt
+
+  @@map("referral_configs")
+}
+
 

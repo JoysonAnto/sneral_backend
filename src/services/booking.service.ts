@@ -278,29 +278,22 @@ export class BookingService {
             const { PartnerMatchingService } = await import('./partner-matching.service');
             const matchingService = new PartnerMatchingService();
 
-            // Find available partners
-            const partners = await matchingService.findAvailablePartners(bookingId);
+            // Record initial Wave 1 radius (2 km)
+            await prisma.booking.update({
+                where: { id: bookingId },
+                data: { current_search_radius: 2.0 } as any
+            });
 
-            // Update status to SEARCHING_PARTNER if any partners found
-            if (partners.length > 0) {
-                await this.updateBookingStatus(
-                    bookingId,
-                    'SEARCHING_PARTNER',
-                    'system',
-                    'Searching for available partners'
-                );
-            }
+            // Find available partners in 2 km
+            const partners = await matchingService.findAvailablePartners(bookingId, 2.0);
 
-            if (partners.length === 0) {
-                logger.warn(`No available partners found for booking: ${bookingId}`);
-                await this.updateBookingStatus(
-                    bookingId,
-                    'PARTNER_NOT_FOUND',
-                    'system',
-                    'No available partners in the area'
-                );
-                return;
-            }
+            // Update status to SEARCHING_PARTNER
+            await this.updateBookingStatus(
+                bookingId,
+                'SEARCHING_PARTNER',
+                'system',
+                'Searching for available partners within 2 km'
+            );
 
             // Get booking details for notification
             const booking = await prisma.booking.findUnique({
@@ -317,6 +310,7 @@ export class BookingService {
                     },
                     customer: {
                         select: {
+                            id: true,
                             full_name: true,
                         },
                     },
@@ -325,11 +319,23 @@ export class BookingService {
 
             if (!booking) return;
 
+            // Emit wave 1 socket event to customer
+            const io = getIO();
+            io.of('/customer').to(booking.customer_id).emit('booking:search_expanded', {
+                bookingId: booking.id,
+                wave: 1,
+                currentRadius: 2.0,
+                message: 'Searching for nearby experts within 2 km...'
+            });
+
+            if (partners.length === 0) {
+                logger.warn(`No Wave 1 partners found within 2 km for booking: ${bookingId}. Progressive search cron will expand to 5km, 8km, and 12km.`);
+                return;
+            }
+
             const serviceItem = booking.items[0];
 
             // Notify all matching partners via Socket.IO
-            const io = getIO();
-
             for (const partner of partners) {
                 try {
                     logger.info(`[SOCKET_DEBUG] Attempting to notify partner ${partner.user.full_name} in room: ${partner.user_id}`);
@@ -782,6 +788,23 @@ export class BookingService {
                 logger.info(`Earnings distributed for booking ${bookingId}`);
             } catch (error) {
                 logger.error(`Failed to distribute earnings for booking ${bookingId}:`, error);
+            }
+
+            // Milestone rewards & referral evaluations
+            try {
+                if (updatedBooking.partner_id) {
+                    const { partnerRewardService } = await import('./partner-reward.service');
+                    await partnerRewardService.evaluateMilestones(updatedBooking.partner_id);
+
+                    const { referralService } = await import('./referral.service');
+                    await referralService.checkAndRewardPartnerCompletion(updatedBooking.partner_id);
+                }
+                if (updatedBooking.customer_id) {
+                    const { referralService } = await import('./referral.service');
+                    await referralService.checkAndRewardCustomerBooking(updatedBooking.customer_id);
+                }
+            } catch (evalErr) {
+                logger.error(`Failed evaluating rewards/referrals for booking ${bookingId}:`, evalErr);
             }
         }
 

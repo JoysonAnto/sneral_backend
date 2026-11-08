@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { PartnerService } from '../services/partner.service';
 import { successResponse } from '../utils/response';
+import prisma from '../config/database';
 
 export class PartnerController {
     private partnerService: PartnerService;
@@ -488,6 +489,61 @@ export class PartnerController {
         try {
             const areas = await this.partnerService.getHighDemandAreas();
             res.json(successResponse(areas, 'High demand areas retrieved successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    createDirectJob = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const partner = await prisma.servicePartner.findUnique({
+                where: { user_id: req.user!.userId }
+            });
+            if (!partner) {
+                res.status(404).json({ success: false, message: 'Partner profile not found' });
+                return;
+            }
+            const { customerPhone, customerName, serviceId, packageId, price, hours, address, latitude, longitude, notes } = req.body;
+            const result = await this.partnerService.createDirectJob(req.user!.userId, {
+                customerPhone,
+                customerName,
+                serviceId,
+                packageId,
+                hours: hours ? Number(hours) : undefined,
+                customPrice: price !== undefined ? Number(price) : undefined,
+                serviceAddress: address || 'Direct Customer Walk-in',
+                serviceLatitude: latitude !== undefined ? Number(latitude) : (partner.current_latitude || 0),
+                serviceLongitude: longitude !== undefined ? Number(longitude) : (partner.current_longitude || 0),
+                notes
+            });
+            res.status(201).json(successResponse(result, 'Direct job started successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    getTodayRewards = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const partner = await prisma.servicePartner.findUnique({
+                where: { user_id: req.user!.userId }
+            });
+            if (!partner) {
+                res.status(404).json({ success: false, message: 'Partner profile not found' });
+                return;
+            }
+            const { partnerRewardService } = await import('../services/partner-reward.service');
+            const data = await partnerRewardService.getPartnerDailyRewards(partner.id);
+            res.json(successResponse(data, 'Daily rewards progress fetched successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    getReferralStats = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+        try {
+            const { referralService } = await import('../services/referral.service');
+            const data = await referralService.getUserReferralInfo(req.user!.userId);
+            res.json(successResponse(data, 'Referral stats fetched successfully'));
         } catch (error) {
             next(error);
         }
