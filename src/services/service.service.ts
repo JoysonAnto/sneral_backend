@@ -22,6 +22,68 @@ interface CreateCategoryData {
     isActive?: boolean | string;
 }
 
+export interface FormattedPackage {
+    id: string;
+    serviceId: string;
+    service_id: string;
+    hours: number;
+    title: string;
+    durationMinutes: number;
+    duration_minutes: number;
+    price: number;
+    originalPrice: number;
+    original_price: number;
+    savings: number;
+    discountPercentage: number;
+    discount_percentage: number;
+    isPopular: boolean;
+    is_popular: boolean;
+    displayOrder: number;
+    display_order: number;
+}
+
+export function formatServicePackages(packages: any[] = [], serviceBasePrice: number = 0): FormattedPackage[] {
+    if (!packages || packages.length === 0) return [];
+
+    // Find 1-hour package or calculate base hourly rate
+    const oneHourPkg = packages.find(p => Number(p.hours) === 1);
+    const baseHourlyRate = oneHourPkg
+        ? Number(oneHourPkg.price)
+        : (serviceBasePrice > 0 ? serviceBasePrice : (Number(packages[0]?.price) / (Number(packages[0]?.hours) || 1)));
+
+    return packages.map(pkg => {
+        const calculatedOriginalPrice = pkg.original_price != null
+            ? Number(pkg.original_price)
+            : Math.round(Number(pkg.hours) * baseHourlyRate);
+
+        const price = Number(pkg.price);
+        const savings = Math.max(0, calculatedOriginalPrice - price);
+        const discountPercentage = calculatedOriginalPrice > 0 && savings > 0
+            ? Math.round((savings / calculatedOriginalPrice) * 100)
+            : 0;
+
+        return {
+            id: pkg.id,
+            serviceId: pkg.service_id,
+            service_id: pkg.service_id,
+            hours: Number(pkg.hours),
+            title: pkg.title || `${pkg.hours} ${Number(pkg.hours) === 1 ? 'Hour' : 'Hours'}`,
+            durationMinutes: Math.round(Number(pkg.hours) * 60),
+            duration_minutes: Math.round(Number(pkg.hours) * 60),
+            price,
+            originalPrice: calculatedOriginalPrice,
+            original_price: calculatedOriginalPrice,
+            savings,
+            discountPercentage,
+            discount_percentage: discountPercentage,
+            isPopular: !!pkg.is_popular,
+            is_popular: !!pkg.is_popular,
+            displayOrder: pkg.display_order || 1,
+            display_order: pkg.display_order || 1,
+        };
+    });
+}
+
 export class ServiceService {
     async getAllServices(filters: any = {}) {
         const category = filters.category || filters.categoryId;
@@ -70,6 +132,10 @@ export class ServiceService {
                             icon_url: true,
                         },
                     },
+                    packages: {
+                        where: { is_active: true },
+                        orderBy: { hours: 'asc' },
+                    },
                 },
                 orderBy: [
                     { display_order: 'asc' },
@@ -107,6 +173,7 @@ export class ServiceService {
             is_active: service.is_active,
             avgRating: 4.5, // TODO: Calculate from actual ratings
             totalRatings: 0, // TODO: Count from actual ratings
+            packages: formatServicePackages(service.packages || [], service.base_price),
             createdAt: service.created_at,
             created_at: service.created_at,
         }));
@@ -137,6 +204,10 @@ export class ServiceService {
                         description: true,
                         icon_url: true,
                     },
+                },
+                packages: {
+                    where: { is_active: true },
+                    orderBy: { hours: 'asc' },
                 },
             },
         });
@@ -173,6 +244,7 @@ export class ServiceService {
             is_active: service.is_active,
             avgRating: 4.5, // TODO: Calculate from actual ratings
             totalRatings: 0, // TODO: Count from actual ratings
+            packages: formatServicePackages(service.packages || [], service.base_price),
             createdAt: service.created_at,
             updatedAt: service.updated_at,
         };
@@ -508,6 +580,10 @@ export class ServiceService {
             where: { id: serviceId },
             include: {
                 category: true,
+                packages: {
+                    where: { is_active: true },
+                    orderBy: { hours: 'asc' },
+                },
                 location_pricing: {
                     where: { is_active: true },
                     include: {
@@ -537,6 +613,7 @@ export class ServiceService {
             duration: service.duration,
             imageUrl: service.image_url,
             isActive: service.is_active,
+            packages: formatServicePackages(service.packages || [], service.base_price),
             locationPricing: service.location_pricing.map(lp => ({
                 id: lp.id,
                 price: lp.price,
@@ -836,6 +913,82 @@ export class ServiceService {
             totalRatings: 25,
             createdAt: service.created_at,
         }));
+    }
+
+    async getServicePackages(serviceId: string) {
+        const service = await prisma.service.findUnique({
+            where: { id: serviceId },
+            include: {
+                packages: {
+                    orderBy: { hours: 'asc' },
+                },
+            },
+        });
+        if (!service) throw new NotFoundError('Service not found');
+        return formatServicePackages(service.packages, service.base_price);
+    }
+
+    async createServicePackage(serviceId: string, data: any) {
+        const service = await prisma.service.findUnique({ where: { id: serviceId } });
+        if (!service) throw new NotFoundError('Service not found');
+
+        const hours = parseFloat(data.hours);
+        const price = parseFloat(data.price);
+        const originalPrice = (data.original_price != null || data.originalPrice != null)
+            ? parseFloat(data.original_price ?? data.originalPrice)
+            : null;
+
+        const pkg = await prisma.servicePackage.create({
+            data: {
+                service_id: serviceId,
+                hours,
+                title: data.title || `${hours} ${hours === 1 ? 'Hour' : 'Hours'}`,
+                price,
+                original_price: originalPrice,
+                is_popular: data.is_popular === true || data.isPopular === true,
+                is_active: data.is_active !== false && data.isActive !== false,
+                display_order: parseInt(data.display_order || data.displayOrder || '1', 10),
+            },
+        });
+        return pkg;
+    }
+
+    async updateServicePackage(packageId: string, data: any) {
+        const existing = await prisma.servicePackage.findUnique({ where: { id: packageId } });
+        if (!existing) throw new NotFoundError('Package not found');
+
+        const updateData: any = {};
+        if (data.hours != null) updateData.hours = parseFloat(data.hours);
+        if (data.price != null) updateData.price = parseFloat(data.price);
+        if (data.original_price !== undefined || data.originalPrice !== undefined) {
+            updateData.original_price = (data.original_price ?? data.originalPrice) != null
+                ? parseFloat(data.original_price ?? data.originalPrice)
+                : null;
+        }
+        if (data.title != null) updateData.title = data.title;
+        if (data.is_popular !== undefined || data.isPopular !== undefined) {
+            updateData.is_popular = data.is_popular ?? data.isPopular;
+        }
+        if (data.is_active !== undefined || data.isActive !== undefined) {
+            updateData.is_active = data.is_active ?? data.isActive;
+        }
+        if (data.display_order != null || data.displayOrder != null) {
+            updateData.display_order = parseInt(data.display_order ?? data.displayOrder, 10);
+        }
+
+        const pkg = await prisma.servicePackage.update({
+            where: { id: packageId },
+            data: updateData,
+        });
+        return pkg;
+    }
+
+    async deleteServicePackage(packageId: string) {
+        const existing = await prisma.servicePackage.findUnique({ where: { id: packageId } });
+        if (!existing) throw new NotFoundError('Package not found');
+
+        await prisma.servicePackage.delete({ where: { id: packageId } });
+        return { success: true, message: 'Package deleted successfully' };
     }
 }
 

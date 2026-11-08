@@ -20,7 +20,10 @@ const broadcastStatsUpdate = async () => {
 };
 
 interface BookingItemData {
-    serviceId: string;
+    serviceId?: string;
+    service_id?: string;
+    packageId?: string;
+    package_id?: string;
     quantity: number;
 }
 
@@ -57,7 +60,7 @@ export class BookingService {
         }
 
         // 1. Fetch all services
-        const serviceIds = data.items.map(item => item.serviceId);
+        const serviceIds = data.items.map(item => (item.serviceId || item.service_id) as string).filter(Boolean);
         const services = await prisma.service.findMany({
             where: { id: { in: serviceIds } },
             include: { category: true }
@@ -67,12 +70,20 @@ export class BookingService {
             throw new NotFoundError('One or more services not found');
         }
 
+        // Fetch any packages referenced in items
+        const packageIds = data.items.map(item => item.packageId || item.package_id).filter(Boolean) as string[];
+        const packages = packageIds.length > 0
+            ? await prisma.servicePackage.findMany({ where: { id: { in: packageIds } } })
+            : [];
+        const packageMap = new Map(packages.map(p => [p.id, p]));
+
         // 2. Group items by Category
         const itemsByCategory = new Map<string, typeof services>();
         const serviceMap = new Map(services.map(s => [s.id, s]));
 
         for (const item of data.items) {
-            const service = serviceMap.get(item.serviceId)!;
+            const sId = (item.serviceId || item.service_id)!;
+            const service = serviceMap.get(sId)!;
             if (!service.is_active) throw new BadRequestError(`Service ${service.name} is inactive`);
 
             const categoryId = service.category_id;
@@ -94,16 +105,20 @@ export class BookingService {
 
             let grossOrderAmount = 0;
             for (const item of data.items) {
-                const service = serviceMap.get(item.serviceId)!;
+                const sId = (item.serviceId || item.service_id)!;
+                const service = serviceMap.get(sId)!;
                 const dynamicMultiplier = data.dynamicMultiplier || 1.0;
-                grossOrderAmount += service.base_price * dynamicMultiplier * item.quantity;
+                const pkgId = item.packageId || item.package_id;
+                const pkg = pkgId ? packageMap.get(pkgId) : null;
+                const unitPrice = pkg ? pkg.price : service.base_price;
+                grossOrderAmount += unitPrice * dynamicMultiplier * item.quantity;
             }
 
             const valResult = await couponService.validateCoupon(customerId, {
                 code: data.couponCode,
                 couponId: data.couponId,
                 amount: grossOrderAmount,
-                items: data.items,
+                items: data.items.map(i => ({ serviceId: (i.serviceId || i.service_id)!, quantity: i.quantity })),
             });
 
             appliedCoupon = valResult.coupon;
@@ -118,16 +133,22 @@ export class BookingService {
             // Calculate Totals for this Booking
             let originalSubtotal = 0;
             const bookingItemsData = [];
+            let totalEstimatedDuration = 0;
 
             for (const service of categoryServices) {
-                const itemData = data.items.find(i => i.serviceId === service.id)!;
+                const itemData = data.items.find(i => (i.serviceId || i.service_id) === service.id)!;
                 const dynamicMultiplier = data.dynamicMultiplier || 1.0;
-                const unitPrice = service.base_price;
-                const lineTotal = unitPrice * dynamicMultiplier * itemData.quantity; // Assuming multiplier applies to unit price
+                const pkgId = itemData.packageId || itemData.package_id;
+                const pkg = pkgId ? packageMap.get(pkgId) : null;
+                const unitPrice = pkg ? pkg.price : service.base_price;
+                const lineTotal = unitPrice * dynamicMultiplier * itemData.quantity;
 
                 originalSubtotal += lineTotal;
+                totalEstimatedDuration += pkg ? Math.round(pkg.hours * 60) : service.duration;
+
                 bookingItemsData.push({
                     service_id: service.id,
+                    package_id: pkg ? pkg.id : null,
                     quantity: itemData.quantity,
                     unit_price: unitPrice,
                     total_price: lineTotal
@@ -167,7 +188,7 @@ export class BookingService {
                     is_scheduled: data.isScheduled === true,
                     booking_type: data.bookingType === 'scheduled' ? 'SCHEDULED' : 'INSTANT',
                     scheduled_date_time: data.scheduledDateTime ? new Date(data.scheduledDateTime) : (data.isScheduled ? new Date(data.scheduledDate) : null),
-                    estimated_duration: categoryServices.reduce((acc, s) => acc + s.duration, 0), // Sum of durations
+                    estimated_duration: totalEstimatedDuration > 0 ? totalEstimatedDuration : categoryServices.reduce((acc, s) => acc + s.duration, 0),
                     items: {
                         create: bookingItemsData
                     },

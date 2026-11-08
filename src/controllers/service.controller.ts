@@ -301,5 +301,41 @@ export class ServiceController {
             next(error);
         }
     };
+
+    getServicePackages = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const packages = await this.serviceService.getServicePackages(req.params.id);
+            res.json(successResponse(packages, 'Service packages retrieved successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    createServicePackage = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const pkg = await this.serviceService.createServicePackage(req.params.id, req.body);
+            res.status(201).json(successResponse(pkg, 'Service package created successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    updateServicePackage = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const pkg = await this.serviceService.updateServicePackage(req.params.packageId, req.body);
+            res.json(successResponse(pkg, 'Service package updated successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    deleteServicePackage = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const result = await this.serviceService.deleteServicePackage(req.params.packageId);
+            res.json(successResponse(result, 'Service package deleted successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
 }
 

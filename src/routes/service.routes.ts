@@ -61,6 +61,29 @@ router.get('/categories', serviceController.getAllCategories);
  */
 router.get('/:id', serviceController.getServiceById);
 
+// Public package listing for a service
+router.get('/:id/packages', serviceController.getServicePackages);
+
+// Protected routes - Packages Management
+router.post(
+    '/:id/packages',
+    authenticateToken,
+    checkPermission('SERVICE_MANAGE'),
+    serviceController.createServicePackage
+);
+router.put(
+    '/:id/packages/:packageId',
+    authenticateToken,
+    checkPermission('SERVICE_MANAGE'),
+    serviceController.updateServicePackage
+);
+router.delete(
+    '/:id/packages/:packageId',
+    authenticateToken,
+    checkPermission('SERVICE_MANAGE'),
+    serviceController.deleteServicePackage
+);
+
 // Protected routes - Management
 /**
  * @swagger
@@ -153,6 +176,13 @@ router.patch(
  *       200:
  *         description: Pricing rule created
  */
+router.get(
+    '/:id/pricing',
+    authenticateToken,
+    checkPermission('SERVICE_MANAGE'),
+    serviceController.getServiceWithLocationPricing
+);
+
 router.post(
     '/:id/pricing',
     authenticateToken,

@@ -1,4 +1,5 @@
 import prisma from '../config/database';
+import { formatServicePackages } from './service.service';
 
 export class ServiceLocationPricingService {
     // Get pricing for a specific service in a specific location
@@ -46,6 +47,10 @@ export class ServiceLocationPricingService {
             ],
             include: {
                 category: true,
+                packages: {
+                    where: { is_active: true },
+                    orderBy: { hours: 'asc' },
+                },
                 location_pricing: {
                     where: {
                         is_active: true,
@@ -64,31 +69,34 @@ export class ServiceLocationPricingService {
         });
 
         // Map to include the effective price and enhanced fields
-        return services.map((service) => ({
-            ...service,
-            displayOrder: service.display_order,
-            display_order: service.display_order,
-            note: service.note,
-            imageUrl: service.image_url,
-            image_url: service.image_url,
-            image: service.image_url,
-            category: service.category ? {
-                ...service.category,
-                iconUrl: service.category.icon_url,
-                icon_url: service.category.icon_url,
-                imageUrl: service.category.icon_url,
-                image_url: service.category.icon_url,
-            } : null,
-            effective_price:
-                service.location_pricing[0]?.price || service.base_price,
-            has_location_discount:
-                service.location_pricing[0]?.price &&
-                service.location_pricing[0].price < service.base_price,
-            savings:
-                service.location_pricing[0]?.price
-                    ? service.base_price - service.location_pricing[0].price
-                    : 0,
-        }));
+        return services.map((service) => {
+            const effectivePrice = service.location_pricing[0]?.price || service.base_price;
+            return {
+                ...service,
+                displayOrder: service.display_order,
+                display_order: service.display_order,
+                note: service.note,
+                imageUrl: service.image_url,
+                image_url: service.image_url,
+                image: service.image_url,
+                category: service.category ? {
+                    ...service.category,
+                    iconUrl: service.category.icon_url,
+                    icon_url: service.category.icon_url,
+                    imageUrl: service.category.icon_url,
+                    image_url: service.category.icon_url,
+                } : null,
+                packages: formatServicePackages(service.packages || [], effectivePrice),
+                effective_price: effectivePrice,
+                has_location_discount:
+                    service.location_pricing[0]?.price &&
+                    service.location_pricing[0].price < service.base_price,
+                savings:
+                    service.location_pricing[0]?.price
+                        ? service.base_price - service.location_pricing[0].price
+                        : 0,
+            };
+        });
     }
 
     // Get service detail with location-specific pricing
@@ -97,6 +105,10 @@ export class ServiceLocationPricingService {
             where: { id: serviceId },
             include: {
                 category: true,
+                packages: {
+                    where: { is_active: true },
+                    orderBy: { hours: 'asc' },
+                },
                 location_pricing: districtId
                     ? {
                         where: {
@@ -124,6 +136,7 @@ export class ServiceLocationPricingService {
         if (!service) return null;
 
         const locationPricing = service.location_pricing[0];
+        const effectivePrice = locationPricing?.price || service.base_price;
         return {
             ...service,
             displayOrder: service.display_order,
@@ -139,7 +152,8 @@ export class ServiceLocationPricingService {
                 imageUrl: service.category.icon_url,
                 image_url: service.category.icon_url,
             } : null,
-            effective_price: locationPricing?.price || service.base_price,
+            packages: formatServicePackages(service.packages || [], effectivePrice),
+            effective_price: effectivePrice,
             has_location_discount:
                 locationPricing?.price && locationPricing.price < service.base_price,
             savings: locationPricing?.price

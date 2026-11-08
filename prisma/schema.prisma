@@ -290,6 +290,7 @@ model Service {
   partner_services        PartnerService[]
   recurring_invoice_items RecurringInvoiceItem[]
   location_pricing        ServiceLocationPricing[]
+  packages                ServicePackage[]
   category                Category                 @relation(fields: [category_id], references: [id])
 
   @@index([category_id])
@@ -468,18 +469,41 @@ model Booking {
 }
 
 model BookingItem {
-  id          String   @id @default(uuid())
+  id          String          @id @default(uuid())
   booking_id  String
   service_id  String
-  quantity    Int      @default(1)
+  package_id  String?
+  quantity    Int             @default(1)
   unit_price  Float
   total_price Float
-  created_at  DateTime @default(now())
-  booking     Booking  @relation(fields: [booking_id], references: [id], onDelete: Cascade)
-  service     Service  @relation(fields: [service_id], references: [id])
+  created_at  DateTime        @default(now())
+  booking     Booking         @relation(fields: [booking_id], references: [id], onDelete: Cascade)
+  service     Service         @relation(fields: [service_id], references: [id])
+  package     ServicePackage? @relation(fields: [package_id], references: [id], onDelete: SetNull)
 
   @@index([booking_id])
+  @@index([package_id])
   @@map("booking_items")
+}
+
+model ServicePackage {
+  id             String        @id @default(uuid())
+  service_id     String
+  hours          Float
+  title          String?
+  price          Float
+  original_price Float?
+  is_popular     Boolean       @default(false)
+  is_active      Boolean       @default(true)
+  display_order  Int           @default(1)
+  created_at     DateTime      @default(now())
+  updated_at     DateTime      @updatedAt
+  service        Service       @relation(fields: [service_id], references: [id], onDelete: Cascade)
+  booking_items  BookingItem[]
+
+  @@index([service_id])
+  @@index([is_active])
+  @@map("service_packages")
 }
 
 model BookingStatusHistory {
