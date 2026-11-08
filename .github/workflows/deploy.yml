@@ -1,0 +1,62 @@
+name: Deploy Backend to AWS EC2
+
+on:
+  push:
+    branches:
+      - main
+      - feature/backend-cloudflare-tunnel
+
+jobs:
+  deploy:
+    name: Build & Deploy to EC2
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Package Dist and Prisma
+        run: tar -czf dist.tar.gz dist prisma package.json
+
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Copy Build Artifacts to EC2
+        run: |
+          scp -i ~/.ssh/id_rsa dist.tar.gz ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/home/${{ secrets.EC2_USER }}/
+
+      - name: Deploy on EC2 Docker Container
+        run: |
+          ssh -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+            set -e
+            tar -xzf /home/ubuntu/dist.tar.gz -C /home/ubuntu/sneral_backend/
+            docker cp /home/ubuntu/sneral_backend/dist/. snearal-backend:/app/dist/
+            docker cp /home/ubuntu/sneral_backend/prisma/. snearal-backend:/app/prisma/
+            docker exec snearal-backend npx prisma generate
+            docker exec snearal-backend npx prisma db push --skip-generate
+            docker restart snearal-backend
+          EOF
+
+      - name: Health Check
+        run: |
+          sleep 10
+          curl -f https://api.snearal.com/api/v1/health || curl -f http://${{ secrets.EC2_HOST }}:3000/api/v1/health
