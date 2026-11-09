@@ -130,6 +130,9 @@ router.get('/referrals/logs', checkPermission('REPORT_VIEW'), adminManagementCon
 // AGENCY / BUSINESS PARTNER FLEET
 // ============================================
 router.get('/agencies', checkPermission('USER_MANAGE'), adminManagementController.getAgencies);
+router.post('/agencies', checkPermission('USER_MANAGE'), adminManagementController.createAgency);
+router.patch('/agencies/:id', checkPermission('USER_MANAGE'), adminManagementController.updateAgency);
+router.delete('/agencies/:id', checkPermission('USER_MANAGE'), adminManagementController.deleteAgency);
 router.get('/agencies/:id/technicians', checkPermission('USER_MANAGE'), adminManagementController.getAgencyTechnicians);
 router.post('/agencies/:id/technicians', checkPermission('USER_MANAGE'), adminManagementController.linkTechnicianToAgency);
 

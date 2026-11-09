@@ -12,23 +12,42 @@ interface CreateAdminData {
 
 export class UserService {
     async getAllUsers(filters: any) {
-        const { role, search, page = 1, limit = 20, isActive: _isActive } = filters;
+        const { role, type, search, page = 1, limit = 20, isActive } = filters;
 
         const skip = (page - 1) * limit;
 
         let where: any = {};
 
-        if (role) {
+        if (type === 'portal' || type === 'staff') {
+            where.OR = [
+                { role: { in: ['ADMIN', 'SUPER_ADMIN'] } },
+                { role_id: { not: null } }
+            ];
+        } else if (type === 'customers' || type === 'customer') {
+            where.role = 'CUSTOMER';
+        } else if (role) {
             where.role = role;
         }
 
-        // is_active filter removed - field doesn't exist in schema
+        if (isActive !== undefined) {
+            where.is_active = isActive === 'true' || isActive === true;
+        }
 
         if (search) {
-            where.OR = [
+            const searchCondition = [
                 { full_name: { contains: search, mode: 'insensitive' } },
                 { email: { contains: search, mode: 'insensitive' } },
+                { phone_number: { contains: search, mode: 'insensitive' } },
             ];
+            if (where.OR) {
+                where.AND = [
+                    { OR: where.OR },
+                    { OR: searchCondition }
+                ];
+                delete where.OR;
+            } else {
+                where.OR = searchCondition;
+            }
         }
 
         const [users, total] = await Promise.all([
@@ -37,7 +56,16 @@ export class UserService {
                 skip,
                 take: Number(limit),
                 include: {
-                    custom_role: true
+                    custom_role: {
+                        include: {
+                            permissions: {
+                                include: { permission: true }
+                            }
+                        }
+                    },
+                    _count: {
+                        select: { bookings: true }
+                    }
                 },
                 orderBy: { created_at: 'desc' },
             }),
@@ -49,11 +77,20 @@ export class UserService {
                 id: u.id,
                 email: u.email,
                 fullName: u.full_name,
+                full_name: u.full_name,
                 phoneNumber: u.phone_number,
+                phone_number: u.phone_number,
                 role: u.role,
+                roleId: u.role_id,
+                role_id: u.role_id,
+                isActive: u.is_active,
+                is_active: u.is_active,
                 customRole: (u as any).custom_role,
+                custom_role: (u as any).custom_role,
                 emailVerified: u.email_verified,
                 createdAt: u.created_at,
+                created_at: u.created_at,
+                bookingsCount: (u as any)._count?.bookings || 0,
             })),
             pagination: {
                 page: Number(page),
@@ -92,7 +129,7 @@ export class UserService {
 
         // Check if email already exists
         const existingUser = await prisma.user.findUnique({
-            where: { email: data.email },
+            where: { email: data.email.toLowerCase().trim() },
         });
 
         if (existingUser) {
@@ -105,22 +142,43 @@ export class UserService {
         // Create admin user
         const admin = await prisma.user.create({
             data: {
-                email: data.email,
+                email: data.email.toLowerCase().trim(),
                 password: hashedPassword,
-                full_name: data.fullName,
+                full_name: data.fullName.trim(),
+                phone_number: (data as any).phoneNumber || (data as any).phone_number || null,
                 role: data.role || 'ADMIN',
-                role_id: data.roleId,
+                role_id: data.roleId || (data as any).role_id || null,
                 email_verified: true, // Auto-verify admin accounts
+                phone_verified: true,
+                is_active: true,
             },
+            include: {
+                custom_role: {
+                    include: {
+                        permissions: {
+                            include: { permission: true }
+                        }
+                    }
+                }
+            }
         });
 
+        const a = admin as any;
         return {
-            id: admin.id,
-            email: admin.email,
-            fullName: admin.full_name,
-            role: admin.role,
-            roleId: admin.role_id,
-            createdAt: admin.created_at,
+            id: a.id,
+            email: a.email,
+            fullName: a.full_name,
+            full_name: a.full_name,
+            phoneNumber: a.phone_number,
+            phone_number: a.phone_number,
+            role: a.role,
+            roleId: a.role_id,
+            role_id: a.role_id,
+            customRole: a.custom_role,
+            custom_role: a.custom_role,
+            isActive: a.is_active,
+            is_active: a.is_active,
+            createdAt: a.created_at,
         };
     }
 
@@ -133,16 +191,44 @@ export class UserService {
             throw new NotFoundError('User not found');
         }
 
+        const updateData: any = {};
+        if (data.fullName !== undefined) updateData.full_name = data.fullName.trim();
+        if (data.full_name !== undefined) updateData.full_name = data.full_name.trim();
+
+        if (data.email !== undefined) {
+            const trimmedEmail = data.email.toLowerCase().trim();
+            if (trimmedEmail !== user.email) {
+                const existing = await prisma.user.findUnique({ where: { email: trimmedEmail } });
+                if (existing && existing.id !== userId) {
+                    throw new BadRequestError('Email is already taken by another user');
+                }
+                updateData.email = trimmedEmail;
+            }
+        }
+
+        if (data.phoneNumber !== undefined) updateData.phone_number = data.phoneNumber ? data.phoneNumber.trim() : null;
+        if (data.phone_number !== undefined) updateData.phone_number = data.phone_number ? data.phone_number.trim() : null;
+        if (data.role !== undefined) updateData.role = data.role;
+        if (data.roleId !== undefined) updateData.role_id = data.roleId || null;
+        if (data.role_id !== undefined) updateData.role_id = data.role_id || null;
+        if (data.isActive !== undefined) updateData.is_active = Boolean(data.isActive);
+        if (data.is_active !== undefined) updateData.is_active = Boolean(data.is_active);
+
+        if (data.password && String(data.password).trim()) {
+            updateData.password = await hashPassword(String(data.password).trim());
+        }
+
         const updated = await prisma.user.update({
             where: { id: userId },
-            data: {
-                ...(data.fullName && { full_name: data.fullName }),
-                ...(data.phoneNumber && { phone_number: data.phoneNumber }),
-                ...(data.roleId && { role_id: data.roleId }),
-                ...(data.role && { role: data.role }),
-            },
+            data: updateData,
             include: {
-                custom_role: true
+                custom_role: {
+                    include: {
+                        permissions: {
+                            include: { permission: true }
+                        }
+                    }
+                }
             }
         });
 
@@ -151,9 +237,16 @@ export class UserService {
             id: u.id,
             email: u.email,
             fullName: u.full_name,
+            full_name: u.full_name,
             phoneNumber: u.phone_number,
+            phone_number: u.phone_number,
             role: u.role,
+            roleId: u.role_id,
+            role_id: u.role_id,
             customRole: u.custom_role,
+            custom_role: u.custom_role,
+            isActive: u.is_active,
+            is_active: u.is_active,
             updatedAt: u.updated_at,
         };
     }

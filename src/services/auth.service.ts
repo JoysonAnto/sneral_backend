@@ -253,7 +253,11 @@ export class AuthService {
                     email: user.email,
                     fullName: user.full_name,
                     role: user.role,
+                    roleId: user.role_id,
                     phoneNumber: user.phone_number,
+                    permissions,
+                    department: userWithPermissions?.custom_role?.name || null,
+                    custom_role: userWithPermissions?.custom_role || null
                 },
                 accessToken,
                 refreshToken,
@@ -559,7 +563,15 @@ export class AuthService {
                 business_partner: {
                     include: { category: true }
                 },
-                custom_role: true,
+                custom_role: {
+                    include: {
+                        permissions: {
+                            include: {
+                                permission: true
+                            }
+                        }
+                    }
+                },
                 wallet: true,
             },
         });
@@ -588,6 +600,9 @@ export class AuthService {
 
         const u = user as any;
         const { password: _password, verification_otp: _verification_otp, otp_expires_at: _otp_expires_at, reset_otp: _reset_otp, ...userWithoutSensitive } = u;
+
+        userWithoutSensitive.permissions = user.custom_role?.permissions?.map((p: any) => p.permission?.name) || [];
+        userWithoutSensitive.department = user.custom_role?.name || null;
 
         // Add profession/category name for dashboard
         if (user.role === 'SERVICE_PARTNER' && user.service_partner) {

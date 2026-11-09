@@ -56,12 +56,22 @@ export const checkPermission = (permission: string) => {
 
         const userPermissions = req.user.permissions || [];
 
-        // Super Admin and Admin have all permissions by default for the dashboard
-        if (req.user.role === UserRole.SUPER_ADMIN || req.user.role === UserRole.ADMIN || userPermissions.includes(permission)) {
+        // Super Admin has all permissions unrestricted
+        if (req.user.role === UserRole.SUPER_ADMIN) {
             return next();
         }
 
-        console.log(`❌ [AUTH DEBUG] Permission denied! Required: ${permission}, User role: ${req.user.role}`);
+        // If user has permissions list (from department role or explicit perms), enforce check
+        if (userPermissions.includes(permission)) {
+            return next();
+        }
+
+        // Legacy Admin without custom department restrictions
+        if (req.user.role === UserRole.ADMIN && userPermissions.length === 0) {
+            return next();
+        }
+
+        console.log(`❌ [AUTH DEBUG] Permission denied! Required: ${permission}, User role: ${req.user.role}, Perms: ${userPermissions.join(',')}`);
         throw new ForbiddenError(`Access denied - missing required permission: ${permission}`);
     };
 };

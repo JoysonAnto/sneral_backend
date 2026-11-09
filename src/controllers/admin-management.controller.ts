@@ -4,6 +4,7 @@ import { partnerRewardService } from '../services/partner-reward.service';
 import { referralService } from '../services/referral.service';
 import { successResponse } from '../utils/response';
 import { BadRequestError } from '../utils/errors';
+import { hashPassword } from '../utils/encryption';
 
 export class AdminManagementController {
     // ============================================
@@ -223,6 +224,225 @@ export class AdminManagementController {
             });
 
             res.json(successResponse(updatedPartner, 'Technician linked to agency successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    createAgency = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const {
+                business_name,
+                business_type,
+                full_name,
+                email,
+                phone_number,
+                password,
+                commission_rate,
+                gst_number,
+                kyc_status,
+                address,
+                city,
+                state,
+                postal_code,
+                bank_name,
+                bank_account_number,
+                bank_ifsc_code,
+                bank_account_name,
+                upi_id,
+            } = req.body;
+
+            if (!business_name || !full_name || !email) {
+                throw new BadRequestError('Business name, contact person name, and email are required');
+            }
+
+            // Check if user already exists
+            const existingUser = await prisma.user.findUnique({
+                where: { email: email.toLowerCase().trim() }
+            });
+
+            if (existingUser) {
+                throw new BadRequestError('A user account with this email already exists');
+            }
+
+            const rawPassword = password || `Snearal@${(phone_number || '1234567890').replace(/\D/g, '').slice(-4) || '2026'}`;
+            const hashedPassword = await hashPassword(rawPassword);
+
+            const result = await prisma.$transaction(async (tx) => {
+                const user = await tx.user.create({
+                    data: {
+                        email: email.toLowerCase().trim(),
+                        full_name: full_name.trim(),
+                        phone_number: phone_number ? phone_number.trim() : null,
+                        password: hashedPassword,
+                        role: 'BUSINESS_PARTNER',
+                        email_verified: true,
+                        phone_verified: true,
+                        is_active: true,
+                    }
+                });
+
+                const rate = commission_rate !== undefined ? parseFloat(commission_rate) : 0.10;
+
+                const agency = await tx.businessPartner.create({
+                    data: {
+                        user_id: user.id,
+                        business_name: business_name.trim(),
+                        business_type: business_type || null,
+                        gst_number: gst_number ? gst_number.trim() : null,
+                        commission_rate: rate,
+                        kyc_status: (kyc_status as any) || 'APPROVED',
+                        team_management_enabled: true,
+                        address: address || null,
+                        city: city || null,
+                        state: state || null,
+                        postal_code: postal_code || null,
+                        bank_name: bank_name || null,
+                        bank_account_number: bank_account_number || null,
+                        bank_ifsc_code: bank_ifsc_code || null,
+                        bank_account_name: bank_account_name || null,
+                        upi_id: upi_id || null,
+                    },
+                    include: {
+                        user: { select: { full_name: true, email: true, phone_number: true, is_active: true } },
+                        _count: { select: { service_partners: true, bookings: true } }
+                    }
+                });
+
+                return agency;
+            });
+
+            res.status(201).json(successResponse(result, 'Agency created successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    updateAgency = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { id } = req.params;
+            const {
+                business_name,
+                business_type,
+                full_name,
+                email,
+                phone_number,
+                password,
+                commission_rate,
+                gst_number,
+                kyc_status,
+                is_active,
+                address,
+                city,
+                state,
+                postal_code,
+                bank_name,
+                bank_account_number,
+                bank_ifsc_code,
+                bank_account_name,
+                upi_id,
+            } = req.body;
+
+            const existingAgency = await prisma.businessPartner.findUnique({
+                where: { id },
+                include: { user: true }
+            });
+
+            if (!existingAgency) {
+                throw new BadRequestError('Agency not found');
+            }
+
+            const result = await prisma.$transaction(async (tx) => {
+                // Update User
+                const userUpdateData: any = {};
+                if (full_name !== undefined) userUpdateData.full_name = full_name.trim();
+                if (email !== undefined && email.toLowerCase().trim() !== existingAgency.user.email) {
+                    const checkEmail = await tx.user.findUnique({ where: { email: email.toLowerCase().trim() } });
+                    if (checkEmail && checkEmail.id !== existingAgency.user_id) {
+                        throw new BadRequestError('Email already taken by another account');
+                    }
+                    userUpdateData.email = email.toLowerCase().trim();
+                }
+                if (phone_number !== undefined) userUpdateData.phone_number = phone_number ? phone_number.trim() : null;
+                if (is_active !== undefined) userUpdateData.is_active = Boolean(is_active);
+                if (password && password.trim()) {
+                    userUpdateData.password = await hashPassword(password.trim());
+                }
+
+                if (Object.keys(userUpdateData).length > 0) {
+                    await tx.user.update({
+                        where: { id: existingAgency.user_id },
+                        data: userUpdateData
+                    });
+                }
+
+                // Update BusinessPartner
+                const agencyUpdateData: any = {};
+                if (business_name !== undefined) agencyUpdateData.business_name = business_name.trim();
+                if (business_type !== undefined) agencyUpdateData.business_type = business_type;
+                if (gst_number !== undefined) agencyUpdateData.gst_number = gst_number ? gst_number.trim() : null;
+                if (commission_rate !== undefined) agencyUpdateData.commission_rate = parseFloat(commission_rate);
+                if (kyc_status !== undefined) agencyUpdateData.kyc_status = kyc_status;
+                if (address !== undefined) agencyUpdateData.address = address;
+                if (city !== undefined) agencyUpdateData.city = city;
+                if (state !== undefined) agencyUpdateData.state = state;
+                if (postal_code !== undefined) agencyUpdateData.postal_code = postal_code;
+                if (bank_name !== undefined) agencyUpdateData.bank_name = bank_name;
+                if (bank_account_number !== undefined) agencyUpdateData.bank_account_number = bank_account_number;
+                if (bank_ifsc_code !== undefined) agencyUpdateData.bank_ifsc_code = bank_ifsc_code;
+                if (bank_account_name !== undefined) agencyUpdateData.bank_account_name = bank_account_name;
+                if (upi_id !== undefined) agencyUpdateData.upi_id = upi_id;
+
+                const updated = await tx.businessPartner.update({
+                    where: { id },
+                    data: agencyUpdateData,
+                    include: {
+                        user: { select: { full_name: true, email: true, phone_number: true, is_active: true } },
+                        _count: { select: { service_partners: true, bookings: true } }
+                    }
+                });
+
+                return updated;
+            });
+
+            res.json(successResponse(result, 'Agency updated successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    deleteAgency = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { id } = req.params;
+            const existingAgency = await prisma.businessPartner.findUnique({
+                where: { id },
+                include: { user: true }
+            });
+
+            if (!existingAgency) {
+                throw new BadRequestError('Agency not found');
+            }
+
+            await prisma.$transaction(async (tx) => {
+                // Detach all service partners from this agency
+                await tx.servicePartner.updateMany({
+                    where: { business_partner_id: id },
+                    data: { business_partner_id: null }
+                });
+
+                // Deactivate the user
+                await tx.user.update({
+                    where: { id: existingAgency.user_id },
+                    data: { is_active: false }
+                });
+
+                // Delete the agency record
+                await tx.businessPartner.delete({
+                    where: { id }
+                });
+            });
+
+            res.json(successResponse(null, 'Agency deleted successfully'));
         } catch (error) {
             next(error);
         }
