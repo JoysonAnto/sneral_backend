@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { UserController } from '../controllers/user.controller';
+import { requestDataDeletion } from '../controllers/compliance.controller';
 import { authenticateToken, checkPermission } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validate.middleware';
 import { createAdminValidator, updateUserValidator } from '../validators/user.validator';
@@ -16,6 +17,20 @@ const userController = new UserController();
 
 // All routes require authentication
 router.use(authenticateToken);
+
+/**
+ * @swagger
+ * /users/delete-account:
+ *   post:
+ *     summary: Delete user account (anonymize & soft-delete)
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Account successfully deleted
+ */
+router.post('/delete-account', requestDataDeletion);
 
 /**
  * @swagger

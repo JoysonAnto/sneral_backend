@@ -1,7 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
+import bcrypt from 'bcryptjs';
 import prisma from '../config/database';
 import { successResponse } from '../utils/response';
-import { NotFoundError } from '../utils/errors';
+import { NotFoundError, BadRequestError } from '../utils/errors';
 
 /**
  * GDPR Compliance Controller
@@ -78,24 +79,62 @@ export const exportUserData = async (req: Request, res: Response, next: NextFunc
     }
 };
 
-// Request account deletion (GDPR Right to Erasure)
+// Request account deletion (GDPR Right to Erasure / Account Management)
 export const requestDataDeletion = async (req: Request, res: Response, next: NextFunction) => {
     try {
         const userId = req.user?.userId;
-        const { reason } = req.body;
+        const { reason, password } = req.body;
 
         if (!userId) {
             throw new NotFoundError('User not found');
         }
 
-        // Soft delete - mark for deletion
+        const user = await prisma.user.findUnique({
+            where: { id: userId }
+        });
+
+        if (!user) {
+            throw new NotFoundError('User not found');
+        }
+
+        // Identity verification: If user has a password and provided one, verify it
+        if (password && user.password) {
+            const isMatch = await bcrypt.compare(password, user.password);
+            if (!isMatch) {
+                throw new BadRequestError('Incorrect password. Account deletion verification failed.');
+            }
+        }
+
+        // Safety check: Prevent deletion if active or in-progress bookings exist
+        const activeBookings = await prisma.booking.findMany({
+            where: {
+                customer_id: userId,
+                status: {
+                    in: ['PENDING', 'SEARCHING_PARTNER', 'PARTNER_ASSIGNED', 'PARTNER_ACCEPTED', 'IN_PROGRESS', 'PARTNER_ARRIVED', 'ARRIVED', 'PENDING_ASSIGNMENT']
+                }
+            }
+        });
+
+        if (activeBookings.length > 0) {
+            throw new BadRequestError('Cannot delete account while you have active or ongoing bookings. Please complete or cancel them before proceeding.');
+        }
+
+        // Check wallet balance
+        const wallet = await prisma.wallet.findUnique({
+            where: { user_id: userId }
+        });
+        const walletBalance = Number(wallet?.balance || 0);
+
+        // Soft delete & anonymize user for compliance and safety
         await prisma.user.update({
             where: { id: userId },
             data: {
                 is_deleted: true,
+                is_active: false,
                 deleted_at: new Date(),
-                // Anonymize email for compliance
-                email: `deleted_${userId}@anonymized.com`,
+                email: `deleted_${userId}@anonymized.snearal`,
+                phone_number: null,
+                full_name: 'Deleted Customer',
             },
         });
 
@@ -104,14 +143,23 @@ export const requestDataDeletion = async (req: Request, res: Response, next: Nex
             data: {
                 user_id: userId,
                 action: 'DATA_DELETION_REQUESTED',
-                details: { reason, requested_at: new Date() },
+                details: {
+                    reason: reason || 'Customer requested account deletion',
+                    wallet_balance_at_deletion: walletBalance,
+                    requested_at: new Date()
+                },
                 ip_address: req.ip,
             },
         });
 
         res.json(successResponse(
-            { deletion_scheduled: true, deletion_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
-            'Account deletion scheduled. Your data will be permanently deleted in 30 days.'
+            {
+                deleted: true,
+                deletion_scheduled: true,
+                wallet_balance: walletBalance,
+                deletion_date: new Date()
+            },
+            'Your account has been deleted successfully.'
         ));
     } catch (error) {
         next(error);

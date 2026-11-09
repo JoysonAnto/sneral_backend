@@ -31,6 +31,7 @@ import reviewRoutes from './review.routes';
 import ticketRoutes from './ticket.routes';
 import couponRoutes from './coupon.routes';
 import adminCouponRoutes from './admin-coupon.routes';
+import referralRoutes from './referral.routes';
 
 
 const router = Router();
@@ -74,6 +75,8 @@ router.use('/coupons', couponRoutes);
 router.use('/partners', partnerRoutes);
 router.use('/partner', servicePartnerRoutes);
 router.use('/wallet', walletRoutes);
+router.use('/referral', referralRoutes);
+router.use('/referrals', referralRoutes);
 router.use('/kyc/cashfree', cashfreeRoutes);
 router.use('/kyc', kycRoutes);
 router.use('/payments', paymentRoutes);

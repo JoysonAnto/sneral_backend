@@ -1,5 +1,5 @@
 import prisma from '../config/database';
-import { NotFoundError } from '../utils/errors';
+import { NotFoundError, BadRequestError } from '../utils/errors';
 import logger from '../utils/logger';
 import { getIO } from '../socket/socket.server';
 
@@ -50,12 +50,14 @@ export class ReferralService {
         });
 
         const totalReferred = trackings.length;
+        const pendingCount = trackings.filter(t => t.status === 'PENDING').length;
         const rewardedTrackings = trackings.filter(t => t.status === 'REWARDED');
         const rewardedCount = rewardedTrackings.length;
-        const totalBonusEarned = rewardedTrackings.reduce((sum, t) => sum + t.referrer_reward, 0);
+        const totalBonusEarned = rewardedTrackings.reduce((sum, t) => sum + (t.referrer_reward || 200), 0);
 
         const isPartner = user.role === 'SERVICE_PARTNER';
-        const rewardAmount = isPartner ? config.partner_referrer_reward : config.customer_referrer_reward;
+        const rewardAmount = isPartner ? config.partner_referrer_reward : (config.customer_referrer_reward || 200);
+        const qualificationTarget = isPartner ? (config.partner_qualifying_jobs || 5) : 5;
         const refereeReward = isPartner ? config.partner_referee_reward : config.customer_referee_reward;
 
         const shareUrl = isPartner 
@@ -64,7 +66,7 @@ export class ReferralService {
 
         const shareText = isPartner
             ? `Join Snearal as an On-Demand Service Partner! Use my code ${user.referral_code} to get verified and earn daily instant payouts: ${shareUrl}`
-            : `Book trusted home services with Snearal! Use my invite code ${user.referral_code} to get ₹${refereeReward} OFF on your first booking: ${shareUrl}`;
+            : `Refer your neighbours and earn rewards! Invite neighbours to SNEARAL using code ${user.referral_code}. Earn ₹${rewardAmount} in your wallet when your neighbour completes 5 orders: ${shareUrl}`;
 
         return {
             referralCode: user.referral_code,
@@ -72,23 +74,34 @@ export class ReferralService {
             shareText,
             rewardAmount,
             refereeReward,
+            qualificationTarget,
             totalReferred,
+            pendingCount,
             rewardedCount,
             totalBonusEarned,
             walletBalance: user.wallet?.balance || 0,
-            referrals: trackings.map(t => ({
-                id: t.id,
-                refereeName: t.referee.full_name,
-                refereePhone: t.referee.phone_number ? `${t.referee.phone_number.slice(0, 4)}****${t.referee.phone_number.slice(-2)}` : 'N/A',
-                status: t.status,
-                rewardAmount: t.referrer_reward,
-                date: t.created_at,
-            }))
+            referrals: trackings.map(t => {
+                const target = t.qualification_target || 5;
+                const completed = t.status === 'REWARDED' ? target : Math.min(t.qualifying_count, target);
+                return {
+                    id: t.id,
+                    refereeName: t.referee.full_name || 'Customer',
+                    refereePhone: t.referee.phone_number ? `${t.referee.phone_number.slice(0, 4)}****${t.referee.phone_number.slice(-2)}` : 'N/A',
+                    status: t.status === 'REWARDED' ? 'Reward credited' : 'In progress',
+                    rawStatus: t.status,
+                    completedOrders: completed,
+                    targetOrders: target,
+                    progressText: `${completed}/${target}`,
+                    rewardAmount: t.referrer_reward || 200,
+                    date: t.created_at,
+                    rewardedAt: t.rewarded_at,
+                };
+            })
         };
     }
 
     /**
-     * Check and reward customer referral when referee completes their first booking
+     * Check and reward customer referral when referee completes 5 orders
      */
     async checkAndRewardCustomerBooking(customerId: string): Promise<boolean | null> {
         try {
@@ -103,7 +116,8 @@ export class ReferralService {
 
             if (!pendingTracking) return null;
 
-            // Check if this is the customer's 1st completed booking
+            // Check how many orders the referee customer has completed
+            // Only successfully completed orders count
             const completedCount = await prisma.booking.count({
                 where: {
                     customer_id: customerId,
@@ -111,41 +125,129 @@ export class ReferralService {
                 }
             });
 
-            if (completedCount >= 1) {
-                logger.info(`🎉 Customer ${customerId} completed 1st booking! Qualifying referral ${pendingTracking.id}`);
+            const target = pendingTracking.qualification_target || 5;
 
-                // 1. Credit Referrer Wallet
-                await this.creditUserWallet(
-                    pendingTracking.referrer_user_id,
-                    pendingTracking.referrer_reward,
-                    `🎁 Referral Bonus for referring new customer`
-                );
+            if (completedCount >= target) {
+                logger.info(`🎉 Customer ${customerId} reached ${completedCount}/${target} completed orders! Rewarding referral ${pendingTracking.id}`);
 
-                // 2. Credit Referee Customer Wallet
-                await this.creditUserWallet(
-                    customerId,
-                    pendingTracking.referee_reward,
-                    `🎁 Welcome Bonus: Referral discount for first booking`
-                );
-
-                // 3. Mark Rewarded
-                await prisma.referralTracking.update({
-                    where: { id: pendingTracking.id },
+                // Idempotent state transition: update status only if currently PENDING
+                const updateRes = await prisma.referralTracking.updateMany({
+                    where: {
+                        id: pendingTracking.id,
+                        status: 'PENDING'
+                    },
                     data: {
                         status: 'REWARDED',
                         rewarded_at: new Date(),
-                        qualifying_count: 1
+                        qualifying_count: completedCount
                     }
                 });
 
-                logger.info(`✅ Referral ${pendingTracking.id} rewarded successfully`);
+                if (updateRes.count === 0) {
+                    // Already processed concurrently
+                    return false;
+                }
+
+                const rewardAmount = pendingTracking.referrer_reward || 200;
+
+                // 1. Credit Referrer Wallet with ₹200
+                await this.creditUserWallet(
+                    pendingTracking.referrer_user_id,
+                    rewardAmount,
+                    `🎁 Referral Bonus: Referred customer completed ${target} orders!`
+                );
+
+                // 2. Send notification to Referrer
+                try {
+                    const { NotificationService } = await import('./notification.service');
+                    const notifService = new NotificationService();
+                    await notifService.createNotification(
+                        pendingTracking.referrer_user_id,
+                        'WALLET_CREDIT',
+                        'Referral Reward Credited! 🎉',
+                        `₹${rewardAmount} has been credited to your wallet because your referred neighbour completed ${target} orders!`,
+                        { type: 'REFERRAL_REWARD', rewardAmount }
+                    );
+                } catch (notifErr) {
+                    logger.warn('Failed sending referral notification:', notifErr);
+                }
+
+                logger.info(`✅ Referral ${pendingTracking.id} rewarded successfully with ₹${rewardAmount}`);
                 return true;
+            } else {
+                // Update progress count
+                await prisma.referralTracking.update({
+                    where: { id: pendingTracking.id },
+                    data: { qualifying_count: completedCount }
+                });
+                return false;
             }
-            return false;
         } catch (error) {
             logger.error('Error rewarding customer referral:', error);
             return false;
         }
+    }
+
+    /**
+     * Apply a referral code to a customer account
+     */
+    async applyReferralCode(userId: string, referralCode: string) {
+        const cleanCode = referralCode ? referralCode.trim() : '';
+        if (!cleanCode) {
+            throw new BadRequestError('Referral code is required');
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { id: userId }
+        });
+
+        if (!user || user.is_deleted) {
+            throw new NotFoundError('User not found');
+        }
+
+        if (user.referral_code === cleanCode) {
+            throw new BadRequestError('You cannot use your own referral code.');
+        }
+
+        // Check if user is already attributed to any referrer
+        const existingAttribution = await prisma.referralTracking.findFirst({
+            where: { referee_user_id: userId }
+        });
+
+        if (existingAttribution) {
+            throw new BadRequestError('You have already applied a referral code.');
+        }
+
+        // Find referrer by code
+        const referrer = await prisma.user.findFirst({
+            where: {
+                referral_code: cleanCode,
+                is_deleted: false,
+            }
+        });
+
+        if (!referrer || referrer.id === userId) {
+            throw new BadRequestError('Invalid or inactive referral code.');
+        }
+
+        const config = await this.getOrCreateConfig();
+        const rewardAmount = config.customer_referrer_reward || 200;
+
+        const tracking = await prisma.referralTracking.create({
+            data: {
+                referrer_user_id: referrer.id,
+                referee_user_id: userId,
+                referral_type: referrer.role === 'SERVICE_PARTNER' ? 'PARTNER_TO_CUSTOMER' : 'CUSTOMER_TO_CUSTOMER',
+                referral_code: cleanCode,
+                status: 'PENDING',
+                referrer_reward: rewardAmount,
+                referee_reward: config.customer_referee_reward || 100,
+                qualification_target: 5,
+                qualifying_count: 0
+            }
+        });
+
+        return tracking;
     }
 
     /**
@@ -268,7 +370,7 @@ export class ReferralService {
         if (!config) {
             config = await prisma.referralConfig.create({
                 data: {
-                    customer_referrer_reward: 100,
+                    customer_referrer_reward: 200,
                     customer_referee_reward: 100,
                     partner_referrer_reward: 1000,
                     partner_qualifying_jobs: 5,

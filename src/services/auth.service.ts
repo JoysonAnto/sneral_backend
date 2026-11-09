@@ -54,6 +54,10 @@ export class AuthService {
         const otp = generateOTP(4);
         const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
+        const randomDigits = Math.floor(1000 + Math.random() * 9000);
+        const namePrefix = (fullName || 'USER').replace(/[^a-zA-Z]/g, '').slice(0, 4).toUpperCase();
+        const userReferralCode = `SN-${namePrefix || 'CUST'}-${randomDigits}`;
+
         // Create user and partner in transaction
         const result = await prisma.$transaction(async (tx) => {
             const user = await tx.user.create({
@@ -63,12 +67,44 @@ export class AuthService {
                     full_name: fullName,
                     phone_number: phoneNumber,
                     role: role || 'CUSTOMER',
+                    referral_code: userReferralCode,
                     email_verified: false,
                     phone_verified: false,
                     verification_otp: otp,
                     otp_expires_at: otpExpiry,
                 },
             });
+
+            // Create initial wallet
+            await tx.wallet.create({
+                data: {
+                    user_id: user.id,
+                    balance: 0,
+                }
+            });
+
+            // If referral code supplied, link referral tracking
+            if (data.referralCode) {
+                const cleanCode = data.referralCode.trim();
+                const referrer = await tx.user.findFirst({
+                    where: { referral_code: cleanCode, is_deleted: false }
+                });
+                if (referrer && referrer.id !== user.id) {
+                    await tx.referralTracking.create({
+                        data: {
+                            referrer_user_id: referrer.id,
+                            referee_user_id: user.id,
+                            referral_type: referrer.role === 'SERVICE_PARTNER' ? 'PARTNER_TO_CUSTOMER' : 'CUSTOMER_TO_CUSTOMER',
+                            referral_code: cleanCode,
+                            status: 'PENDING',
+                            referrer_reward: 200,
+                            referee_reward: 100,
+                            qualification_target: 5,
+                            qualifying_count: 0
+                        }
+                    });
+                }
+            }
 
             if (role === 'SERVICE_PARTNER') {
                 const partnerCodePrefix = (fullName || 'PARTNER').replace(/[^a-zA-Z]/g, '').slice(0, 4).toUpperCase();
@@ -131,6 +167,10 @@ export class AuthService {
         if (!user) {
             console.log(`[AUTH DEBUG] User not found for identifier: ${identifier}`);
             throw new UnauthorizedError('Invalid credentials');
+        }
+
+        if (user.is_deleted) {
+            throw new UnauthorizedError('This account has been deleted or deactivated.');
         }
 
         if (password) {
@@ -240,6 +280,10 @@ export class AuthService {
             throw new BadRequestError('User not found');
         }
 
+        if (user.is_deleted) {
+            throw new BadRequestError('This account has been deleted or deactivated.');
+        }
+
         if (user.email_verified || user.phone_verified) {
             // If already verified, just return success
             // return { message: 'Already verified' };
@@ -324,6 +368,10 @@ export class AuthService {
             throw new BadRequestError('User not found');
         }
 
+        if (user.is_deleted) {
+            throw new BadRequestError('This account has been deleted or deactivated.');
+        }
+
         if (user.email_verified) {
             throw new BadRequestError('Email already verified');
         }
@@ -387,6 +435,10 @@ export class AuthService {
             throw new BadRequestError('User not found');
         }
 
+        if (user.is_deleted) {
+            throw new BadRequestError('This account has been deleted or deactivated.');
+        }
+
         if (user.verification_otp !== otp || !user.otp_expires_at) {
             throw new BadRequestError('No reset OTP found. Please request a new one.');
         }
@@ -432,8 +484,8 @@ export class AuthService {
                 where: { id: decoded.userId },
             });
 
-            if (!user) {
-                throw new UnauthorizedError('User not found');
+            if (!user || user.is_deleted) {
+                throw new UnauthorizedError('User not found or account deactivated');
             }
 
             // Fetch permissions for the new token
@@ -492,6 +544,10 @@ export class AuthService {
 
         if (!user) {
             throw new BadRequestError('User not found');
+        }
+
+        if (user.is_deleted) {
+            throw new BadRequestError('This account has been deleted or deactivated.');
         }
 
         // Calculate total earnings from transactions
@@ -553,6 +609,10 @@ export class AuthService {
 
         if (!user) {
             throw new BadRequestError('User not found');
+        }
+
+        if (user.is_deleted) {
+            throw new BadRequestError('This account has been deleted or deactivated.');
         }
 
         // Update user core credentials
@@ -705,6 +765,10 @@ export class AuthService {
 
         if (!user) {
             throw new BadRequestError('User not found');
+        }
+
+        if (user.is_deleted) {
+            throw new BadRequestError('This account has been deleted or deactivated.');
         }
 
         // Verify old password
