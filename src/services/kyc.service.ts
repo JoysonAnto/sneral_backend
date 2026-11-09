@@ -65,10 +65,13 @@ export class KYCService {
         const partner_field = partnerType === 'SERVICE_PARTNER' ? 'service_partner_id' : 'business_partner_id';
 
         const addDoc = (type: string, filename: string) => {
+            const docUrl = filename.startsWith('http://') || filename.startsWith('https://') || filename.startsWith('/uploads/')
+                ? filename
+                : `/uploads/kyc/${filename}`;
             kycDocs.push({
                 [partner_field]: partnerId,
                 document_type: type,
-                document_url: `/uploads/kyc/${filename}`,
+                document_url: docUrl,
                 status: 'PENDING_VERIFICATION',
             });
         };
@@ -81,12 +84,19 @@ export class KYCService {
         if (documents.businessLicense && partnerType === 'BUSINESS_PARTNER') addDoc('BUSINESS_LICENSE', documents.businessLicense);
         if (documents.gstCertificate && partnerType === 'BUSINESS_PARTNER') addDoc('GST_CERTIFICATE', documents.gstCertificate);
 
+        if (kycDocs.length === 0) {
+            throw new BadRequestError('No valid KYC documents provided');
+        }
+
         // Create documents and update partner KYC status
         await prisma.$transaction(async (tx) => {
-            // Delete existing pending documents
-            const whereDoc: any = { status: 'PENDING_VERIFICATION' };
+            const docTypesToUpdate = kycDocs.map(d => d.document_type);
+            const whereDoc: any = {
+                document_type: { in: docTypesToUpdate }
+            };
             whereDoc[partner_field] = partnerId;
 
+            // Delete previous copies of these specific document types
             await tx.kycDocument.deleteMany({
                 where: whereDoc,
             });

@@ -11,28 +11,37 @@ export class KYCController {
 
     submitKYC = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+            const files = (req.files || {}) as { [fieldname: string]: Express.Multer.File[] };
+            const body = req.body || {};
 
             const documents: any = {};
 
-            // Handle both camelCase and snake_case field names from Multer
-            if (files.aadhaarFront) documents.aadhaarFront = files.aadhaarFront[0].filename;
-            else if (files.aadhaar_front) documents.aadhaarFront = files.aadhaar_front[0].filename;
+            // Handle both files and JSON body (Cloudinary URLs, etc.)
+            if (files.aadhaarFront?.[0]) documents.aadhaarFront = files.aadhaarFront[0].filename;
+            else if (files.aadhaar_front?.[0]) documents.aadhaarFront = files.aadhaar_front[0].filename;
+            else if (body.aadhaarFront || body.aadhaar_front) documents.aadhaarFront = body.aadhaarFront || body.aadhaar_front;
 
-            if (files.aadhaarBack) documents.aadhaarBack = files.aadhaarBack[0].filename;
-            else if (files.aadhaar_back) documents.aadhaarBack = files.aadhaar_back[0].filename;
+            if (files.aadhaarBack?.[0]) documents.aadhaarBack = files.aadhaarBack[0].filename;
+            else if (files.aadhaar_back?.[0]) documents.aadhaarBack = files.aadhaar_back[0].filename;
+            else if (body.aadhaarBack || body.aadhaar_back) documents.aadhaarBack = body.aadhaarBack || body.aadhaar_back;
 
-            if (files.panCard) documents.panCard = files.panCard[0].filename;
-            else if (files.pan_card) documents.panCard = files.pan_card[0].filename;
+            if (files.panCard?.[0]) documents.panCard = files.panCard[0].filename;
+            else if (files.pan_card?.[0]) documents.panCard = files.pan_card[0].filename;
+            else if (body.panCard || body.pan_card) documents.panCard = body.panCard || body.pan_card;
 
-            if (files.photo) documents.photo = files.photo[0].filename;
+            if (files.photo?.[0]) documents.photo = files.photo[0].filename;
+            else if (body.photo) documents.photo = body.photo;
 
-            if (files.bankProof) documents.bankProof = files.bankProof[0].filename;
-            else if (files.bank_proof) documents.bankProof = files.bank_proof[0].filename;
-            else if (files.bank_passbook) documents.bankProof = files.bank_passbook[0].filename;
+            if (files.bankProof?.[0]) documents.bankProof = files.bankProof[0].filename;
+            else if (files.bank_proof?.[0]) documents.bankProof = files.bank_proof[0].filename;
+            else if (files.bank_passbook?.[0]) documents.bankProof = files.bank_passbook[0].filename;
+            else if (body.bankProof || body.bank_proof || body.bank_passbook) documents.bankProof = body.bankProof || body.bank_proof || body.bank_passbook;
 
-            if (files.businessLicense) documents.businessLicense = files.businessLicense[0].filename;
-            if (files.gstCertificate) documents.gstCertificate = files.gstCertificate[0].filename;
+            if (files.businessLicense?.[0]) documents.businessLicense = files.businessLicense[0].filename;
+            else if (body.businessLicense) documents.businessLicense = body.businessLicense;
+
+            if (files.gstCertificate?.[0]) documents.gstCertificate = files.gstCertificate[0].filename;
+            else if (body.gstCertificate) documents.gstCertificate = body.gstCertificate;
 
             const result = await this.kycService.submitKYC(
                 req.user!.userId,

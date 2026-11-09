@@ -415,6 +415,36 @@ export class CronService {
 
         this.jobs.push(partnerReferralEvalJob);
 
+        // Run daily at 10:00 PM IST (End-Of-Day after work) to execute automated partner balance transfers
+        const eodAutoPayoutJob = cron.schedule('0 22 * * *', async () => {
+            logger.info('Running 10:00 PM EOD automated partner balance transfer job...');
+            try {
+                const { partnerService } = await import('./partner.service');
+                await partnerService.processDailyAutomatedPayouts();
+            } catch (error) {
+                logger.error('Error in 10:00 PM automated balance transfer:', error);
+            }
+        }, {
+            timezone: 'Asia/Kolkata'
+        });
+
+        this.jobs.push(eodAutoPayoutJob);
+
+        // Run morning catch-up at 6:00 AM IST (before work starts) for any partners not transferred the previous evening
+        const morningCatchupPayoutJob = cron.schedule('0 6 * * *', async () => {
+            logger.info('Running 6:00 AM morning catch-up partner balance transfer job...');
+            try {
+                const { partnerService } = await import('./partner.service');
+                await partnerService.processDailyAutomatedPayouts();
+            } catch (error) {
+                logger.error('Error in 6:00 AM automated balance transfer:', error);
+            }
+        }, {
+            timezone: 'Asia/Kolkata'
+        });
+
+        this.jobs.push(morningCatchupPayoutJob);
+
         logger.info('Cron service started with ' + this.jobs.length + ' jobs');
     }
 

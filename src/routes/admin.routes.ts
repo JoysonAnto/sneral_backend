@@ -133,5 +133,15 @@ router.get('/agencies', checkPermission('USER_MANAGE'), adminManagementControlle
 router.get('/agencies/:id/technicians', checkPermission('USER_MANAGE'), adminManagementController.getAgencyTechnicians);
 router.post('/agencies/:id/technicians', checkPermission('USER_MANAGE'), adminManagementController.linkTechnicianToAgency);
 
+// ============================================
+// MERCHANDISE & EQUIPMENT STORE
+// ============================================
+router.get('/merchandise', checkPermission('SERVICE_MANAGE'), adminManagementController.getMerchandiseKits);
+router.post('/merchandise', checkPermission('SERVICE_MANAGE'), adminManagementController.createMerchandiseKit);
+router.put('/merchandise/:id', checkPermission('SERVICE_MANAGE'), adminManagementController.updateMerchandiseKit);
+router.delete('/merchandise/:id', checkPermission('SERVICE_MANAGE'), adminManagementController.deleteMerchandiseKit);
+router.get('/merchandise/orders', checkPermission('REPORT_VIEW'), adminManagementController.getMerchandiseOrders);
+router.patch('/merchandise/orders/:id/status', checkPermission('SERVICE_MANAGE'), adminManagementController.updateMerchandiseOrderStatus);
+
 export default router;
 

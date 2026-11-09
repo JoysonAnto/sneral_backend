@@ -1546,35 +1546,55 @@ export class PartnerService {
             orderBy: { updated_at: 'desc' }
         });
 
-        // 2. Earnings Today & All-Time
-        const startOfDay = new Date();
-        startOfDay.setHours(0, 0, 0, 0);
+        // 2. Earnings Today & All-Time with accurate Indian Standard Time (Asia/Kolkata) window
+        const nowIST = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+        const startOfTodayIST = new Date(Date.UTC(nowIST.getFullYear(), nowIST.getMonth(), nowIST.getDate(), 0, 0, 0));
+        const startOfTodayUTC = new Date(startOfTodayIST.getTime() - (5.5 * 60 * 60 * 1000));
 
         const [
             earningsTodayResult,
             totalEarningsResult,
+            todayCompletedBookings,
+            allTimeCompletedBookings,
             wallet,
             todayTotalOrders,
             todayCompletedOrders,
             totalCompletedOrders,
             totalOrders
         ] = await Promise.all([
-            // Today's earnings
+            // Today's transaction earnings
             prisma.transaction.aggregate({
                 where: {
                     user_id: userId,
                     category: 'CREDIT',
-                    created_at: { gte: startOfDay }
+                    created_at: { gte: startOfTodayUTC }
                 },
                 _sum: { amount: true }
             }),
-            // Total earnings all time
+            // Total transaction earnings all time
             prisma.transaction.aggregate({
                 where: {
                     user_id: userId,
                     category: 'CREDIT'
                 },
                 _sum: { amount: true }
+            }),
+            // Today's completed bookings (cross-check fallback)
+            prisma.booking.findMany({
+                where: {
+                    partner_id: partner.id,
+                    status: { in: ['COMPLETED', 'RATED'] },
+                    completed_at: { gte: startOfTodayUTC }
+                },
+                select: { commission_amount: true, total_amount: true, platform_fee: true }
+            }),
+            // All-time completed bookings (cross-check fallback)
+            prisma.booking.findMany({
+                where: {
+                    partner_id: partner.id,
+                    status: { in: ['COMPLETED', 'RATED'] }
+                },
+                select: { commission_amount: true, total_amount: true, platform_fee: true }
             }),
             // Wallet balance
             prisma.wallet.findUnique({
@@ -1586,8 +1606,8 @@ export class PartnerService {
                 where: {
                     partner_id: partner.id,
                     OR: [
-                        { created_at: { gte: startOfDay } },
-                        { partner_assigned_at: { gte: startOfDay } }
+                        { created_at: { gte: startOfTodayUTC } },
+                        { partner_assigned_at: { gte: startOfTodayUTC } }
                     ]
                 }
             }),
@@ -1595,15 +1615,15 @@ export class PartnerService {
             prisma.booking.count({
                 where: {
                     partner_id: partner.id,
-                    status: 'COMPLETED',
-                    completed_at: { gte: startOfDay }
+                    status: { in: ['COMPLETED', 'RATED'] },
+                    completed_at: { gte: startOfTodayUTC }
                 }
             }),
             // Total completed orders all-time
             prisma.booking.count({
                 where: {
                     partner_id: partner.id,
-                    status: 'COMPLETED'
+                    status: { in: ['COMPLETED', 'RATED'] }
                 }
             }),
             // Total orders all-time
@@ -1614,9 +1634,23 @@ export class PartnerService {
             })
         ]);
 
-        const earningsToday = earningsTodayResult._sum.amount || 0;
-        const totalEarnings = totalEarningsResult._sum.amount || 0;
+        // Cross-check today's booking payouts
+        const todayBookingsTotal = todayCompletedBookings.reduce((sum, b) => {
+            const earn = b.commission_amount || Math.max(0, b.total_amount - (b.platform_fee || 0));
+            return sum + (earn > 0 ? earn : b.total_amount * 0.8);
+        }, 0);
+
+        const allTimeBookingsTotal = allTimeCompletedBookings.reduce((sum, b) => {
+            const earn = b.commission_amount || Math.max(0, b.total_amount - (b.platform_fee || 0));
+            return sum + (earn > 0 ? earn : b.total_amount * 0.8);
+        }, 0);
+
+        const txEarningsToday = earningsTodayResult._sum.amount || 0;
+        const txTotalEarnings = totalEarningsResult._sum.amount || 0;
         const walletBalance = wallet?.balance || 0;
+
+        const earningsToday = Math.max(txEarningsToday, todayBookingsTotal);
+        const totalEarnings = Math.max(txTotalEarnings, allTimeBookingsTotal, walletBalance);
 
         return {
             role: 'SERVICE_PARTNER',
@@ -1867,61 +1901,216 @@ export class PartnerService {
         return await referralService.getUserReferralInfo(userId);
     }
 
+    /**
+     * Automated End-of-Day Balance Transfer to partner bank/UPI.
+     * Scheduled at 10:00 PM IST (after work) or 6:00 AM IST (before work).
+     * Enforces strict once-per-day rule per partner.
+     */
+    async processDailyAutomatedPayouts(): Promise<{ processed: number; totalAmount: number }> {
+        try {
+            logger.info('🏦 Starting Daily Automated Partner Balance Transfer...');
+            const eligiblePartners = await prisma.servicePartner.findMany({
+                where: {
+                    auto_transfer_enabled: true,
+                    payout_methods: { some: { is_verified: true } }
+                },
+                include: {
+                    user: { include: { wallet: true } },
+                    payout_methods: true
+                }
+            }) as any[];
+
+            const eighteenHoursAgo = new Date(Date.now() - 18 * 60 * 60 * 1000);
+            let processedCount = 0;
+            let totalTransferred = 0;
+
+            for (const partner of eligiblePartners) {
+                const userId = partner.user_id;
+                const wallet = partner.user?.wallet;
+                const minThreshold = partner.minimum_payout_threshold || 500;
+
+                if (!wallet || wallet.balance < minThreshold) {
+                    continue;
+                }
+
+                // Check if an automated transfer already ran in the last 18 hours
+                const recentPayout = await prisma.transaction.findFirst({
+                    where: {
+                        user_id: userId,
+                        type: 'PAYOUT',
+                        description: { contains: 'Automated End-Of-Day Balance Transfer' },
+                        created_at: { gte: eighteenHoursAgo }
+                    }
+                });
+
+                if (recentPayout) {
+                    logger.info(`Skipping automated transfer for partner ${partner.id} - already transferred recently.`);
+                    continue;
+                }
+
+                const transferAmount = wallet.balance;
+                const payoutMethods: any[] = partner.payout_methods || [];
+                const selectedMethod = payoutMethods.find((m: any) => m.is_default && m.is_verified) || payoutMethods.find((m: any) => m.is_verified);
+
+                if (!selectedMethod) continue;
+
+                const destInfo = selectedMethod.type === 'UPI' 
+                    ? `UPI: ${selectedMethod.upi_id}` 
+                    : `Bank A/C: ${selectedMethod.account_number} (${selectedMethod.ifsc_code || 'Verified'})`;
+
+                await prisma.$transaction(async (tx) => {
+                    await tx.wallet.update({
+                        where: { user_id: userId },
+                        data: {
+                            balance: 0,
+                            pending_payout: { increment: transferAmount }
+                        }
+                    });
+
+                    await tx.transaction.create({
+                        data: {
+                            user_id: userId,
+                            amount: transferAmount,
+                            type: 'PAYOUT',
+                            category: 'DEBIT',
+                            status: 'COMPLETED',
+                            balance_before: wallet.balance,
+                            balance_after: 0,
+                            description: `Automated End-Of-Day Balance Transfer to ${destInfo}`
+                        }
+                    });
+                });
+
+                processedCount++;
+                totalTransferred += transferAmount;
+                logger.info(`✅ Auto-transferred ₹${transferAmount} to partner ${partner.id} (${destInfo})`);
+
+                // Send notification
+                try {
+                    const { NotificationService } = await import('./notification.service');
+                    const notifService = new NotificationService();
+                    await notifService.createNotification(
+                        userId,
+                        'PAYOUT',
+                        'Daily Bank Transfer Processed 🏦',
+                        `₹${transferAmount.toLocaleString('en-IN')} has been automatically transferred to your ${destInfo}.`,
+                        { type: 'DAILY_AUTO_PAYOUT', amount: transferAmount }
+                    );
+                } catch (e) {
+                    // Non-blocking
+                }
+            }
+
+            logger.info(`Daily Automated Payouts completed. Processed: ${processedCount}, Total: ₹${totalTransferred}`);
+            return { processed: processedCount, totalAmount: totalTransferred };
+        } catch (error) {
+            logger.error('Error processing daily automated payouts:', error);
+            return { processed: 0, totalAmount: 0 };
+        }
+    }
+
+    async ensureDefaultMerchandiseKits() {
+        const defaults = [
+            {
+                name: 'Snearal Pro Backpack',
+                description: 'Ergonomic, water-resistant heavy-duty backpack with padded shoulder straps and compartments for tools and daily equipment.',
+                price: 100,
+                badge: 'POPULAR',
+                image_url: 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=800&auto=format&fit=crop&q=60',
+                items_included: ['1x Heavy-Duty Partner Backpack', 'Reflective Safety Strips', 'Reinforced Laptop/Tablet Pouch'],
+                is_available: true
+            },
+            {
+                name: 'Snearal Utility Handbag',
+                description: 'Compact and sturdy quick-access utility handbag for small hand tools, testers, and spare components.',
+                price: 150,
+                badge: 'ESSENTIAL',
+                image_url: 'https://images.unsplash.com/photo-1544816155-12df9643f363?w=800&auto=format&fit=crop&q=60',
+                items_included: ['1x Zippered Utility Handbag', 'Multi-pocket organizer'],
+                is_available: true
+            },
+            {
+                name: 'Pro Delivery Bag Model',
+                description: 'Insulated, waterproof high-capacity professional delivery and service bag with side hydration pockets and reinforced base.',
+                price: 500,
+                badge: 'BESTSELLER',
+                image_url: 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=800&auto=format&fit=crop&q=60',
+                items_included: ['1x Heavy Duty 45L Delivery Bag', 'Weatherproof Rain Cover', 'Modular Compartment Dividers'],
+                is_available: true
+            },
+            {
+                name: 'Official Snearal Polo T-Shirt',
+                description: 'Breathable, moisture-wicking high-durability polo t-shirt with embroidered Snearal Partner logo.',
+                price: 299,
+                badge: 'OFFICIAL',
+                image_url: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=800&auto=format&fit=crop&q=60',
+                items_included: ['1x Snearal Moisture-Wicking Polo T-Shirt', 'Snearal Verified Crest'],
+                is_available: true
+            },
+            {
+                name: 'Snearal Embroidered Partner Cap',
+                description: 'Sun-shielding all-weather baseball cap with adjustable strap and high-definition Snearal embroidery.',
+                price: 149,
+                badge: 'POPULAR',
+                image_url: 'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?w=800&auto=format&fit=crop&q=60',
+                items_included: ['1x Embroidered Snearal Baseball Cap'],
+                is_available: true
+            },
+            {
+                name: 'Snearal Women Partner Top / Polo',
+                description: 'Tailored fit women partner polo with breathable fabric, collar buttoning, and professional Snearal crest.',
+                price: 299,
+                badge: 'WOMEN PRO',
+                image_url: 'https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?w=800&auto=format&fit=crop&q=60',
+                items_included: ['1x Women Fitted Partner Polo'],
+                is_available: true
+            },
+            {
+                name: 'Monsoon Heavy-Duty Raincoat Set',
+                description: 'Double-layer waterproof hooded raincoat and high-visibility rain trousers designed for monsoon field service.',
+                price: 499,
+                badge: 'ALL-WEATHER',
+                image_url: 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=800&auto=format&fit=crop&q=60',
+                items_included: ['1x Hooded Waterproof Jacket', '1x Waterproof Rain Pants', '1x Bag Rain Shield'],
+                is_available: true
+            },
+            {
+                name: 'Winter Warm Fleece Hoodie',
+                description: 'Premium fleece-lined warm hoodie with kangaroo pocket and high-density Snearal branding for cold weather shifts.',
+                price: 699,
+                badge: 'WINTER PRO',
+                image_url: 'https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=800&auto=format&fit=crop&q=60',
+                items_included: ['1x Heavyweight Fleece Partner Hoodie'],
+                is_available: true
+            },
+            {
+                name: 'Professional Diagnostic Toolkit',
+                description: 'Comprehensive electrical and plumbing multi-tool kit: digital multimeter, voltage tester pen, insulated pliers, screwdrivers.',
+                price: 899,
+                badge: 'ESSENTIAL TOOLS',
+                image_url: 'https://images.unsplash.com/photo-1581783898377-1c85bf937427?w=800&auto=format&fit=crop&q=60',
+                items_included: ['1x Digital Multimeter', '1x AC Voltage Tester Pen', '6x VDE Insulated Screwdrivers', '1x Heavy Pliers'],
+                is_available: true
+            }
+        ];
+
+        for (const item of defaults) {
+            const existing = await prisma.merchandiseKit.findFirst({
+                where: { name: item.name }
+            });
+            if (!existing) {
+                await prisma.merchandiseKit.create({ data: item });
+            }
+        }
+    }
+
     async getMerchandiseKits() {
-        let kits = await prisma.merchandiseKit.findMany({
+        await this.ensureDefaultMerchandiseKits();
+
+        const kits = await prisma.merchandiseKit.findMany({
             where: { is_available: true },
             orderBy: { price: 'asc' }
         });
-
-        if (kits.length === 0) {
-            const defaults = [
-                {
-                    name: 'Starter Pro Partner Kit',
-                    description: 'Everything you need to kick off your Snearal journey: 2 Official Snearal Polos, Partner Cap & Retractable ID Badge.',
-                    price: 499,
-                    badge: 'POPULAR',
-                    image_url: 'https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=800&auto=format&fit=crop&q=60',
-                    items_included: ['2x Snearal Moisture-Wicking Polo T-Shirts', '1x Official Embroidered Cap', '1x Verified Partner ID Card & Lanyard'],
-                    is_available: true
-                },
-                {
-                    name: 'Monsoon All-Weather Shield Kit',
-                    description: 'Never let rain stop your daily earnings. Premium heavy-duty waterproof raincoat and water-repellent equipment bag cover.',
-                    price: 899,
-                    badge: 'ESSENTIAL',
-                    image_url: 'https://images.unsplash.com/photo-1544717305-2782549b5136?w=800&auto=format&fit=crop&q=60',
-                    items_included: ['1x Double-Layer Heavy-Duty Raincoat', '1x High-Visibility Rain Pants', '1x Waterproof Bag Rain Shield Cover'],
-                    is_available: true
-                },
-                {
-                    name: 'Master Technician Toolkit',
-                    description: 'Pro-grade multi-meter, insulated screwdriver set, precision voltage detector, and ballistic nylon heavy-duty tool backpack.',
-                    price: 1499,
-                    badge: 'PRO TOOLS',
-                    image_url: 'https://images.unsplash.com/photo-1581783898377-1c85bf937427?w=800&auto=format&fit=crop&q=60',
-                    items_included: ['1x Professional Digital Multimeter', '1x 8-Piece Insulated VDE Screwdriver Set', '1x Non-Contact AC Voltage Tester Pen', '1x Multi-Pocket Ballistic Nylon Tool Bag'],
-                    is_available: true
-                },
-                {
-                    name: 'Super Partner Elite Combo Pack',
-                    description: 'The ultimate kit for top performers. Complete apparel, all-weather gear, safety equipment, and priority badge branding.',
-                    price: 2199,
-                    badge: 'BEST VALUE',
-                    image_url: 'https://images.unsplash.com/photo-1504917599217-d4dc5ebe6122?w=800&auto=format&fit=crop&q=60',
-                    items_included: ['3x Snearal Pro Polos', '1x All-Weather Raincoat Set', '1x Partner Cap', '1x Complete Pro Toolkit', '1x Heavy Duty Bag', '1x Safety Gloves & Goggles Set'],
-                    is_available: true
-                }
-            ];
-
-            for (const item of defaults) {
-                await prisma.merchandiseKit.create({ data: item });
-            }
-
-            kits = await prisma.merchandiseKit.findMany({
-                where: { is_available: true },
-                orderBy: { price: 'asc' }
-            });
-        }
 
         return kits;
     }
@@ -2278,3 +2467,5 @@ export class PartnerService {
         };
     }
 }
+
+export const partnerService = new PartnerService();

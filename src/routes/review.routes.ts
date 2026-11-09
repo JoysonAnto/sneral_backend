@@ -93,6 +93,18 @@ router.get(
     reviewController.getReviewStatus
 );
 
+router.get(
+    '/my-reviews',
+    authorize(UserRole.CUSTOMER, UserRole.SERVICE_PARTNER, UserRole.BUSINESS_PARTNER, UserRole.ADMIN, UserRole.SUPER_ADMIN),
+    reviewController.getMyReviews
+);
+
+router.get(
+    '/partner/my',
+    authorize(UserRole.SERVICE_PARTNER, UserRole.ADMIN, UserRole.SUPER_ADMIN),
+    reviewController.getMyReviews
+);
+
 /**
  * @swagger
  * /partners/{partnerId}/reviews:

@@ -138,11 +138,18 @@ export class ReviewService {
         partnerId: string,
         query: { page?: string; limit?: string }
     ) {
-        // partnerId here is the ServicePartner.id (profile id)
-        const partner = await prisma.servicePartner.findUnique({
+        // partnerId can be either ServicePartner.id or User.id
+        let partner = await prisma.servicePartner.findUnique({
             where: { id: partnerId },
             select: { user_id: true, avg_rating: true, total_ratings: true },
         });
+
+        if (!partner) {
+            partner = await prisma.servicePartner.findUnique({
+                where: { user_id: partnerId },
+                select: { user_id: true, avg_rating: true, total_ratings: true },
+            });
+        }
 
         if (!partner) throw new AppError('Partner not found', 404);
 
@@ -274,10 +281,17 @@ export class ReviewService {
      * Get a high-level rating summary including star breakdown.
      */
     async getPartnerRatingSummary(partnerId: string) {
-        const partner = await prisma.servicePartner.findUnique({
+        let partner = await prisma.servicePartner.findUnique({
             where: { id: partnerId },
             select: { user_id: true, avg_rating: true, total_ratings: true },
         });
+
+        if (!partner) {
+            partner = await prisma.servicePartner.findUnique({
+                where: { user_id: partnerId },
+                select: { user_id: true, avg_rating: true, total_ratings: true },
+            });
+        }
 
         if (!partner) throw new AppError('Partner not found', 404);
 

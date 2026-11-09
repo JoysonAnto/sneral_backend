@@ -227,6 +227,120 @@ export class AdminManagementController {
             next(error);
         }
     };
+
+    // ============================================
+    // MERCHANDISE / EQUIPMENT STORE MANAGEMENT
+    // ============================================
+    getMerchandiseKits = async (_req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { partnerService } = await import('../services/partner.service');
+            await partnerService.ensureDefaultMerchandiseKits();
+
+            const kits = await prisma.merchandiseKit.findMany({
+                orderBy: { created_at: 'desc' }
+            });
+            res.json(successResponse(kits, 'Merchandise products retrieved successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    createMerchandiseKit = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { name, description, price, image_url, badge, items_included, is_available } = req.body;
+            if (!name || price === undefined) {
+                throw new BadRequestError('Product name and price are required');
+            }
+
+            const kit = await prisma.merchandiseKit.create({
+                data: {
+                    name,
+                    description: description || name,
+                    price: parseFloat(price),
+                    image_url: image_url || null,
+                    badge: badge || null,
+                    items_included: Array.isArray(items_included) ? items_included : (items_included ? [items_included] : []),
+                    is_available: is_available !== undefined ? Boolean(is_available) : true,
+                }
+            });
+            res.status(201).json(successResponse(kit, 'Product created successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    updateMerchandiseKit = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { id } = req.params;
+            const { name, description, price, image_url, badge, items_included, is_available } = req.body;
+
+            const updateData: any = {};
+            if (name !== undefined) updateData.name = name;
+            if (description !== undefined) updateData.description = description;
+            if (price !== undefined) updateData.price = parseFloat(price);
+            if (image_url !== undefined) updateData.image_url = image_url;
+            if (badge !== undefined) updateData.badge = badge;
+            if (items_included !== undefined) {
+                updateData.items_included = Array.isArray(items_included) ? items_included : [items_included];
+            }
+            if (is_available !== undefined) updateData.is_available = Boolean(is_available);
+
+            const updated = await prisma.merchandiseKit.update({
+                where: { id },
+                data: updateData
+            });
+            res.json(successResponse(updated, 'Product updated successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    deleteMerchandiseKit = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { id } = req.params;
+            await prisma.merchandiseKit.delete({
+                where: { id }
+            });
+            res.json(successResponse({ id }, 'Product deleted successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    getMerchandiseOrders = async (_req: Request, res: Response, next: NextFunction) => {
+        try {
+            const orders = await prisma.merchandiseOrder.findMany({
+                include: {
+                    partner: {
+                        include: {
+                            user: { select: { full_name: true, phone_number: true, email: true } }
+                        }
+                    },
+                    kit: true
+                },
+                orderBy: { created_at: 'desc' }
+            });
+            res.json(successResponse(orders, 'Merchandise orders retrieved successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    updateMerchandiseOrderStatus = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { id } = req.params;
+            const { status } = req.body;
+            if (!status) throw new BadRequestError('Status is required');
+
+            const updatedOrder = await prisma.merchandiseOrder.update({
+                where: { id },
+                data: { status }
+            });
+            res.json(successResponse(updatedOrder, 'Order status updated successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
 }
 
 export const adminManagementController = new AdminManagementController();
