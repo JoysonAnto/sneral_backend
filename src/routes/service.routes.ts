@@ -66,6 +66,12 @@ router.get('/:id/packages', serviceController.getServicePackages);
 
 // Protected routes - Packages Management
 router.post(
+    '/:id/packages/bulk',
+    authenticateToken,
+    checkPermission('SERVICE_MANAGE'),
+    serviceController.saveBulkServicePackages
+);
+router.post(
     '/:id/packages',
     authenticateToken,
     checkPermission('SERVICE_MANAGE'),

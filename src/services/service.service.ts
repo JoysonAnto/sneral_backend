@@ -6,6 +6,7 @@ interface CreateServiceData {
     description: string;
     categoryId: string;
     basePrice: number;
+    base_price?: number;
     duration: number;
     imageUrl?: string;
     isActive?: boolean | string;
@@ -30,6 +31,8 @@ export interface FormattedPackage {
     title: string;
     durationMinutes: number;
     duration_minutes: number;
+    pricingType: string;
+    pricing_type: string;
     price: number;
     originalPrice: number;
     original_price: number;
@@ -38,6 +41,8 @@ export interface FormattedPackage {
     discount_percentage: number;
     isPopular: boolean;
     is_popular: boolean;
+    isActive: boolean;
+    is_active: boolean;
     displayOrder: number;
     display_order: number;
 }
@@ -58,9 +63,13 @@ export function formatServicePackages(packages: any[] = [], serviceBasePrice: nu
 
         const price = Number(pkg.price);
         const savings = Math.max(0, calculatedOriginalPrice - price);
-        const discountPercentage = calculatedOriginalPrice > 0 && savings > 0
+        const autoDiscount = calculatedOriginalPrice > 0 && savings > 0
             ? Math.round((savings / calculatedOriginalPrice) * 100)
             : 0;
+        const discountPercentage = pkg.discount_percentage != null
+            ? Number(pkg.discount_percentage)
+            : autoDiscount;
+        const pricingType = pkg.pricing_type || (pkg.pricingType || 'FLAT');
 
         return {
             id: pkg.id,
@@ -70,6 +79,8 @@ export function formatServicePackages(packages: any[] = [], serviceBasePrice: nu
             title: pkg.title || `${pkg.hours} ${Number(pkg.hours) === 1 ? 'Hour' : 'Hours'}`,
             durationMinutes: Math.round(Number(pkg.hours) * 60),
             duration_minutes: Math.round(Number(pkg.hours) * 60),
+            pricingType,
+            pricing_type: pricingType,
             price,
             originalPrice: calculatedOriginalPrice,
             original_price: calculatedOriginalPrice,
@@ -78,6 +89,8 @@ export function formatServicePackages(packages: any[] = [], serviceBasePrice: nu
             discount_percentage: discountPercentage,
             isPopular: !!pkg.is_popular,
             is_popular: !!pkg.is_popular,
+            isActive: pkg.is_active !== false,
+            is_active: pkg.is_active !== false,
             displayOrder: pkg.display_order || 1,
             display_order: pkg.display_order || 1,
         };
@@ -349,6 +362,52 @@ export class ServiceService {
                 category: true,
             },
         });
+
+        // If base price changed, recalculate prices for all hourly packages
+        const newBasePrice = data.basePrice !== undefined
+            ? parseFloat(data.basePrice as any)
+            : (data.base_price !== undefined ? parseFloat(data.base_price as any) : undefined);
+
+        if (newBasePrice !== undefined && newBasePrice > 0 && Math.round(newBasePrice) !== Math.round(service.base_price)) {
+            const existingPackages = await prisma.servicePackage.findMany({
+                where: { service_id: serviceId }
+            });
+            for (const pkg of existingPackages) {
+                const originalPrice = Math.round(pkg.hours * newBasePrice);
+                if (pkg.hours === 1) {
+                    await prisma.servicePackage.update({
+                        where: { id: pkg.id },
+                        data: {
+                            original_price: newBasePrice,
+                            price: newBasePrice,
+                            discount_percentage: 0,
+                        }
+                    });
+                } else if (pkg.pricing_type === 'PERCENTAGE' && pkg.discount_percentage != null) {
+                    const discount = pkg.discount_percentage;
+                    const newPrice = Math.round(originalPrice * (1 - discount / 100));
+                    await prisma.servicePackage.update({
+                        where: { id: pkg.id },
+                        data: {
+                            original_price: originalPrice,
+                            price: newPrice,
+                        }
+                    });
+                } else {
+                    // For FLAT packages, update original_price so strikethrough stays accurate
+                    const autoDiscount = originalPrice > pkg.price
+                        ? Math.round(((originalPrice - pkg.price) / originalPrice) * 100)
+                        : 0;
+                    await prisma.servicePackage.update({
+                        where: { id: pkg.id },
+                        data: {
+                            original_price: originalPrice,
+                            discount_percentage: autoDiscount,
+                        }
+                    });
+                }
+            }
+        }
 
         return {
             id: updatedService.id,
@@ -933,16 +992,33 @@ export class ServiceService {
         if (!service) throw new NotFoundError('Service not found');
 
         const hours = parseFloat(data.hours);
-        const price = parseFloat(data.price);
+        const baseHourlyRate = service.base_price > 0 ? service.base_price : 219;
         const originalPrice = (data.original_price != null || data.originalPrice != null)
             ? parseFloat(data.original_price ?? data.originalPrice)
-            : null;
+            : Math.round(hours * baseHourlyRate);
+
+        const pricingType = data.pricing_type || data.pricingType || (data.discount_percentage != null || data.discountPercentage != null ? 'PERCENTAGE' : 'FLAT');
+        let discountPercentage = data.discount_percentage != null
+            ? parseFloat(data.discount_percentage)
+            : (data.discountPercentage != null ? parseFloat(data.discountPercentage) : null);
+
+        let price = data.price != null ? parseFloat(data.price) : 0;
+        if (pricingType === 'PERCENTAGE') {
+            const pct = discountPercentage != null ? discountPercentage : 0;
+            price = Math.round(originalPrice * (1 - pct / 100));
+        } else {
+            if (discountPercentage == null && originalPrice > price) {
+                discountPercentage = Math.round(((originalPrice - price) / originalPrice) * 100);
+            }
+        }
 
         const pkg = await prisma.servicePackage.create({
             data: {
                 service_id: serviceId,
                 hours,
                 title: data.title || `${hours} ${hours === 1 ? 'Hour' : 'Hours'}`,
+                pricing_type: pricingType,
+                discount_percentage: discountPercentage,
                 price,
                 original_price: originalPrice,
                 is_popular: data.is_popular === true || data.isPopular === true,
@@ -954,17 +1030,40 @@ export class ServiceService {
     }
 
     async updateServicePackage(packageId: string, data: any) {
-        const existing = await prisma.servicePackage.findUnique({ where: { id: packageId } });
+        const existing = await prisma.servicePackage.findUnique({
+            where: { id: packageId },
+            include: { service: true }
+        });
         if (!existing) throw new NotFoundError('Package not found');
 
-        const updateData: any = {};
-        if (data.hours != null) updateData.hours = parseFloat(data.hours);
-        if (data.price != null) updateData.price = parseFloat(data.price);
-        if (data.original_price !== undefined || data.originalPrice !== undefined) {
-            updateData.original_price = (data.original_price ?? data.originalPrice) != null
-                ? parseFloat(data.original_price ?? data.originalPrice)
-                : null;
+        const baseHourlyRate = existing.service?.base_price > 0 ? existing.service.base_price : 219;
+        const hours = data.hours != null ? parseFloat(data.hours) : existing.hours;
+        const originalPrice = (data.original_price !== undefined || data.originalPrice !== undefined)
+            ? ((data.original_price ?? data.originalPrice) != null ? parseFloat(data.original_price ?? data.originalPrice) : null)
+            : Math.round(hours * baseHourlyRate);
+
+        const pricingType = data.pricing_type || data.pricingType || existing.pricing_type || 'FLAT';
+        let discountPercentage = data.discount_percentage !== undefined
+            ? (data.discount_percentage != null ? parseFloat(data.discount_percentage) : null)
+            : (data.discountPercentage !== undefined ? (data.discountPercentage != null ? parseFloat(data.discountPercentage) : null) : existing.discount_percentage);
+
+        let price = data.price != null ? parseFloat(data.price) : existing.price;
+        if (pricingType === 'PERCENTAGE') {
+            const pct = discountPercentage != null ? discountPercentage : 0;
+            if (originalPrice != null) {
+                price = Math.round(originalPrice * (1 - pct / 100));
+            }
+        } else if (originalPrice != null && price != null && originalPrice > price) {
+            discountPercentage = Math.round(((originalPrice - price) / originalPrice) * 100);
         }
+
+        const updateData: any = {
+            hours,
+            price,
+            original_price: originalPrice,
+            pricing_type: pricingType,
+            discount_percentage: discountPercentage,
+        };
         if (data.title != null) updateData.title = data.title;
         if (data.is_popular !== undefined || data.isPopular !== undefined) {
             updateData.is_popular = data.is_popular ?? data.isPopular;
@@ -981,6 +1080,105 @@ export class ServiceService {
             data: updateData,
         });
         return pkg;
+    }
+
+    async saveBulkServicePackages(serviceId: string, packagesData: any[]) {
+        const service = await prisma.service.findUnique({
+            where: { id: serviceId },
+            include: { packages: true }
+        });
+        if (!service) throw new NotFoundError('Service not found');
+
+        if (!Array.isArray(packagesData) || packagesData.length === 0) {
+            throw new BadRequestError('Packages array is required');
+        }
+
+        // 1. Identify 1-hour package to sync service base price if provided
+        const oneHrInput = packagesData.find(p => Number(p.hours) === 1);
+        let baseHourlyRate = service.base_price > 0 ? service.base_price : 219;
+        if (oneHrInput && oneHrInput.price != null && Number(oneHrInput.price) > 0) {
+            baseHourlyRate = Number(oneHrInput.price);
+            if (Math.round(baseHourlyRate) !== Math.round(service.base_price)) {
+                await prisma.service.update({
+                    where: { id: serviceId },
+                    data: { base_price: baseHourlyRate }
+                });
+            }
+        }
+
+        // Map existing packages by id and by hours
+        const existingById = new Map(service.packages.map(p => [p.id, p]));
+        const existingByHours = new Map(service.packages.map(p => [Number(p.hours), p]));
+
+        for (let i = 0; i < packagesData.length; i++) {
+            const item = packagesData[i];
+            const hours = Number(item.hours);
+            if (isNaN(hours) || hours <= 0) continue;
+
+            const pricingType = item.pricing_type || item.pricingType || (item.discount_percentage != null ? 'PERCENTAGE' : 'FLAT');
+            const originalPrice = Math.round(hours * baseHourlyRate);
+
+            let discountPercentage = item.discount_percentage != null
+                ? parseFloat(item.discount_percentage)
+                : (item.discountPercentage != null ? parseFloat(item.discountPercentage) : null);
+
+            let price = item.price != null ? parseFloat(item.price) : 0;
+
+            if (hours === 1) {
+                price = baseHourlyRate;
+                discountPercentage = 0;
+            } else if (pricingType === 'PERCENTAGE') {
+                const pct = discountPercentage != null ? discountPercentage : 0;
+                price = Math.round(originalPrice * (1 - pct / 100));
+            } else {
+                // FLAT
+                if (discountPercentage == null && originalPrice > price) {
+                    discountPercentage = Math.round(((originalPrice - price) / originalPrice) * 100);
+                }
+            }
+
+            const title = item.title || (hours === 1 ? '1 Hour (60 mins)' : `${hours} Hours (${Math.round(hours * 60)} mins)`);
+            const isPopular = item.is_popular === true || item.isPopular === true || (item.is_popular === undefined && hours === 3);
+            const isActive = item.is_active !== false && item.isActive !== false;
+            const displayOrder = item.display_order != null ? parseInt(item.display_order, 10) : (i + 1);
+
+            // Check if existing package matches by ID or by hours
+            const existing = (item.id && existingById.get(item.id)) || existingByHours.get(hours);
+
+            if (existing) {
+                await prisma.servicePackage.update({
+                    where: { id: existing.id },
+                    data: {
+                        hours,
+                        title,
+                        pricing_type: pricingType,
+                        discount_percentage: discountPercentage,
+                        price,
+                        original_price: originalPrice,
+                        is_popular: isPopular,
+                        is_active: isActive,
+                        display_order: displayOrder,
+                    }
+                });
+            } else {
+                await prisma.servicePackage.create({
+                    data: {
+                        service_id: serviceId,
+                        hours,
+                        title,
+                        pricing_type: pricingType,
+                        discount_percentage: discountPercentage,
+                        price,
+                        original_price: originalPrice,
+                        is_popular: isPopular,
+                        is_active: isActive,
+                        display_order: displayOrder,
+                    }
+                });
+            }
+        }
+
+        return this.getServicePackages(serviceId);
     }
 
     async deleteServicePackage(packageId: string) {

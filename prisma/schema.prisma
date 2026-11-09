@@ -498,19 +498,21 @@ model BookingItem {
 }
 
 model ServicePackage {
-  id             String        @id @default(uuid())
-  service_id     String
-  hours          Float
-  title          String?
-  price          Float
-  original_price Float?
-  is_popular     Boolean       @default(false)
-  is_active      Boolean       @default(true)
-  display_order  Int           @default(1)
-  created_at     DateTime      @default(now())
-  updated_at     DateTime      @updatedAt
-  service        Service       @relation(fields: [service_id], references: [id], onDelete: Cascade)
-  booking_items  BookingItem[]
+  id                  String        @id @default(uuid())
+  service_id          String
+  hours               Float
+  title               String?
+  pricing_type        String        @default("FLAT") // "FLAT" | "PERCENTAGE"
+  discount_percentage Float?                         // Discount percentage e.g. 16.0, 22.0
+  price               Float                          // Customer final selling price
+  original_price      Float?                         // Strikethrough price
+  is_popular          Boolean       @default(false)
+  is_active           Boolean       @default(true)
+  display_order       Int           @default(1)
+  created_at          DateTime      @default(now())
+  updated_at          DateTime      @updatedAt
+  service             Service       @relation(fields: [service_id], references: [id], onDelete: Cascade)
+  booking_items       BookingItem[]
 
   @@index([service_id])
   @@index([is_active])

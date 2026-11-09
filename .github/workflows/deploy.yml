@@ -60,3 +60,4 @@ jobs:
         run: |
           sleep 10
           curl -f https://api.snearal.com/api/v1/health || curl -f http://${{ secrets.EC2_HOST }}:3000/api/v1/health
+

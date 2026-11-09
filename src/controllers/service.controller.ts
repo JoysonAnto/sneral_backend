@@ -329,6 +329,16 @@ export class ServiceController {
         }
     };
 
+    saveBulkServicePackages = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const packages = req.body.packages || req.body;
+            const result = await this.serviceService.saveBulkServicePackages(req.params.id, packages);
+            res.json(successResponse(result, 'Service packages saved successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
     deleteServicePackage = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const result = await this.serviceService.deleteServicePackage(req.params.packageId);
