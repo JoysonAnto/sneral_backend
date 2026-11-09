@@ -55,8 +55,8 @@ export class AuthService {
         const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
         const randomDigits = Math.floor(1000 + Math.random() * 9000);
-        const namePrefix = (fullName || 'USER').replace(/[^a-zA-Z]/g, '').slice(0, 4).toUpperCase();
-        const userReferralCode = `SN-${namePrefix || 'CUST'}-${randomDigits}`;
+        const namePrefix = (fullName || (role === 'SERVICE_PARTNER' ? 'PRO' : 'USER')).replace(/[^a-zA-Z]/g, '').slice(0, 4).toUpperCase();
+        const userReferralCode = `SN-${namePrefix || (role === 'SERVICE_PARTNER' ? 'PRO' : 'CUST')}-${randomDigits}`;
 
         // Create user and partner in transaction
         const result = await prisma.$transaction(async (tx) => {
@@ -86,20 +86,46 @@ export class AuthService {
             // If referral code supplied, link referral tracking
             if (data.referralCode) {
                 const cleanCode = data.referralCode.trim();
-                const referrer = await tx.user.findFirst({
+                let referrer = await tx.user.findFirst({
                     where: { referral_code: cleanCode, is_deleted: false }
                 });
+                if (!referrer) {
+                    const sp = await tx.servicePartner.findFirst({
+                        where: { referral_code: cleanCode },
+                        include: { user: true }
+                    });
+                    if (sp && sp.user && !sp.user.is_deleted) {
+                        referrer = sp.user;
+                    }
+                }
+
                 if (referrer && referrer.id !== user.id) {
+                    const isRefereePartner = role === 'SERVICE_PARTNER';
+                    const isReferrerPartner = referrer.role === 'SERVICE_PARTNER';
+                    let refType = 'CUSTOMER_TO_CUSTOMER';
+                    let target = 5;
+                    let referrerReward = 200;
+
+                    if (isRefereePartner && isReferrerPartner) {
+                        refType = 'PARTNER_TO_PARTNER';
+                        target = 30; // 30 completed orders (or 30 days working with 10 completed jobs)
+                        referrerReward = 1500;
+                    } else if (!isRefereePartner && isReferrerPartner) {
+                        refType = 'PARTNER_TO_CUSTOMER';
+                        target = 5;
+                        referrerReward = 200;
+                    }
+
                     await tx.referralTracking.create({
                         data: {
                             referrer_user_id: referrer.id,
                             referee_user_id: user.id,
-                            referral_type: referrer.role === 'SERVICE_PARTNER' ? 'PARTNER_TO_CUSTOMER' : 'CUSTOMER_TO_CUSTOMER',
+                            referral_type: refType as any,
                             referral_code: cleanCode,
                             status: 'PENDING',
-                            referrer_reward: 200,
+                            referrer_reward: referrerReward,
                             referee_reward: 100,
-                            qualification_target: 5,
+                            qualification_target: target,
                             qualifying_count: 0
                         }
                     });
@@ -107,17 +133,13 @@ export class AuthService {
             }
 
             if (role === 'SERVICE_PARTNER') {
-                const partnerCodePrefix = (fullName || 'PARTNER').replace(/[^a-zA-Z]/g, '').slice(0, 4).toUpperCase();
-                const randomCode = Math.floor(1000 + Math.random() * 9000);
-                const generatedCode = `SN-${partnerCodePrefix || 'PRO'}-${randomCode}`;
-
                 await tx.servicePartner.create({
                     data: {
                         user_id: user.id,
                         category_id: categoryId,
                         availability_status: 'OFFLINE',
                         kyc_status: 'PENDING',
-                        referral_code: generatedCode,
+                        referral_code: user.referral_code || userReferralCode,
                         referred_by_code: data.referralCode || null,
                     }
                 });

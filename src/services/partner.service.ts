@@ -1863,43 +1863,8 @@ export class PartnerService {
     }
 
     async getReferralInfo(userId: string) {
-        let partner = await prisma.servicePartner.findUnique({
-            where: { user_id: userId }
-        });
-        if (!partner) throw new NotFoundError('Service partner not found');
-
-        if (!partner.referral_code) {
-            const randomCode = 'SP' + Math.random().toString(36).substring(2, 7).toUpperCase();
-            partner = await prisma.servicePartner.update({
-                where: { id: partner.id },
-                data: { referral_code: randomCode }
-            });
-        }
-
-        const totalReferred = await prisma.servicePartner.count({
-            where: { referred_by_code: partner.referral_code }
-        });
-
-        const completedReferred = await prisma.servicePartner.count({
-            where: {
-                referred_by_code: partner.referral_code,
-                kyc_status: 'APPROVED'
-            }
-        });
-
-        const pendingReferred = totalReferred - completedReferred;
-        const totalEarned = completedReferred * 1500;
-
-        return {
-            referral_code: partner.referral_code,
-            reward_per_referral: 1500,
-            total_referrals: totalReferred,
-            completed_referrals: completedReferred,
-            pending_referrals: pendingReferred,
-            total_earned: totalEarned,
-            share_url: `https://snearal.com/partner/join?ref=${partner.referral_code}`,
-            share_text: `Join Snearal as an On-Demand Service Partner! Use my invite code ${partner.referral_code} to get verified and earn daily instant payouts: https://snearal.com/partner/join?ref=${partner.referral_code}`
-        };
+        const { referralService } = await import('./referral.service');
+        return await referralService.getUserReferralInfo(userId);
     }
 
     async getMerchandiseKits() {
@@ -2152,6 +2117,23 @@ export class PartnerService {
                     balance: 0
                 }
             }).catch(() => null);
+
+            // Link referral tracking if partner has user_id
+            if (partner.user_id && partner.referral_code) {
+                await prisma.referralTracking.create({
+                    data: {
+                        referrer_user_id: partner.user_id,
+                        referee_user_id: customer.id,
+                        referral_type: 'PARTNER_TO_CUSTOMER',
+                        referral_code: partner.referral_code,
+                        status: 'PENDING',
+                        referrer_reward: 200,
+                        referee_reward: 100,
+                        qualification_target: 5,
+                        qualifying_count: 0
+                    }
+                }).catch(err => logger.warn('Failed to link direct job referral tracking:', err));
+            }
         }
 
         // 2. Fetch service & package

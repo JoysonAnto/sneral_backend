@@ -400,6 +400,21 @@ export class CronService {
 
         this.jobs.push(releaseFundsJob);
 
+        // Run daily at 1:00 AM to evaluate pending partner referrals (e.g. 30 days active + 10 jobs)
+        const partnerReferralEvalJob = cron.schedule('0 1 * * *', async () => {
+            logger.info('Running partner referral evaluation job...');
+            try {
+                const { referralService } = await import('./referral.service');
+                await referralService.evaluateAllPendingPartnerReferrals();
+            } catch (error) {
+                logger.error('Error evaluating partner referrals:', error);
+            }
+        }, {
+            timezone: 'Asia/Kolkata'
+        });
+
+        this.jobs.push(partnerReferralEvalJob);
+
         logger.info('Cron service started with ' + this.jobs.length + ' jobs');
     }
 
