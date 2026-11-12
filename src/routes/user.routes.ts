@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { UserController } from '../controllers/user.controller';
+import { AuthController } from '../controllers/auth.controller';
 import { requestDataDeletion } from '../controllers/compliance.controller';
 import { authenticateToken, checkPermission } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validate.middleware';
@@ -7,6 +8,7 @@ import { createAdminValidator, updateUserValidator } from '../validators/user.va
 
 const router = Router();
 const userController = new UserController();
+const authController = new AuthController();
 
 /**
  * @swagger
@@ -17,6 +19,10 @@ const userController = new UserController();
 
 // All routes require authentication
 router.use(authenticateToken);
+
+// Current user profile endpoints
+router.get('/profile', authController.getProfile);
+router.patch('/profile', authController.updateProfile);
 
 /**
  * @swagger

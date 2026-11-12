@@ -45,6 +45,16 @@ router.get(
     checkPermission('SERVICE_MANAGE'),
     serviceController.getAllServices
 );
+router.get(
+    '/services/repeated',
+    checkPermission('SERVICE_MANAGE'),
+    serviceController.getRepeatedServices
+);
+router.post(
+    '/services/repeated',
+    checkPermission('SERVICE_MANAGE'),
+    serviceController.updateRepeatedServicesBulk
+);
 router.post(
     '/categories',
     checkPermission('SERVICE_MANAGE'),

@@ -290,6 +290,8 @@ model Service {
   duration                Int
   image_url               String?
   display_order           Int                      @default(1)
+  is_repeated             Boolean                  @default(false)
+  repeated_order          Int                      @default(0)
   note                    String?                  @db.Text
   is_active               Boolean                  @default(true)
   created_at              DateTime                 @default(now())
@@ -305,6 +307,7 @@ model Service {
   @@index([category_id])
   @@index([is_active])
   @@index([display_order])
+  @@index([is_repeated])
   @@map("services")
 }
 

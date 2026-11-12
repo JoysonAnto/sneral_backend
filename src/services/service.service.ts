@@ -277,6 +277,13 @@ export class ServiceService {
             ? parseInt(data.displayOrder as any, 10)
             : (data.display_order !== undefined ? parseInt(data.display_order as any, 10) : 1);
 
+        const isRepeated = (data as any).isRepeated !== undefined 
+            ? ((data as any).isRepeated === true || (data as any).isRepeated === 'true')
+            : ((data as any).is_repeated !== undefined ? ((data as any).is_repeated === true || (data as any).is_repeated === 'true') : false);
+        const repeatedOrder = (data as any).repeatedOrder !== undefined 
+            ? parseInt((data as any).repeatedOrder, 10)
+            : ((data as any).repeated_order !== undefined ? parseInt((data as any).repeated_order, 10) : 0);
+
         const service = await prisma.service.create({
             data: {
                 name: data.name,
@@ -286,6 +293,8 @@ export class ServiceService {
                 duration: data.duration !== undefined ? parseInt(data.duration as any, 10) : 0,
                 image_url: data.imageUrl,
                 display_order: isNaN(displayOrder) ? 1 : Math.max(1, displayOrder),
+                is_repeated: isRepeated,
+                repeated_order: isNaN(repeatedOrder) ? 0 : repeatedOrder,
                 note: data.note !== undefined ? data.note : null,
                 is_active: data.isActive !== undefined ? (data.isActive === 'true' || data.isActive === true) : true,
             },
@@ -345,6 +354,12 @@ export class ServiceService {
         const parsedOrder = rawOrder !== undefined ? parseInt(rawOrder as any, 10) : undefined;
         const displayOrder = parsedOrder !== undefined && !isNaN(parsedOrder) ? Math.max(1, parsedOrder) : undefined;
 
+        const rawIsRepeated = (data as any).isRepeated !== undefined ? (data as any).isRepeated : (data as any).is_repeated;
+        const isRepeated = rawIsRepeated !== undefined ? (rawIsRepeated === true || String(rawIsRepeated) === 'true') : undefined;
+
+        const rawRepeatedOrder = (data as any).repeatedOrder !== undefined ? (data as any).repeatedOrder : (data as any).repeated_order;
+        const repeatedOrder = rawRepeatedOrder !== undefined ? parseInt(String(rawRepeatedOrder), 10) : undefined;
+
         const updatedService = await prisma.service.update({
             where: { id: serviceId },
             data: {
@@ -355,6 +370,8 @@ export class ServiceService {
                 ...(data.duration !== undefined && { duration: parseInt(data.duration as any, 10) }),
                 ...(data.imageUrl && { image_url: data.imageUrl }),
                 ...(displayOrder !== undefined && { display_order: displayOrder }),
+                ...(isRepeated !== undefined && { is_repeated: isRepeated }),
+                ...(repeatedOrder !== undefined && !isNaN(repeatedOrder) && { repeated_order: repeatedOrder }),
                 ...(data.note !== undefined && { note: data.note }),
                 ...(data.isActive !== undefined && { is_active: (String(data.isActive) === 'true') }),
             },
@@ -885,10 +902,9 @@ export class ServiceService {
         return { price: service.base_price, source: 'base' };
     }
 
-    async getFeaturedServices() {
-        const services = await prisma.service.findMany({
-            where: { is_active: true },
-            take: 6,
+    async getRepeatedServices() {
+        let services = await prisma.service.findMany({
+            where: { is_active: true, is_repeated: true },
             include: {
                 category: {
                     select: {
@@ -897,9 +913,39 @@ export class ServiceService {
                         icon_url: true,
                     },
                 },
+                packages: {
+                    where: { is_active: true },
+                    orderBy: { hours: 'asc' }
+                }
             },
-            orderBy: { created_at: 'desc' },
+            orderBy: [
+                { repeated_order: 'asc' },
+                { display_order: 'asc' },
+                { created_at: 'desc' }
+            ],
         });
+
+        // Fallback: if no services are marked as repeated yet, provide top active services
+        if (services.length === 0) {
+            services = await prisma.service.findMany({
+                where: { is_active: true },
+                take: 8,
+                include: {
+                    category: {
+                        select: {
+                            id: true,
+                            name: true,
+                            icon_url: true,
+                        },
+                    },
+                    packages: {
+                        where: { is_active: true },
+                        orderBy: { hours: 'asc' }
+                    }
+                },
+                orderBy: { display_order: 'asc' },
+            });
+        }
 
         return services.map(service => ({
             id: service.id,
@@ -915,18 +961,55 @@ export class ServiceService {
             },
             basePrice: service.base_price,
             base_price: service.base_price,
+            effective_price: service.base_price,
+            price: service.base_price,
             currency: 'INR',
             unit: 'per service',
             duration: service.duration,
             imageUrl: service.image_url,
             image_url: service.image_url,
             image: service.image_url,
+            isRepeated: service.is_repeated,
+            is_repeated: service.is_repeated,
+            repeatedOrder: service.repeated_order,
+            repeated_order: service.repeated_order,
             isActive: service.is_active,
             is_active: service.is_active,
-            avgRating: 4.8, // Default high rating for featured
+            packages: (service as any).packages || [],
+            avgRating: 4.8,
             totalRatings: 10,
             createdAt: service.created_at,
         }));
+    }
+
+    async getFeaturedServices() {
+        return this.getRepeatedServices();
+    }
+
+    async updateRepeatedServicesBulk(serviceIds: string[]) {
+        return await prisma.$transaction(async (tx) => {
+            // First mark all services as not repeated
+            await tx.service.updateMany({
+                data: {
+                    is_repeated: false,
+                    repeated_order: 0,
+                }
+            });
+
+            // Set is_repeated = true and their order for the given list
+            for (let i = 0; i < serviceIds.length; i++) {
+                const sId = serviceIds[i];
+                await tx.service.update({
+                    where: { id: sId },
+                    data: {
+                        is_repeated: true,
+                        repeated_order: i + 1,
+                    }
+                });
+            }
+
+            return { message: 'Repeated services updated successfully', count: serviceIds.length };
+        });
     }
 
     async getPopularServices() {

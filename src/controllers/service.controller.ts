@@ -73,6 +73,18 @@ export class ServiceController {
                 ...(req.body.is_active !== undefined && {
                     isActive: req.body.is_active === 'true' || req.body.is_active === true
                 }),
+                ...(req.body.isRepeated !== undefined && {
+                    isRepeated: req.body.isRepeated === 'true' || req.body.isRepeated === true
+                }),
+                ...(req.body.is_repeated !== undefined && {
+                    isRepeated: req.body.is_repeated === 'true' || req.body.is_repeated === true
+                }),
+                ...(req.body.repeatedOrder !== undefined && {
+                    repeatedOrder: parseInt(req.body.repeatedOrder, 10)
+                }),
+                ...(req.body.repeated_order !== undefined && {
+                    repeatedOrder: parseInt(req.body.repeated_order, 10)
+                }),
             };
 
             const service = await this.serviceService.createService(serviceData);
@@ -117,6 +129,18 @@ export class ServiceController {
                 }),
                 ...(req.body.is_active !== undefined && {
                     isActive: req.body.is_active === 'true' || req.body.is_active === true
+                }),
+                ...(req.body.isRepeated !== undefined && {
+                    isRepeated: req.body.isRepeated === 'true' || req.body.isRepeated === true
+                }),
+                ...(req.body.is_repeated !== undefined && {
+                    isRepeated: req.body.is_repeated === 'true' || req.body.is_repeated === true
+                }),
+                ...(req.body.repeatedOrder !== undefined && {
+                    repeatedOrder: parseInt(req.body.repeatedOrder, 10)
+                }),
+                ...(req.body.repeated_order !== undefined && {
+                    repeatedOrder: parseInt(req.body.repeated_order, 10)
                 }),
             };
 
@@ -216,6 +240,18 @@ export class ServiceController {
                 ...(req.body.is_active !== undefined && {
                     isActive: req.body.is_active === 'true' || req.body.is_active === true
                 }),
+                ...(req.body.isRepeated !== undefined && {
+                    isRepeated: req.body.isRepeated === 'true' || req.body.isRepeated === true
+                }),
+                ...(req.body.is_repeated !== undefined && {
+                    isRepeated: req.body.is_repeated === 'true' || req.body.is_repeated === true
+                }),
+                ...(req.body.repeatedOrder !== undefined && {
+                    repeatedOrder: parseInt(req.body.repeatedOrder, 10)
+                }),
+                ...(req.body.repeated_order !== undefined && {
+                    repeatedOrder: parseInt(req.body.repeated_order, 10)
+                }),
             };
 
             const category = await this.serviceService.updateCategory(
@@ -288,6 +324,25 @@ export class ServiceController {
         try {
             const services = await this.serviceService.getFeaturedServices();
             res.json(successResponse(services, 'Featured services retrieved successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    getRepeatedServices = async (_req: Request, res: Response, next: NextFunction) => {
+        try {
+            const services = await this.serviceService.getRepeatedServices();
+            res.json(successResponse(services, 'Repeated services retrieved successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    updateRepeatedServicesBulk = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const serviceIds: string[] = req.body.serviceIds || req.body.service_ids || [];
+            const result = await this.serviceService.updateRepeatedServicesBulk(serviceIds);
+            res.json(successResponse(result, 'Repeated services updated successfully'));
         } catch (error) {
             next(error);
         }

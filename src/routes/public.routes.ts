@@ -29,6 +29,7 @@ router.get('/categories', serviceController.getAllCategories);
  *         description: List of featured services
  */
 router.get('/services/featured', serviceController.getFeaturedServices);
+router.get('/services/repeated', serviceController.getRepeatedServices);
 
 /**
  * @swagger

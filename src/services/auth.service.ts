@@ -604,6 +604,40 @@ export class AuthService {
         userWithoutSensitive.permissions = user.custom_role?.permissions?.map((p: any) => p.permission?.name) || [];
         userWithoutSensitive.department = user.custom_role?.name || null;
 
+        // Calculate dynamic reviews / rating for the user
+        const reviewAggregate = await prisma.review.aggregate({
+            where: { reviewee_id: userId },
+            _avg: { rating: true },
+            _count: { rating: true },
+        });
+        const dynamicRating = reviewAggregate._avg.rating ? Number(reviewAggregate._avg.rating.toFixed(1)) : 5.0;
+        const ratingCount = reviewAggregate._count.rating || 0;
+
+        // Calculate dynamic rewards from completed referrals
+        const rewardsAggregate = await prisma.referralTracking.aggregate({
+            where: { referrer_user_id: userId, status: 'REWARDED' },
+            _sum: { referrer_reward: true },
+            _count: { id: true },
+        });
+        const pendingRewardsCount = await prisma.referralTracking.count({
+            where: { referrer_user_id: userId, status: 'PENDING' },
+        });
+        const totalRewards = rewardsAggregate._sum.referrer_reward || 0;
+
+        userWithoutSensitive.averageRating = dynamicRating;
+        userWithoutSensitive.rating = dynamicRating;
+        userWithoutSensitive.ratingCount = ratingCount;
+        userWithoutSensitive.totalRewards = totalRewards;
+        userWithoutSensitive.rewardsEarned = totalRewards;
+        userWithoutSensitive.pendingRewards = pendingRewardsCount;
+        userWithoutSensitive.walletBalance = user.wallet?.balance || 0;
+        userWithoutSensitive.balance = user.wallet?.balance || 0;
+        userWithoutSensitive.profileImage = user.profile?.avatar_url || null;
+        userWithoutSensitive.avatarUrl = user.profile?.avatar_url || null;
+        userWithoutSensitive.fullName = user.full_name;
+        userWithoutSensitive.phoneNumber = user.phone_number;
+        userWithoutSensitive.phone = user.phone_number;
+
         // Add profession/category name for dashboard
         if (user.role === 'SERVICE_PARTNER' && user.service_partner) {
             userWithoutSensitive.profession = (user.service_partner as any).category?.name || 'Partner';
@@ -652,12 +686,27 @@ export class AuthService {
             throw new BadRequestError('This account has been deleted or deactivated.');
         }
 
+        const fullName = data.fullName || data.full_name || user.full_name;
+        const phoneNumber = data.phoneNumber || data.phone_number || data.phone || user.phone_number;
+        const email = data.email || user.email;
+
+        // If email changed, check uniqueness
+        if (data.email && data.email !== user.email) {
+            const existing = await prisma.user.findFirst({
+                where: { email: data.email, NOT: { id: userId } }
+            });
+            if (existing) {
+                throw new BadRequestError('Email address already in use');
+            }
+        }
+
         // Update user core credentials
         await prisma.user.update({
             where: { id: userId },
             data: {
-                full_name: data.fullName || data.full_name || user.full_name,
-                phone_number: data.phoneNumber || data.phone_number || user.phone_number,
+                full_name: fullName,
+                phone_number: phoneNumber,
+                email: email,
             },
         });
 
@@ -667,7 +716,7 @@ export class AuthService {
         const state = data.state || user.profile?.state;
         const postalCode = data.postalCode || data.postal_code || data.pincode || user.profile?.postal_code;
         const bio = data.bio !== undefined ? data.bio : user.profile?.bio;
-        const avatarUrl = data.avatarUrl || data.avatar_url || data.profile_pic || user.profile?.avatar_url;
+        const avatarUrl = data.avatarUrl || data.avatar_url || data.profile_pic || data.profileImage || data.profile_image || user.profile?.avatar_url;
 
         // Upsert profile record
         await prisma.profile.upsert({
