@@ -263,8 +263,8 @@ export class AuthService {
                 refreshToken,
             };
         } else {
-            // OTP login
-            const otp = generateOTP(4);
+            // OTP login (6-digit standard across web & mobile)
+            const otp = generateOTP(6);
             const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
 
             await prisma.user.update({

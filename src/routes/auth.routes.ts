@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { AuthController } from '../controllers/auth.controller';
+import { SsoController } from '../controllers/sso.controller';
 import { validate } from '../middleware/validate.middleware';
 import { authenticateToken } from '../middleware/auth.middleware';
 import {
@@ -14,6 +15,7 @@ import {
 
 const router = Router();
 const authController = new AuthController();
+const ssoController = new SsoController();
 
 /**
  * @swagger
@@ -21,6 +23,10 @@ const authController = new AuthController();
  *   name: Authentication
  *   description: User login, registration, and session management
  */
+
+// SSO authentication routes
+router.post('/google-sso', ssoController.googleLogin);
+router.post('/apple-sso', ssoController.appleLogin);
 
 // Public routes
 /**

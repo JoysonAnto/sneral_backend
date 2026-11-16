@@ -47,9 +47,10 @@ export class AuthController {
 
     verifyEmail = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const { email, phoneNumber, otp } = req.body;
-            const identifier = email || phoneNumber;
-            const result = await this.authService.verifyOtp(identifier, otp);
+            const { email, phoneNumber, identifier, otp, code } = req.body;
+            const targetIdentifier = (email || phoneNumber || identifier || '').trim().toLowerCase();
+            const targetOtp = (otp || code || '').toString().trim();
+            const result = await this.authService.verifyOtp(targetIdentifier, targetOtp);
             return res.json(successResponse(result, result.message));
         } catch (error) {
             return next(error);
@@ -58,9 +59,10 @@ export class AuthController {
 
     verifyOtp = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const { email, phoneNumber, otp } = req.body;
-            const identifier = email || phoneNumber;
-            const result = await this.authService.verifyOtp(identifier, otp);
+            const { email, phoneNumber, identifier, otp, code } = req.body;
+            const targetIdentifier = (email || phoneNumber || identifier || '').trim().toLowerCase();
+            const targetOtp = (otp || code || '').toString().trim();
+            const result = await this.authService.verifyOtp(targetIdentifier, targetOtp);
             return res.json(successResponse(result, result.message));
         } catch (error) {
             return next(error);
