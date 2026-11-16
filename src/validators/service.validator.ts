@@ -41,6 +41,24 @@ export const createServiceValidator = [
         .optional()
         .isString()
         .withMessage('Note must be a string'),
+    body('pricingModel')
+        .optional()
+        .isIn(['TIME_BASED', 'ORDER_BASED'])
+        .withMessage('Pricing model must be TIME_BASED or ORDER_BASED'),
+    body('pricing_model')
+        .optional()
+        .isIn(['TIME_BASED', 'ORDER_BASED'])
+        .withMessage('Pricing model must be TIME_BASED or ORDER_BASED'),
+    body('unitLabel')
+        .optional()
+        .isString()
+        .trim()
+        .isLength({ max: 50 }),
+    body('unit_label')
+        .optional()
+        .isString()
+        .trim()
+        .isLength({ max: 50 }),
 ];
 
 export const updateServiceValidator = [
@@ -78,6 +96,24 @@ export const updateServiceValidator = [
         .optional()
         .isString()
         .withMessage('Note must be a string'),
+    body('pricingModel')
+        .optional()
+        .isIn(['TIME_BASED', 'ORDER_BASED'])
+        .withMessage('Pricing model must be TIME_BASED or ORDER_BASED'),
+    body('pricing_model')
+        .optional()
+        .isIn(['TIME_BASED', 'ORDER_BASED'])
+        .withMessage('Pricing model must be TIME_BASED or ORDER_BASED'),
+    body('unitLabel')
+        .optional()
+        .isString()
+        .trim()
+        .isLength({ max: 50 }),
+    body('unit_label')
+        .optional()
+        .isString()
+        .trim()
+        .isLength({ max: 50 }),
     body('isActive')
         .optional()
         .isBoolean()

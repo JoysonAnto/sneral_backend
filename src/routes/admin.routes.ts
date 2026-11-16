@@ -67,6 +67,16 @@ router.patch(
     categoryIconUpload,
     serviceController.updateCategory
 );
+router.delete(
+    '/categories/:id',
+    checkPermission('SERVICE_MANAGE'),
+    serviceController.deleteCategory
+);
+router.delete(
+    '/services/:id',
+    checkPermission('SERVICE_MANAGE'),
+    serviceController.deleteService
+);
 
 // Reports & Analytics
 router.get('/reports', checkPermission('REPORT_VIEW'), adminController.generateReport);

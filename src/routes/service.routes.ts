@@ -169,6 +169,13 @@ router.patch(
     serviceController.updateCategory
 );
 
+router.delete(
+    '/categories/:id',
+    authenticateToken,
+    checkPermission('SERVICE_MANAGE'),
+    serviceController.deleteCategory
+);
+
 // Location-based pricing - Admin only
 /**
  * @swagger

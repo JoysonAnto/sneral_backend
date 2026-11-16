@@ -8,6 +8,10 @@ interface CreateServiceData {
     basePrice: number;
     base_price?: number;
     duration: number;
+    pricingModel?: string;
+    pricing_model?: string;
+    unitLabel?: string;
+    unit_label?: string;
     imageUrl?: string;
     isActive?: boolean | string;
     displayOrder?: number;
@@ -28,6 +32,8 @@ export interface FormattedPackage {
     serviceId: string;
     service_id: string;
     hours: number;
+    orderCount?: number;
+    order_count?: number;
     title: string;
     durationMinutes: number;
     duration_minutes: number;
@@ -47,19 +53,29 @@ export interface FormattedPackage {
     display_order: number;
 }
 
-export function formatServicePackages(packages: any[] = [], serviceBasePrice: number = 0): FormattedPackage[] {
+export function formatServicePackages(
+    packages: any[] = [], 
+    serviceBasePrice: number = 0,
+    pricingModel: string = 'TIME_BASED',
+    unitLabel: string = 'order'
+): FormattedPackage[] {
     if (!packages || packages.length === 0) return [];
 
-    // Find 1-hour package or calculate base hourly rate
-    const oneHourPkg = packages.find(p => Number(p.hours) === 1);
-    const baseHourlyRate = oneHourPkg
-        ? Number(oneHourPkg.price)
-        : (serviceBasePrice > 0 ? serviceBasePrice : (Number(packages[0]?.price) / (Number(packages[0]?.hours) || 1)));
+    const isOrderBased = pricingModel === 'ORDER_BASED';
+
+    // Find 1-hour or 1-order package or calculate base rate
+    const basePkg = packages.find(p => (isOrderBased ? Number(p.order_count ?? p.hours) === 1 : Number(p.hours) === 1));
+    const baseRate = basePkg
+        ? Number(basePkg.price)
+        : (serviceBasePrice > 0 ? serviceBasePrice : (Number(packages[0]?.price) / (Number(isOrderBased ? (packages[0]?.order_count ?? packages[0]?.hours) : packages[0]?.hours) || 1)));
 
     return packages.map(pkg => {
+        const orderCount = pkg.order_count != null ? Number(pkg.order_count) : Math.round(Number(pkg.hours) || 1);
+        const multiplier = isOrderBased ? orderCount : Number(pkg.hours);
+
         const calculatedOriginalPrice = pkg.original_price != null
             ? Number(pkg.original_price)
-            : Math.round(Number(pkg.hours) * baseHourlyRate);
+            : Math.round(multiplier * baseRate);
 
         const price = Number(pkg.price);
         const savings = Math.max(0, calculatedOriginalPrice - price);
@@ -71,14 +87,27 @@ export function formatServicePackages(packages: any[] = [], serviceBasePrice: nu
             : autoDiscount;
         const pricingType = pkg.pricing_type || (pkg.pricingType || 'FLAT');
 
+        let defaultTitle: string;
+        if (isOrderBased) {
+            const rawUnit = unitLabel?.trim() || 'Order';
+            const pluralUnit = orderCount === 1 ? rawUnit : (rawUnit.endsWith('s') ? rawUnit : `${rawUnit}s`);
+            defaultTitle = `${orderCount} ${pluralUnit}`;
+        } else {
+            defaultTitle = pkg.title || `${pkg.hours} ${Number(pkg.hours) === 1 ? 'Hour' : 'Hours'}`;
+        }
+
+        const durationMinutes = isOrderBased ? 0 : Math.round(Number(pkg.hours) * 60);
+
         return {
             id: pkg.id,
             serviceId: pkg.service_id,
             service_id: pkg.service_id,
             hours: Number(pkg.hours),
-            title: pkg.title || `${pkg.hours} ${Number(pkg.hours) === 1 ? 'Hour' : 'Hours'}`,
-            durationMinutes: Math.round(Number(pkg.hours) * 60),
-            duration_minutes: Math.round(Number(pkg.hours) * 60),
+            orderCount: orderCount,
+            order_count: orderCount,
+            title: pkg.title || defaultTitle,
+            durationMinutes: durationMinutes,
+            duration_minutes: durationMinutes,
             pricingType,
             pricing_type: pricingType,
             price,
@@ -109,7 +138,9 @@ export class ServiceService {
 
         const skip = (page - 1) * limit;
 
-        let where: any = {};
+        let where: any = {
+            is_deleted: false,
+        };
 
         // Filter by category
         if (category && category !== 'all' && category !== '') {
@@ -174,7 +205,11 @@ export class ServiceService {
             basePrice: service.base_price,
             base_price: service.base_price,
             currency: 'INR',
-            unit: 'per service',
+            pricingModel: service.pricing_model || 'TIME_BASED',
+            pricing_model: service.pricing_model || 'TIME_BASED',
+            unitLabel: service.unit_label || (service.pricing_model === 'ORDER_BASED' ? 'order' : 'hour'),
+            unit_label: service.unit_label || (service.pricing_model === 'ORDER_BASED' ? 'order' : 'hour'),
+            unit: service.pricing_model === 'ORDER_BASED' ? `per ${service.unit_label || 'order'}` : 'per service',
             duration: service.duration,
             imageUrl: service.image_url,
             image_url: service.image_url,
@@ -186,7 +221,7 @@ export class ServiceService {
             is_active: service.is_active,
             avgRating: 4.5, // TODO: Calculate from actual ratings
             totalRatings: 0, // TODO: Count from actual ratings
-            packages: formatServicePackages(service.packages || [], service.base_price),
+            packages: formatServicePackages(service.packages || [], service.base_price, service.pricing_model, service.unit_label || 'order'),
             createdAt: service.created_at,
             created_at: service.created_at,
         }));
@@ -225,7 +260,7 @@ export class ServiceService {
             },
         });
 
-        if (!service) {
+        if (!service || service.is_deleted) {
             throw new NotFoundError('Service not found');
         }
 
@@ -245,7 +280,11 @@ export class ServiceService {
             basePrice: service.base_price,
             base_price: service.base_price,
             currency: 'INR',
-            unit: 'per service',
+            pricingModel: service.pricing_model || 'TIME_BASED',
+            pricing_model: service.pricing_model || 'TIME_BASED',
+            unitLabel: service.unit_label || (service.pricing_model === 'ORDER_BASED' ? 'order' : 'hour'),
+            unit_label: service.unit_label || (service.pricing_model === 'ORDER_BASED' ? 'order' : 'hour'),
+            unit: service.pricing_model === 'ORDER_BASED' ? `per ${service.unit_label || 'order'}` : 'per service',
             duration: service.duration,
             imageUrl: service.image_url,
             image_url: service.image_url,
@@ -257,7 +296,7 @@ export class ServiceService {
             is_active: service.is_active,
             avgRating: 4.5, // TODO: Calculate from actual ratings
             totalRatings: 0, // TODO: Count from actual ratings
-            packages: formatServicePackages(service.packages || [], service.base_price),
+            packages: formatServicePackages(service.packages || [], service.base_price, service.pricing_model, service.unit_label || 'order'),
             createdAt: service.created_at,
             updatedAt: service.updated_at,
         };
@@ -284,6 +323,12 @@ export class ServiceService {
             ? parseInt((data as any).repeatedOrder, 10)
             : ((data as any).repeated_order !== undefined ? parseInt((data as any).repeated_order, 10) : 0);
 
+        const rawPricingModel = (data as any).pricingModel || (data as any).pricing_model;
+        const pricingModel = rawPricingModel === 'ORDER_BASED' ? 'ORDER_BASED' : 'TIME_BASED';
+
+        const rawUnitLabel = (data as any).unitLabel || (data as any).unit_label;
+        const unitLabel = rawUnitLabel ? String(rawUnitLabel).trim() : (pricingModel === 'ORDER_BASED' ? 'order' : 'hour');
+
         const service = await prisma.service.create({
             data: {
                 name: data.name,
@@ -291,6 +336,8 @@ export class ServiceService {
                 category_id: data.categoryId,
                 base_price: data.basePrice !== undefined ? parseFloat(data.basePrice as any) : 0,
                 duration: data.duration !== undefined ? parseInt(data.duration as any, 10) : 0,
+                pricing_model: pricingModel,
+                unit_label: unitLabel,
                 image_url: data.imageUrl,
                 display_order: isNaN(displayOrder) ? 1 : Math.max(1, displayOrder),
                 is_repeated: isRepeated,
@@ -317,6 +364,11 @@ export class ServiceService {
             },
             basePrice: service.base_price,
             base_price: service.base_price,
+            pricingModel: service.pricing_model,
+            pricing_model: service.pricing_model,
+            unitLabel: service.unit_label,
+            unit_label: service.unit_label,
+            unit: service.pricing_model === 'ORDER_BASED' ? `per ${service.unit_label || 'order'}` : 'per service',
             duration: service.duration,
             imageUrl: service.image_url,
             image_url: service.image_url,
@@ -360,6 +412,12 @@ export class ServiceService {
         const rawRepeatedOrder = (data as any).repeatedOrder !== undefined ? (data as any).repeatedOrder : (data as any).repeated_order;
         const repeatedOrder = rawRepeatedOrder !== undefined ? parseInt(String(rawRepeatedOrder), 10) : undefined;
 
+        const rawPricingModel = (data as any).pricingModel !== undefined ? (data as any).pricingModel : (data as any).pricing_model;
+        const pricingModel = rawPricingModel ? (String(rawPricingModel).trim() === 'ORDER_BASED' ? 'ORDER_BASED' : 'TIME_BASED') : undefined;
+
+        const rawUnitLabel = (data as any).unitLabel !== undefined ? (data as any).unitLabel : (data as any).unit_label;
+        const unitLabel = rawUnitLabel !== undefined ? String(rawUnitLabel).trim() : undefined;
+
         const updatedService = await prisma.service.update({
             where: { id: serviceId },
             data: {
@@ -368,6 +426,8 @@ export class ServiceService {
                 ...(data.categoryId && { category_id: data.categoryId }),
                 ...(data.basePrice !== undefined && { base_price: parseFloat(data.basePrice as any) }),
                 ...(data.duration !== undefined && { duration: parseInt(data.duration as any, 10) }),
+                ...(pricingModel && { pricing_model: pricingModel }),
+                ...(unitLabel !== undefined && { unit_label: unitLabel }),
                 ...(data.imageUrl && { image_url: data.imageUrl }),
                 ...(displayOrder !== undefined && { display_order: displayOrder }),
                 ...(isRepeated !== undefined && { is_repeated: isRepeated }),
@@ -440,6 +500,11 @@ export class ServiceService {
             },
             basePrice: updatedService.base_price,
             base_price: updatedService.base_price,
+            pricingModel: updatedService.pricing_model,
+            pricing_model: updatedService.pricing_model,
+            unitLabel: updatedService.unit_label,
+            unit_label: updatedService.unit_label,
+            unit: updatedService.pricing_model === 'ORDER_BASED' ? `per ${updatedService.unit_label || 'order'}` : 'per service',
             duration: updatedService.duration,
             imageUrl: updatedService.image_url,
             image_url: updatedService.image_url,
@@ -462,25 +527,23 @@ export class ServiceService {
             throw new NotFoundError('Service not found');
         }
 
-        // Check if service has any bookings
-        const bookingsCount = await prisma.bookingItem.count({
-            where: { service_id: serviceId },
-        });
-
-        if (bookingsCount > 0) {
-            // Soft delete by deactivating instead
-            await prisma.service.update({
-                where: { id: serviceId },
-                data: { is_active: false },
-            });
-            return { message: 'Service deactivated (has existing bookings)' };
-        }
-
-        await prisma.service.delete({
+        // Soft delete service
+        await prisma.service.update({
             where: { id: serviceId },
+            data: {
+                is_deleted: true,
+                deleted_at: new Date(),
+                is_active: false,
+            },
         });
 
-        return { message: 'Service deleted successfully' };
+        // Deactivate associated packages
+        await prisma.servicePackage.updateMany({
+            where: { service_id: serviceId },
+            data: { is_active: false },
+        });
+
+        return { success: true, message: 'Service soft-deleted successfully' };
     }
 
     // Category Management
@@ -506,7 +569,9 @@ export class ServiceService {
             }
         }
 
-        const whereClause: any = {};
+        const whereClause: any = {
+            is_deleted: false,
+        };
 
         // Active status filtering
         if (active === 'true' || active === 'false') {
@@ -536,7 +601,11 @@ export class ServiceService {
                 ],
                 include: {
                     _count: {
-                        select: { services: true },
+                        select: {
+                            services: {
+                                where: { is_deleted: false },
+                            },
+                        },
                     },
                 },
             }),
@@ -584,6 +653,33 @@ export class ServiceService {
         });
 
         if (existing) {
+            if (existing.is_deleted) {
+                // Restore and update soft-deleted category
+                const restored = await prisma.category.update({
+                    where: { id: existing.id },
+                    data: {
+                        is_deleted: false,
+                        deleted_at: null,
+                        description: data.description,
+                        icon_url: data.iconUrl,
+                        display_order: data.displayOrder || 0,
+                        is_active: data.isActive !== undefined ? (String(data.isActive) === 'true') : true,
+                    },
+                });
+                return {
+                    id: restored.id,
+                    name: restored.name,
+                    description: restored.description,
+                    iconUrl: restored.icon_url,
+                    icon_url: restored.icon_url,
+                    imageUrl: restored.icon_url,
+                    image_url: restored.icon_url,
+                    isActive: restored.is_active,
+                    displayOrder: restored.display_order,
+                    createdAt: restored.created_at,
+                    updatedAt: restored.updated_at,
+                };
+            }
             throw new BadRequestError('Category with this name already exists');
         }
 
@@ -645,6 +741,41 @@ export class ServiceService {
             createdAt: updated.created_at,
             updatedAt: updated.updated_at,
         };
+    }
+
+    async deleteCategory(categoryId: string) {
+        const category = await prisma.category.findUnique({
+            where: { id: categoryId },
+        });
+
+        if (!category) {
+            throw new NotFoundError('Category not found');
+        }
+
+        // Check if there are active (non-deleted) services mapped to this category
+        const activeServicesCount = await prisma.service.count({
+            where: {
+                category_id: categoryId,
+                is_deleted: false,
+            },
+        });
+
+        if (activeServicesCount > 0) {
+            throw new BadRequestError(
+                `Cannot delete category "${category.name}": ${activeServicesCount} active service(s) are currently mapped to this category. Please delete all mapped services before deleting the category.`
+            );
+        }
+
+        await prisma.category.update({
+            where: { id: categoryId },
+            data: {
+                is_deleted: true,
+                deleted_at: new Date(),
+                is_active: false,
+            },
+        });
+
+        return { success: true, message: 'Category soft-deleted successfully' };
     }
 
     // ====================
@@ -904,7 +1035,7 @@ export class ServiceService {
 
     async getRepeatedServices() {
         let services = await prisma.service.findMany({
-            where: { is_active: true, is_repeated: true },
+            where: { is_active: true, is_repeated: true, is_deleted: false },
             include: {
                 category: {
                     select: {
@@ -928,7 +1059,7 @@ export class ServiceService {
         // Fallback: if no services are marked as repeated yet, provide top active services
         if (services.length === 0) {
             services = await prisma.service.findMany({
-                where: { is_active: true },
+                where: { is_active: true, is_deleted: false },
                 take: 8,
                 include: {
                     category: {
@@ -964,7 +1095,11 @@ export class ServiceService {
             effective_price: service.base_price,
             price: service.base_price,
             currency: 'INR',
-            unit: 'per service',
+            pricingModel: service.pricing_model || 'TIME_BASED',
+            pricing_model: service.pricing_model || 'TIME_BASED',
+            unitLabel: service.unit_label || (service.pricing_model === 'ORDER_BASED' ? 'order' : 'hour'),
+            unit_label: service.unit_label || (service.pricing_model === 'ORDER_BASED' ? 'order' : 'hour'),
+            unit: service.pricing_model === 'ORDER_BASED' ? `per ${service.unit_label || 'order'}` : 'per service',
             duration: service.duration,
             imageUrl: service.image_url,
             image_url: service.image_url,
@@ -975,7 +1110,7 @@ export class ServiceService {
             repeated_order: service.repeated_order,
             isActive: service.is_active,
             is_active: service.is_active,
-            packages: (service as any).packages || [],
+            packages: formatServicePackages((service as any).packages || [], service.base_price, service.pricing_model, service.unit_label || 'order'),
             avgRating: 4.8,
             totalRatings: 10,
             createdAt: service.created_at,
@@ -1015,7 +1150,7 @@ export class ServiceService {
     async getPopularServices() {
         // For now, popular = most booked or just recent ones with high default rating
         const services = await prisma.service.findMany({
-            where: { is_active: true },
+            where: { is_active: true, is_deleted: false },
             take: 6,
             include: {
                 category: {
@@ -1044,7 +1179,11 @@ export class ServiceService {
             basePrice: service.base_price,
             base_price: service.base_price,
             currency: 'INR',
-            unit: 'per service',
+            pricingModel: service.pricing_model || 'TIME_BASED',
+            pricing_model: service.pricing_model || 'TIME_BASED',
+            unitLabel: service.unit_label || (service.pricing_model === 'ORDER_BASED' ? 'order' : 'hour'),
+            unit_label: service.unit_label || (service.pricing_model === 'ORDER_BASED' ? 'order' : 'hour'),
+            unit: service.pricing_model === 'ORDER_BASED' ? `per ${service.unit_label || 'order'}` : 'per service',
             duration: service.duration,
             imageUrl: service.image_url,
             image_url: service.image_url,
@@ -1067,18 +1206,22 @@ export class ServiceService {
             },
         });
         if (!service) throw new NotFoundError('Service not found');
-        return formatServicePackages(service.packages, service.base_price);
+        return formatServicePackages(service.packages, service.base_price, service.pricing_model, service.unit_label || 'order');
     }
 
     async createServicePackage(serviceId: string, data: any) {
         const service = await prisma.service.findUnique({ where: { id: serviceId } });
         if (!service) throw new NotFoundError('Service not found');
 
-        const hours = parseFloat(data.hours);
-        const baseHourlyRate = service.base_price > 0 ? service.base_price : 219;
+        const isOrderBased = service.pricing_model === 'ORDER_BASED';
+        const hours = data.hours != null ? parseFloat(data.hours) : 1;
+        const orderCount = data.order_count != null ? parseInt(data.order_count, 10) : (data.orderCount != null ? parseInt(data.orderCount, 10) : (isOrderBased ? Math.round(hours) : 1));
+        const multiplier = isOrderBased ? orderCount : hours;
+
+        const baseRate = service.base_price > 0 ? service.base_price : 219;
         const originalPrice = (data.original_price != null || data.originalPrice != null)
             ? parseFloat(data.original_price ?? data.originalPrice)
-            : Math.round(hours * baseHourlyRate);
+            : Math.round(multiplier * baseRate);
 
         const pricingType = data.pricing_type || data.pricingType || (data.discount_percentage != null || data.discountPercentage != null ? 'PERCENTAGE' : 'FLAT');
         let discountPercentage = data.discount_percentage != null
@@ -1095,11 +1238,18 @@ export class ServiceService {
             }
         }
 
+        const rawUnit = service.unit_label?.trim() || 'Order';
+        const pluralUnit = orderCount === 1 ? rawUnit : (rawUnit.endsWith('s') ? rawUnit : `${rawUnit}s`);
+        const defaultTitle = isOrderBased
+            ? `${orderCount} ${pluralUnit}`
+            : `${hours} ${hours === 1 ? 'Hour' : 'Hours'}`;
+
         const pkg = await prisma.servicePackage.create({
             data: {
                 service_id: serviceId,
                 hours,
-                title: data.title || `${hours} ${hours === 1 ? 'Hour' : 'Hours'}`,
+                order_count: orderCount,
+                title: data.title || defaultTitle,
                 pricing_type: pricingType,
                 discount_percentage: discountPercentage,
                 price,
@@ -1119,11 +1269,15 @@ export class ServiceService {
         });
         if (!existing) throw new NotFoundError('Package not found');
 
-        const baseHourlyRate = existing.service?.base_price > 0 ? existing.service.base_price : 219;
+        const isOrderBased = existing.service?.pricing_model === 'ORDER_BASED';
+        const baseRate = existing.service?.base_price > 0 ? existing.service.base_price : 219;
         const hours = data.hours != null ? parseFloat(data.hours) : existing.hours;
+        const orderCount = data.order_count != null ? parseInt(data.order_count, 10) : (data.orderCount != null ? parseInt(data.orderCount, 10) : (existing.order_count ?? (isOrderBased ? Math.round(hours) : 1)));
+        const multiplier = isOrderBased ? orderCount : hours;
+
         const originalPrice = (data.original_price !== undefined || data.originalPrice !== undefined)
             ? ((data.original_price ?? data.originalPrice) != null ? parseFloat(data.original_price ?? data.originalPrice) : null)
-            : Math.round(hours * baseHourlyRate);
+            : Math.round(multiplier * baseRate);
 
         const pricingType = data.pricing_type || data.pricingType || existing.pricing_type || 'FLAT';
         let discountPercentage = data.discount_percentage !== undefined
@@ -1142,6 +1296,7 @@ export class ServiceService {
 
         const updateData: any = {
             hours,
+            order_count: orderCount,
             price,
             original_price: originalPrice,
             pricing_type: pricingType,
@@ -1176,15 +1331,17 @@ export class ServiceService {
             throw new BadRequestError('Packages array is required');
         }
 
-        // 1. Identify 1-hour package to sync service base price if provided
-        const oneHrInput = packagesData.find(p => Number(p.hours) === 1);
-        let baseHourlyRate = service.base_price > 0 ? service.base_price : 219;
-        if (oneHrInput && oneHrInput.price != null && Number(oneHrInput.price) > 0) {
-            baseHourlyRate = Number(oneHrInput.price);
-            if (Math.round(baseHourlyRate) !== Math.round(service.base_price)) {
+        const isOrderBased = service.pricing_model === 'ORDER_BASED';
+
+        // 1. Identify base package (1 hour or 1 order) to sync service base price if provided
+        const basePkgInput = packagesData.find(p => (isOrderBased ? Number(p.order_count ?? p.hours) === 1 : Number(p.hours) === 1));
+        let baseRate = service.base_price > 0 ? service.base_price : 219;
+        if (basePkgInput && basePkgInput.price != null && Number(basePkgInput.price) > 0) {
+            baseRate = Number(basePkgInput.price);
+            if (Math.round(baseRate) !== Math.round(service.base_price)) {
                 await prisma.service.update({
                     where: { id: serviceId },
-                    data: { base_price: baseHourlyRate }
+                    data: { base_price: baseRate }
                 });
             }
         }
@@ -1195,11 +1352,13 @@ export class ServiceService {
 
         for (let i = 0; i < packagesData.length; i++) {
             const item = packagesData[i];
-            const hours = Number(item.hours);
-            if (isNaN(hours) || hours <= 0) continue;
+            const hours = Number(item.hours) || 1;
+            const orderCount = item.order_count != null ? Number(item.order_count) : (item.orderCount != null ? Number(item.orderCount) : (isOrderBased ? Math.round(hours) : 1));
+            const multiplier = isOrderBased ? orderCount : hours;
+            if (isNaN(multiplier) || multiplier <= 0) continue;
 
             const pricingType = item.pricing_type || item.pricingType || (item.discount_percentage != null ? 'PERCENTAGE' : 'FLAT');
-            const originalPrice = Math.round(hours * baseHourlyRate);
+            const originalPrice = Math.round(multiplier * baseRate);
 
             let discountPercentage = item.discount_percentage != null
                 ? parseFloat(item.discount_percentage)
@@ -1207,8 +1366,8 @@ export class ServiceService {
 
             let price = item.price != null ? parseFloat(item.price) : 0;
 
-            if (hours === 1) {
-                price = baseHourlyRate;
+            if (multiplier === 1) {
+                price = baseRate;
                 discountPercentage = 0;
             } else if (pricingType === 'PERCENTAGE') {
                 const pct = discountPercentage != null ? discountPercentage : 0;
@@ -1220,8 +1379,14 @@ export class ServiceService {
                 }
             }
 
-            const title = item.title || (hours === 1 ? '1 Hour (60 mins)' : `${hours} Hours (${Math.round(hours * 60)} mins)`);
-            const isPopular = item.is_popular === true || item.isPopular === true || (item.is_popular === undefined && hours === 3);
+            const rawUnit = service.unit_label?.trim() || 'Order';
+            const pluralUnit = orderCount === 1 ? rawUnit : (rawUnit.endsWith('s') ? rawUnit : `${rawUnit}s`);
+            const defaultTitle = isOrderBased
+                ? `${orderCount} ${pluralUnit}`
+                : (hours === 1 ? '1 Hour (60 mins)' : `${hours} Hours (${Math.round(hours * 60)} mins)`);
+
+            const title = item.title || defaultTitle;
+            const isPopular = item.is_popular === true || item.isPopular === true || (item.is_popular === undefined && multiplier === (isOrderBased ? 2 : 3));
             const isActive = item.is_active !== false && item.isActive !== false;
             const displayOrder = item.display_order != null ? parseInt(item.display_order, 10) : (i + 1);
 
@@ -1233,6 +1398,7 @@ export class ServiceService {
                     where: { id: existing.id },
                     data: {
                         hours,
+                        order_count: orderCount,
                         title,
                         pricing_type: pricingType,
                         discount_percentage: discountPercentage,
@@ -1248,6 +1414,7 @@ export class ServiceService {
                     data: {
                         service_id: serviceId,
                         hours,
+                        order_count: orderCount,
                         title,
                         pricing_type: pricingType,
                         discount_percentage: discountPercentage,

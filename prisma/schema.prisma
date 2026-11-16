@@ -272,12 +272,15 @@ model Category {
   icon_url          String?
   is_active         Boolean           @default(true)
   display_order     Int               @default(0)
+  is_deleted        Boolean           @default(false)
+  deleted_at        DateTime?
   created_at        DateTime          @default(now())
   updated_at        DateTime          @updatedAt
   business_partners BusinessPartner[]
   service_partners  ServicePartner[]
   services          Service[]
 
+  @@index([is_deleted])
   @@map("categories")
 }
 
@@ -288,12 +291,16 @@ model Service {
   description             String?
   base_price              Float
   duration                Int
+  pricing_model           String                   @default("TIME_BASED") // "TIME_BASED" | "ORDER_BASED"
+  unit_label              String?                  @default("hour")
   image_url               String?
   display_order           Int                      @default(1)
   is_repeated             Boolean                  @default(false)
   repeated_order          Int                      @default(0)
   note                    String?                  @db.Text
   is_active               Boolean                  @default(true)
+  is_deleted              Boolean                  @default(false)
+  deleted_at              DateTime?
   created_at              DateTime                 @default(now())
   updated_at              DateTime                 @updatedAt
   booking_items           BookingItem[]
@@ -306,6 +313,7 @@ model Service {
 
   @@index([category_id])
   @@index([is_active])
+  @@index([is_deleted])
   @@index([display_order])
   @@index([is_repeated])
   @@map("services")
@@ -504,6 +512,7 @@ model ServicePackage {
   id                  String        @id @default(uuid())
   service_id          String
   hours               Float
+  order_count         Int?          @default(1)
   title               String?
   pricing_type        String        @default("FLAT") // "FLAT" | "PERCENTAGE"
   discount_percentage Float?                         // Discount percentage e.g. 16.0, 22.0

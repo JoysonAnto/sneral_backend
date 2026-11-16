@@ -56,17 +56,26 @@ export class ServiceController {
             const rawNote = req.body.note !== undefined ? req.body.note : undefined;
             const note = rawNote !== undefined ? sanitizeServiceNote(rawNote) : null;
 
+            const pricingModel = req.body.pricingModel || req.body.pricing_model || 'TIME_BASED';
+            const unitLabel = req.body.unitLabel !== undefined 
+                ? req.body.unitLabel 
+                : (req.body.unit_label !== undefined ? req.body.unit_label : (pricingModel === 'ORDER_BASED' ? 'Order' : 'hour'));
+
             const serviceData = {
                 ...req.body,
-                ...(categoryId && { categoryId }),
-                ...(imageUrl && { imageUrl }),
+                ...(categoryId && { categoryId, category_id: categoryId }),
+                ...(imageUrl && { imageUrl, image_url: imageUrl }),
+                pricingModel,
+                pricing_model: pricingModel,
+                unitLabel,
+                unit_label: unitLabel,
                 displayOrder,
                 display_order: displayOrder,
                 note,
                 // Ensure numeric fields are converted (FormData sends everything as strings)
                 ...(req.body.basePrice !== undefined && { basePrice: parseFloat(req.body.basePrice) }),
                 ...(req.body.base_price !== undefined && { basePrice: parseFloat(req.body.base_price) }),
-                ...(req.body.duration !== undefined && { duration: parseInt(req.body.duration) }),
+                duration: req.body.duration !== undefined && req.body.duration !== '' ? parseInt(req.body.duration, 10) : 60,
                 ...(req.body.isActive !== undefined && {
                     isActive: req.body.isActive === 'true' || req.body.isActive === true
                 }),
@@ -114,16 +123,21 @@ export class ServiceController {
             const rawNote = req.body.note !== undefined ? req.body.note : undefined;
             const note = rawNote !== undefined ? sanitizeServiceNote(rawNote) : undefined;
 
+            const pricingModel = req.body.pricingModel !== undefined ? req.body.pricingModel : req.body.pricing_model;
+            const unitLabel = req.body.unitLabel !== undefined ? req.body.unitLabel : req.body.unit_label;
+
             const updateData: any = {
                 ...req.body,
-                ...(categoryId && { categoryId }),
-                ...(imageUrl && { imageUrl }),
+                ...(categoryId && { categoryId, category_id: categoryId }),
+                ...(imageUrl && { imageUrl, image_url: imageUrl }),
+                ...(pricingModel !== undefined && { pricingModel, pricing_model: pricingModel }),
+                ...(unitLabel !== undefined && { unitLabel, unit_label: unitLabel }),
                 ...(displayOrder !== undefined && { displayOrder, display_order: displayOrder }),
                 ...(note !== undefined && { note }),
                 // Ensure numeric fields are converted (FormData sends everything as strings)
                 ...(req.body.basePrice !== undefined && { basePrice: parseFloat(req.body.basePrice) }),
                 ...(req.body.base_price !== undefined && { basePrice: parseFloat(req.body.base_price) }),
-                ...(req.body.duration !== undefined && { duration: parseInt(req.body.duration) }),
+                ...(req.body.duration !== undefined && req.body.duration !== '' && { duration: parseInt(req.body.duration, 10) }),
                 ...(req.body.isActive !== undefined && {
                     isActive: req.body.isActive === 'true' || req.body.isActive === true
                 }),
@@ -259,6 +273,15 @@ export class ServiceController {
                 updateData
             );
             res.json(successResponse(category, 'Category updated successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    deleteCategory = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const result = await this.serviceService.deleteCategory(req.params.id);
+            res.json(successResponse(result, (result as any).message || 'Category deleted successfully'));
         } catch (error) {
             next(error);
         }
