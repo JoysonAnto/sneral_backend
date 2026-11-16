@@ -5,6 +5,7 @@ import { referralService } from '../services/referral.service';
 import { successResponse } from '../utils/response';
 import { BadRequestError } from '../utils/errors';
 import { hashPassword } from '../utils/encryption';
+import { sendPushToToken } from '../services/fcm.service';
 
 export class AdminManagementController {
     // ============================================
@@ -554,8 +555,34 @@ export class AdminManagementController {
 
             const updatedOrder = await prisma.merchandiseOrder.update({
                 where: { id },
-                data: { status }
+                data: { status },
+                include: {
+                    partner: {
+                        include: {
+                            user: { select: { full_name: true, fcm_token: true } }
+                        }
+                    }
+                }
             });
+
+            // Notify partner about order status update
+            try {
+                const partnerFcm = updatedOrder.partner?.user?.fcm_token;
+                if (partnerFcm) {
+                    await sendPushToToken(partnerFcm, {
+                        title: `📦 Kit Order Update: ${status}`,
+                        body: `Your order for "${updatedOrder.kit_name}" has been updated to ${status}.`,
+                        data: {
+                            type: 'STORE_ORDER',
+                            orderId: updatedOrder.id,
+                            status: status
+                        }
+                    });
+                }
+            } catch (notifyErr) {
+                console.error('[Store Order] Failed to send push notification to partner:', notifyErr);
+            }
+
             res.json(successResponse(updatedOrder, 'Order status updated successfully'));
         } catch (error) {
             next(error);

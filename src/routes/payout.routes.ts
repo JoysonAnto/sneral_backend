@@ -109,4 +109,10 @@ router.post(
     payoutController.processWithdrawal
 );
 
+router.post(
+    '/:id/generate-link',
+    authorize('ADMIN', 'SUPER_ADMIN'),
+    payoutController.generatePayoutLink
+);
+
 export default router;

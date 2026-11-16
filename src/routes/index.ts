@@ -32,6 +32,7 @@ import ticketRoutes from './ticket.routes';
 import couponRoutes from './coupon.routes';
 import adminCouponRoutes from './admin-coupon.routes';
 import referralRoutes from './referral.routes';
+import supportChatRoutes from './support-chat.routes';
 
 
 const router = Router();
@@ -89,6 +90,7 @@ router.use('/tracking', locationTrackingRoutes);
 // 6. COMMUNICATION
 router.use('/notifications', notificationRoutes);
 router.use('/messages', messageRoutes);
+router.use('/support/chat', supportChatRoutes);
 
 // 7. ADMIN & ROLES
 router.use('/admin', adminRoutes);

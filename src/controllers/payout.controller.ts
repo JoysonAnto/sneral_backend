@@ -48,4 +48,14 @@ export class PayoutController {
             next(error);
         }
     };
+
+    generatePayoutLink = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const { id } = req.params;
+            const result = await this.payoutService.generatePayoutLink(id, req.user!.userId);
+            res.json(successResponse(result, 'Payout link generated successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
 }

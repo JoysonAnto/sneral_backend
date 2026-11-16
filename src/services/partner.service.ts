@@ -1838,8 +1838,8 @@ export class PartnerService {
             ? partner.payout_methods.find(m => m.id === payoutMethodId)
             : partner.payout_methods.find(m => m.is_default) || partner.payout_methods[0];
 
-        // Deduct from wallet & create transaction
-        const updatedWallet = await prisma.$transaction(async (tx) => {
+        // Deduct from wallet, record transaction, and create withdrawal request for admin ledger
+        const { updatedWallet, withdrawalReq } = await prisma.$transaction(async (tx) => {
             const w = await tx.wallet.update({
                 where: { user_id: userId },
                 data: {
@@ -1848,7 +1848,7 @@ export class PartnerService {
                 }
             });
 
-            await tx.transaction.create({
+            const txRecord = await tx.transaction.create({
                 data: {
                     user_id: userId,
                     amount: transferAmount,
@@ -1861,12 +1861,32 @@ export class PartnerService {
                 }
             });
 
-            return w;
+            // Create withdrawal request so Admin Payouts dashboard can review & verify settlement
+            const withdrawalReq = await tx.withdrawalRequest.create({
+                data: {
+                    user_id: userId,
+                    amount: transferAmount,
+                    bank_account: selectedMethod ? {
+                        type: selectedMethod.type,
+                        account_number: selectedMethod.account_number,
+                        ifsc: selectedMethod.ifsc_code,
+                        bank_name: selectedMethod.bank_name,
+                        account_holder: selectedMethod.account_holder,
+                        upi_id: selectedMethod.upi_id
+                    } : (partner as any).bank_account || {},
+                    status: 'PENDING',
+                    transaction_id: txRecord.id,
+                    admin_notes: 'Instant Payout requested via Partner App'
+                }
+            });
+
+            return { updatedWallet: w, withdrawalReq };
         });
 
         return {
             success: true,
             amount: transferAmount,
+            withdrawal_request_id: withdrawalReq.id,
             transferred_to: selectedMethod || { type: 'BANK', note: 'Primary Account' },
             new_balance: updatedWallet.balance,
             message: `Instant transfer of ₹${transferAmount} initiated successfully!`
