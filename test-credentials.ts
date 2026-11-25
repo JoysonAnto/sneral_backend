@@ -196,20 +196,58 @@ async function runCredentialsCheck() {
         });
     }
 
-    // 8. Elastic Email
-    if (process.env.ELASTIC_EMAIL_API_KEY) {
+    // 8. Transactional Email Service (Dual Engine: SMTP + Elastic Email)
+    try {
+        const { EmailService } = await import('./src/services/email.service');
+        const emailService = new EmailService();
+        const conn = await emailService.verifyConnection();
+
+        if (conn.smtp.configured && conn.smtp.ok) {
+            results.push({
+                name: 'Email Service (SMTP)',
+                envVars: ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASSWORD', 'EMAIL_FROM'],
+                status: 'ACTIVE',
+                details: `Connected to ${process.env.SMTP_HOST} as ${process.env.SMTP_USER}`,
+            });
+        } else if (conn.smtp.configured && !conn.smtp.ok) {
+            results.push({
+                name: 'Email Service (SMTP)',
+                envVars: ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASSWORD'],
+                status: 'ERROR',
+                details: `SMTP Authentication failed: ${conn.smtp.message}`,
+            });
+        }
+
+        if (conn.elasticEmail.configured && conn.elasticEmail.ok) {
+            results.push({
+                name: 'Email Service (Elastic Email)',
+                envVars: ['ELASTIC_EMAIL_API_KEY'],
+                status: 'ACTIVE',
+                details: 'Elastic Email API key is valid and connected',
+            });
+        } else if (conn.elasticEmail.configured && !conn.elasticEmail.ok) {
+            results.push({
+                name: 'Email Service (Elastic Email)',
+                envVars: ['ELASTIC_EMAIL_API_KEY'],
+                status: 'ERROR',
+                details: `Elastic Email API failed: ${conn.elasticEmail.message}`,
+            });
+        }
+
+        if (!conn.smtp.configured && !conn.elasticEmail.configured) {
+            results.push({
+                name: 'Transactional Email Service',
+                envVars: ['SMTP_HOST', 'ELASTIC_EMAIL_API_KEY'],
+                status: 'MISSING',
+                details: 'Requires SMTP or Elastic Email credentials for OTP delivery',
+            });
+        }
+    } catch (emailErr: any) {
         results.push({
-            name: 'Elastic Email (Transactional)',
-            envVars: ['ELASTIC_EMAIL_API_KEY', 'EMAIL_FROM'],
-            status: 'ACTIVE',
-            details: 'Configured with sender: ' + (process.env.EMAIL_FROM || 'noreply@snearal.com'),
-        });
-    } else {
-        results.push({
-            name: 'Elastic Email (Transactional)',
-            envVars: ['ELASTIC_EMAIL_API_KEY'],
-            status: 'MISSING',
-            details: 'Requires Elastic Email API Key for OTP & notification emails',
+            name: 'Transactional Email Service',
+            envVars: ['SMTP_HOST', 'ELASTIC_EMAIL_API_KEY'],
+            status: 'ERROR',
+            details: emailErr.message,
         });
     }
 

@@ -1,10 +1,124 @@
 import { Router, Request, Response } from 'express';
 import { serviceLocationPricingService } from '../services/service-location-pricing.service';
 import locationService from '../services/location.service';
+import prisma from '../config/database';
 
 const router = Router();
 
 // PUBLIC ENDPOINTS - No authentication required for browsing
+
+// GET /api/v1/public/locations/check-pincode/:pincode
+router.get('/check-pincode/:pincode', async (req: Request, res: Response) => {
+    try {
+        const pincode = req.params.pincode?.trim();
+        if (!pincode || pincode.length < 5) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid pincode format'
+            });
+        }
+
+        const area = await prisma.area.findFirst({
+            where: {
+                pincode: pincode,
+                is_active: true
+            },
+            include: {
+                district: {
+                    include: {
+                        state: true
+                    }
+                }
+            }
+        });
+
+        if (area) {
+            return res.json({
+                success: true,
+                is_serviceable: true,
+                pincode,
+                area: {
+                    id: area.id,
+                    name: area.name,
+                    district: area.district.name,
+                    state: area.district.state.name
+                }
+            });
+        }
+
+        return res.json({
+            success: true,
+            is_serviceable: false,
+            pincode,
+            message: `Snearal is not currently available at pincode ${pincode}`
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to verify pincode availability',
+            error: error.message
+        });
+    }
+});
+
+// POST /api/v1/public/locations/pincode-waitlist
+router.post('/pincode-waitlist', async (req: Request, res: Response) => {
+    try {
+        const { pincode, area_name, district_name, email, phone_number, user_id } = req.body;
+
+        if (!pincode || String(pincode).trim().length < 5) {
+            return res.status(400).json({
+                success: false,
+                message: 'Valid pincode is required'
+            });
+        }
+
+        const cleanPincode = String(pincode).trim();
+
+        const existing = await prisma.pincodeNotification.findFirst({
+            where: {
+                pincode: cleanPincode,
+                OR: [
+                    ...(email ? [{ email: String(email).trim().toLowerCase() }] : []),
+                    ...(phone_number ? [{ phone_number: String(phone_number).trim() }] : []),
+                    ...(user_id ? [{ user_id: String(user_id) }] : [])
+                ]
+            }
+        });
+
+        if (existing) {
+            return res.json({
+                success: true,
+                message: "You're already on our waitlist! We'll alert you the moment we launch in your area.",
+                data: existing
+            });
+        }
+
+        const entry = await prisma.pincodeNotification.create({
+            data: {
+                pincode: cleanPincode,
+                area_name: area_name || null,
+                district_name: district_name || null,
+                email: email ? String(email).trim().toLowerCase() : null,
+                phone_number: phone_number ? String(phone_number).trim() : null,
+                user_id: user_id || null,
+                status: 'PENDING'
+            }
+        });
+
+        return res.status(201).json({
+            success: true,
+            message: "Thank you! We've registered your request and will notify you when Snearal launches in your pincode.",
+            data: entry
+        });
+    } catch (error: any) {
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to register pincode notification request',
+            error: error.message
+        });
+    }
+});
 
 // GET /api/v1/public/locations/states
 router.get('/states', async (_req: Request, res: Response) => {

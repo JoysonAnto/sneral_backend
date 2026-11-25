@@ -377,6 +377,96 @@ export class BookingController {
         }
     };
 
+    generatePauseOTP = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const partner = await import('../config/database').then(m =>
+                m.default.servicePartner.findUnique({
+                    where: { user_id: req.user!.userId }
+                })
+            );
+
+            if (!partner) {
+                throw new Error('Service partner profile not found');
+            }
+
+            const { reason } = req.body;
+            const otp = await this.bookingService.generatePauseOTP(req.params.id, partner.id, reason);
+            res.json(successResponse({ otp }, 'Pause OTP generated and sent to customer successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    verifyPauseJob = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const partner = await import('../config/database').then(m =>
+                m.default.servicePartner.findUnique({
+                    where: { user_id: req.user!.userId }
+                })
+            );
+
+            if (!partner) {
+                throw new Error('Service partner profile not found');
+            }
+
+            const { otp, images, reason } = req.body;
+            const result = await this.bookingService.verifyPauseJob(
+                req.params.id,
+                partner.id,
+                otp,
+                images || [],
+                reason
+            );
+            res.json(successResponse(result, 'Job paused successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    generateResumeOTP = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const partner = await import('../config/database').then(m =>
+                m.default.servicePartner.findUnique({
+                    where: { user_id: req.user!.userId }
+                })
+            );
+
+            if (!partner) {
+                throw new Error('Service partner profile not found');
+            }
+
+            const otp = await this.bookingService.generateResumeOTP(req.params.id, partner.id);
+            res.json(successResponse({ otp }, 'Resume OTP generated and sent to customer successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
+    verifyResumeJob = async (req: Request, res: Response, next: NextFunction) => {
+        try {
+            const partner = await import('../config/database').then(m =>
+                m.default.servicePartner.findUnique({
+                    where: { user_id: req.user!.userId }
+                })
+            );
+
+            if (!partner) {
+                throw new Error('Service partner profile not found');
+            }
+
+            const { otp, images } = req.body;
+            const result = await this.bookingService.verifyResumeJob(
+                req.params.id,
+                partner.id,
+                otp,
+                images || []
+            );
+            res.json(successResponse(result, 'Job resumed successfully'));
+        } catch (error) {
+            next(error);
+        }
+    };
+
     updatePartnerLocation = async (req: Request, res: Response, next: NextFunction) => {
         try {
             const partner = await import('../config/database').then(m =>

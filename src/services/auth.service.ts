@@ -50,8 +50,8 @@ export class AuthService {
         const userPassword = password || Math.random().toString(36).slice(-10);
         const hashedPassword = await hashPassword(userPassword);
 
-        // Generate OTP for verification
-        const otp = generateOTP(4);
+        // Generate OTP for verification (6-digit standard across mobile and web)
+        const otp = generateOTP(6);
         const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
         const randomDigits = Math.floor(1000 + Math.random() * 9000);
@@ -175,20 +175,64 @@ export class AuthService {
         };
     }
 
-    async login(identifier: string, password?: string) {
-        // Find user
-        const user = await prisma.user.findFirst({
+    private normalizePhone(raw: string): { digits: string; e164: string } {
+        const digits = raw.replace(/\D/g, '');
+        const last10 = digits.slice(-10);
+        const e164 = `+91${last10}`;
+        return { digits: last10, e164 };
+    }
+
+    private async findUserByIdentifier(identifier: string) {
+        const clean = identifier.trim();
+        if (clean.includes('@')) {
+            return await prisma.user.findFirst({
+                where: { email: clean.toLowerCase() }
+            });
+        }
+        const { digits, e164 } = this.normalizePhone(clean);
+        return await prisma.user.findFirst({
             where: {
                 OR: [
-                    { email: identifier },
-                    { phone_number: identifier }
+                    { phone_number: clean },
+                    { phone_number: e164 },
+                    { phone_number: digits },
+                    { phone_number: { endsWith: digits } }
                 ]
-            },
+            }
         });
+    }
+
+    async login(identifier: string, password?: string) {
+        // Find user by email or normalized phone number
+        let user = await this.findUserByIdentifier(identifier);
 
         if (!user) {
             console.log(`[AUTH DEBUG] User not found for identifier: ${identifier}`);
-            throw new UnauthorizedError('Invalid credentials');
+            if (password) {
+                throw new UnauthorizedError('Invalid credentials');
+            }
+
+            // In OTP login mode without password, if input is a valid 10+ digit phone, auto-create customer account
+            const isEmail = identifier.trim().includes('@');
+            const { digits, e164 } = this.normalizePhone(identifier);
+            if (!isEmail && digits.length >= 10) {
+                const defaultEmail = `${digits}@snearal.customer`;
+                const dummyHash = await hashPassword(generateOTP(12));
+                user = await prisma.user.create({
+                    data: {
+                        email: defaultEmail,
+                        phone_number: e164,
+                        full_name: `Customer ${digits.slice(-4)}`,
+                        password: dummyHash,
+                        role: 'CUSTOMER',
+                        phone_verified: false,
+                        email_verified: false,
+                    }
+                });
+                console.log(`[AUTH] Auto-created new customer for mobile OTP login: ${e164}`);
+            } else {
+                throw new UnauthorizedError('User not found. Please register first.');
+            }
         }
 
         if (user.is_deleted) {
@@ -240,11 +284,11 @@ export class AuthService {
             });
             const refreshToken = generateRefreshToken(user.id);
 
-            // Store refresh token in Redis with 7 days expiry
+            // Store refresh token in Redis with 90 days expiry
             await setRedisValue(
                 `refresh_token:${user.id}`,
                 refreshToken,
-                7 * 24 * 60 * 60
+                90 * 24 * 60 * 60
             );
 
             return {
@@ -277,7 +321,7 @@ export class AuthService {
 
             console.log(`Login OTP for ${identifier}: ${otp}`);
 
-            if (user.email) {
+            if (user.email && !user.email.endsWith('@snearal.customer')) {
                 await this.emailService.sendLoginOTPEmail(user.email, otp, user.full_name);
             }
 
@@ -293,14 +337,7 @@ export class AuthService {
     }
 
     async verifyOtp(identifier: string, otp: string) {
-        const user = await prisma.user.findFirst({
-            where: {
-                OR: [
-                    { email: identifier },
-                    { phone_number: identifier }
-                ]
-            },
-        });
+        const user = await this.findUserByIdentifier(identifier);
 
         if (!user) {
             throw new BadRequestError('User not found');
@@ -319,7 +356,7 @@ export class AuthService {
             throw new BadRequestError('No verification OTP found. Please request a new one.');
         }
 
-        if (user.verification_otp !== otp.toString()) {
+        if (user.verification_otp.trim() !== otp.toString().trim()) {
             throw new BadRequestError('Invalid OTP');
         }
 
@@ -368,7 +405,7 @@ export class AuthService {
         await setRedisValue(
             `refresh_token:${user.id}`,
             refreshToken,
-            7 * 24 * 60 * 60
+            90 * 24 * 60 * 60
         );
 
         return {
@@ -385,10 +422,8 @@ export class AuthService {
         };
     }
 
-    async resendVerificationOTP(email: string) {
-        const user = await prisma.user.findUnique({
-            where: { email },
-        });
+    async resendVerificationOTP(identifier: string) {
+        const user = await this.findUserByIdentifier(identifier);
 
         if (!user) {
             throw new BadRequestError('User not found');
@@ -398,12 +433,12 @@ export class AuthService {
             throw new BadRequestError('This account has been deleted or deactivated.');
         }
 
-        if (user.email_verified) {
-            throw new BadRequestError('Email already verified');
+        if (user.email_verified && user.phone_verified) {
+            throw new BadRequestError('Account already verified');
         }
 
-        // Generate new OTP
-        const otp = generateOTP(4);
+        // Generate new OTP (6-digit standard)
+        const otp = generateOTP(6);
         const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
         // Update user with new OTP
@@ -415,11 +450,12 @@ export class AuthService {
             },
         });
 
-        // Send verification email
-        await this.emailService.sendVerificationEmail(email, otp, user.full_name);
-        console.log(`Resent Verification OTP for ${email}: ${otp}`);
+        if (user.email && !user.email.endsWith('@snearal.customer')) {
+            await this.emailService.sendVerificationEmail(user.email, otp, user.full_name);
+        }
+        console.log(`Resent Verification OTP for ${identifier}: ${otp}`);
 
-        return { message: 'Verification code sent to your email' };
+        return { message: 'Verification code sent successfully', otp };
     }
 
     async forgotPassword(email: string) {
@@ -432,8 +468,8 @@ export class AuthService {
             return { message: 'If the email exists, a password reset code has been sent' };
         }
 
-        // Generate OTP for password reset
-        const otp = generateOTP(4);
+        // Generate OTP for password reset (6-digit standard)
+        const otp = generateOTP(6);
         const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
         // Update user with reset OTP
@@ -532,15 +568,26 @@ export class AuthService {
 
             const permissions = userWithPermissions?.custom_role?.permissions.map(p => p.permission.name) || [];
 
-            // Generate new access token
+            // Generate new access token and rotated refresh token
             const newAccessToken = generateAccessToken({
                 userId: user.id,
                 role: user.role,
                 email: user.email,
                 permissions,
             });
+            const newRefreshToken = generateRefreshToken(user.id);
 
-            return { accessToken: newAccessToken };
+            await setRedisValue(
+                `refresh_token:${user.id}`,
+                newRefreshToken,
+                90 * 24 * 60 * 60
+            );
+
+            return { 
+                accessToken: newAccessToken,
+                refreshToken: newRefreshToken,
+                token: newAccessToken,
+            };
         } catch (error) {
             throw new UnauthorizedError('Invalid or expired refresh token');
         }

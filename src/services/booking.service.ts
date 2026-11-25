@@ -25,6 +25,8 @@ interface BookingItemData {
     packageId?: string;
     package_id?: string;
     quantity: number;
+    requiredPartnersCount?: number;
+    required_partners_count?: number;
 }
 
 interface CreateBookingData {
@@ -43,6 +45,8 @@ interface CreateBookingData {
     scheduledDateTime?: string;
     couponCode?: string;
     couponId?: string;
+    requiredPartnersCount?: number;
+    required_partners_count?: number;
 }
 
 export class BookingService {
@@ -134,6 +138,7 @@ export class BookingService {
             let originalSubtotal = 0;
             const bookingItemsData = [];
             let totalEstimatedDuration = 0;
+            let maxRequiredPartners = Number(data.requiredPartnersCount || data.required_partners_count || 1);
 
             for (const service of categoryServices) {
                 const itemData = data.items.find(i => (i.serviceId || i.service_id) === service.id)!;
@@ -141,7 +146,16 @@ export class BookingService {
                 const pkgId = itemData.packageId || itemData.package_id;
                 const pkg = pkgId ? packageMap.get(pkgId) : null;
                 const unitPrice = pkg ? pkg.price : service.base_price;
-                const lineTotal = unitPrice * dynamicMultiplier * itemData.quantity;
+                
+                const itemPartners = Number(itemData.requiredPartnersCount || itemData.required_partners_count || (service.allows_multiple_partners ? itemData.quantity : 1) || 1);
+                if (itemPartners > maxRequiredPartners) {
+                    maxRequiredPartners = itemPartners;
+                }
+
+                const effectiveMultiplier = (service.allows_multiple_partners && maxRequiredPartners > 1 && itemData.quantity === 1) 
+                    ? maxRequiredPartners 
+                    : itemData.quantity;
+                const lineTotal = unitPrice * dynamicMultiplier * effectiveMultiplier;
 
                 originalSubtotal += lineTotal;
                 totalEstimatedDuration += pkg ? Math.round(pkg.hours * 60) : service.duration;
@@ -149,7 +163,7 @@ export class BookingService {
                 bookingItemsData.push({
                     service_id: service.id,
                     package_id: pkg ? pkg.id : null,
-                    quantity: itemData.quantity,
+                    quantity: effectiveMultiplier,
                     unit_price: unitPrice,
                     total_price: lineTotal
                 });
@@ -189,6 +203,8 @@ export class BookingService {
                     booking_type: data.bookingType === 'scheduled' ? 'SCHEDULED' : 'INSTANT',
                     scheduled_date_time: data.scheduledDateTime ? new Date(data.scheduledDateTime) : (data.isScheduled ? new Date(data.scheduledDate) : null),
                     estimated_duration: totalEstimatedDuration > 0 ? totalEstimatedDuration : categoryServices.reduce((acc, s) => acc + s.duration, 0),
+                    required_partners_count: maxRequiredPartners,
+                    assigned_partners_count: 0,
                     items: {
                         create: bookingItemsData
                     },
@@ -438,6 +454,11 @@ export class BookingService {
                 payments: true,
                 reviews: true,
                 status_history: {
+                    orderBy: {
+                        created_at: 'desc',
+                    },
+                },
+                pause_milestones: {
                     orderBy: {
                         created_at: 'desc',
                     },
@@ -1157,18 +1178,52 @@ export class BookingService {
 
         logger.info(`[Dispatch] Executing database update for booking ${bookingId}`);
 
+        // 1. Create or update BookingPartner slot
+        await prisma.bookingPartner.upsert({
+            where: {
+                booking_id_partner_id: {
+                    booking_id: bookingId,
+                    partner_id: partnerId
+                }
+            },
+            update: {
+                status: 'ASSIGNED',
+                assigned_at: new Date(),
+                is_lead: !booking.partner_id || booking.partner_id === partnerId,
+                cancelled_at: null,
+                cancellation_reason: null
+            },
+            create: {
+                booking_id: bookingId,
+                partner_id: partnerId,
+                status: 'ASSIGNED',
+                is_lead: !booking.partner_id || booking.partner_id === partnerId,
+            }
+        });
+
+        const activeCount = await prisma.bookingPartner.count({
+            where: {
+                booking_id: bookingId,
+                status: { notIn: ['CANCELLED_BY_PARTNER', 'REASSIGNED'] }
+            }
+        });
+        const requiredCount = booking.required_partners_count || 1;
+        const allAssigned = activeCount >= requiredCount;
+
         // Assign partner
         const updatedBooking = await prisma.booking.update({
             where: { id: bookingId },
             data: {
-                partner_id: partnerId,
-                partner_assigned_at: new Date(),
+                partner_id: booking.partner_id || partnerId,
+                partner_assigned_at: booking.partner_assigned_at || new Date(),
                 status: 'PARTNER_ASSIGNED',
+                assigned_partners_count: activeCount,
+                needs_reassignment: !allAssigned,
                 status_history: {
                     create: {
                         status: 'PARTNER_ASSIGNED',
                         changed_by: assignedBy,
-                        notes: `Assigned to ${partner.user.full_name} by ${actor?.full_name || 'Administrator'}`,
+                        notes: `Assigned to ${partner.user.full_name} by ${actor?.full_name || 'Administrator'} (${activeCount}/${requiredCount} assigned)`,
                     },
                 },
             },
@@ -1179,6 +1234,13 @@ export class BookingService {
                         user: true,
                     },
                 },
+                assigned_partners: {
+                    include: {
+                        partner: {
+                            include: { user: true }
+                        }
+                    }
+                }
             },
         });
 
@@ -1227,75 +1289,89 @@ export class BookingService {
             throw new NotFoundError('Booking not found');
         }
 
-        // FIFO Claiming logic: If no partner is assigned, allow claiming
-        if (!booking.partner_id) {
-            if (booking.status !== 'SEARCHING_PARTNER' && booking.status !== 'PENDING') {
-                throw new BadRequestError('Booking is no longer available for claiming');
+        const requiredCount = booking.required_partners_count || 1;
+        const activeBookingPartners = await prisma.bookingPartner.findMany({
+            where: {
+                booking_id: bookingId,
+                status: { notIn: ['CANCELLED_BY_PARTNER', 'REASSIGNED'] }
             }
+        });
 
-            // Assign the partner safely using updateMany to ensure only one partner claims it
-            const updateResult = await prisma.booking.updateMany({
-                where: {
-                    id: bookingId,
-                    partner_id: null,
-                    status: { in: ['SEARCHING_PARTNER', 'PENDING'] }
-                },
-                data: {
-                    partner_id: partnerId,
-                    partner_assigned_at: new Date(),
-                    partner_accepted_at: new Date(),
-                    status: 'PARTNER_ACCEPTED',
+        const alreadyAccepted = activeBookingPartners.some(p => p.partner_id === partnerId);
+        if (alreadyAccepted) {
+            throw new BadRequestError('You have already claimed this booking');
+        }
+
+        const isFullyClaimedAlready = activeBookingPartners.length >= requiredCount && booking.partner_id && booking.partner_id !== partnerId;
+        if (isFullyClaimedAlready) {
+            throw new BadRequestError('This booking has already been claimed by another partner. Please try another one.');
+        }
+
+        // Upsert BookingPartner for this partner
+        await prisma.bookingPartner.upsert({
+            where: {
+                booking_id_partner_id: {
+                    booking_id: bookingId,
+                    partner_id: partnerId
                 }
-            });
-
-            if (updateResult.count === 0) {
-                throw new BadRequestError('This booking was just claimed by another partner. Please try another one.');
+            },
+            update: {
+                status: 'ACCEPTED',
+                accepted_at: new Date(),
+                is_lead: activeBookingPartners.length === 0,
+                cancelled_at: null,
+                cancellation_reason: null
+            },
+            create: {
+                booking_id: bookingId,
+                partner_id: partnerId,
+                status: 'ACCEPTED',
+                accepted_at: new Date(),
+                is_lead: activeBookingPartners.length === 0,
             }
+        });
 
-            // Fetch the updated booking with history and details
-            const result = await prisma.booking.update({
-                where: { id: bookingId },
-                data: {
-                    status_history: {
-                        create: {
-                            status: 'PARTNER_ACCEPTED',
-                            changed_by: partnerId,
-                            notes: 'Partner claimed and accepted the booking',
-                        },
+        const newActiveCount = activeBookingPartners.length + 1;
+        const isAllClaimed = newActiveCount >= requiredCount;
+
+        const result = await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                partner_id: booking.partner_id || partnerId,
+                partner_assigned_at: booking.partner_assigned_at || new Date(),
+                partner_accepted_at: booking.partner_accepted_at || new Date(),
+                assigned_partners_count: newActiveCount,
+                needs_reassignment: !isAllClaimed,
+                status: isAllClaimed ? 'PARTNER_ACCEPTED' : (booking.status === 'PENDING' ? 'SEARCHING_PARTNER' : booking.status),
+                status_history: {
+                    create: {
+                        status: 'PARTNER_ACCEPTED',
+                        changed_by: partnerId,
+                        notes: `Partner claimed and accepted slot (${newActiveCount}/${requiredCount})`,
                     },
                 },
-                include: {
-                    customer: true,
-                    partner: {
-                        include: { user: true }
-                    }
+            },
+            include: {
+                customer: true,
+                partner: {
+                    include: { user: true }
+                },
+                assigned_partners: {
+                    include: { partner: { include: { user: true } } }
                 }
-            });
+            }
+        });
 
-            // BROADCAST: Notify other partners that this job is no longer available
+        // BROADCAST: Notify other partners that this job is no longer available if all slots filled
+        if (isAllClaimed) {
             const categoryId = booking.items[0]?.service?.category_id;
             if (categoryId) {
                 this.broadcastJobTaken(bookingId, categoryId);
             }
-
-            return result;
         }
 
-        // Traditional acceptance logic (if already assigned)
-        if (booking.partner_id !== partnerId) {
-            throw new UnauthorizedError('This booking has already been claimed by another partner');
-        }
-
-        if (booking.status !== 'PARTNER_ASSIGNED') {
-            throw new BadRequestError('Booking cannot be accepted in current status');
-        }
-
-        return await this.updateBookingStatus(
-            bookingId,
-            'PARTNER_ACCEPTED',
-            partnerId,
-            'Partner accepted the assigned booking'
-        );
+        this.broadcastBookingUpdate(result);
+        return result;
     }
 
     async rejectBooking(bookingId: string, partnerId: string, reason?: string) {
@@ -1620,6 +1696,294 @@ export class BookingService {
     }
 
     /**
+     * Generate OTP for pausing/holding a service (Multi-day job progression)
+     */
+    async generatePauseOTP(bookingId: string, partnerId: string, reason?: string): Promise<string> {
+        const booking = await prisma.booking.findUnique({
+            where: { id: bookingId },
+            include: { customer: true }
+        });
+
+        if (!booking) {
+            throw new NotFoundError('Booking not found');
+        }
+
+        if (booking.partner_id !== partnerId) {
+            throw new UnauthorizedError('Not assigned to this booking');
+        }
+
+        if (booking.status !== 'IN_PROGRESS') {
+            throw new BadRequestError('Can only pause a job that is currently in progress');
+        }
+
+        const otp = generateOTP(4);
+
+        await prisma.booking.update({
+            where: { id: bookingId },
+            data: { pause_otp: otp } as any,
+        });
+
+        if (booking.customer?.email) {
+            try {
+                await this.emailService.sendPauseOTPEmail(
+                    booking.customer.email,
+                    otp,
+                    booking.booking_number,
+                    booking.customer.full_name,
+                    reason
+                );
+            } catch (err) {
+                logger.error('Failed to send pause OTP email:', err);
+            }
+        }
+
+        try {
+            await this.notificationService.createNotification(
+                booking.customer_id,
+                'GENERAL',
+                'Job Pause Verification OTP',
+                `Your partner requested to pause today's work on booking #${booking.booking_number}. OTP is ${otp}.`,
+                { bookingId: booking.id, otp, type: 'PAUSE_OTP' }
+            );
+        } catch (error) {
+            logger.error('Failed to create pause notification:', error);
+        }
+
+        return otp;
+    }
+
+    /**
+     * Verify Pause OTP and place job on hold / paused status with photos
+     */
+    async verifyPauseJob(bookingId: string, partnerId: string, otp: string, images: string[] = [], reason?: string) {
+        const booking = await prisma.booking.findUnique({
+            where: { id: bookingId },
+            include: { customer: true }
+        });
+
+        if (!booking) {
+            throw new NotFoundError('Booking not found');
+        }
+
+        if (booking.partner_id !== partnerId) {
+            throw new UnauthorizedError('Not assigned to this booking');
+        }
+
+        if (booking.status !== 'IN_PROGRESS') {
+            throw new BadRequestError('Booking must be in progress to be paused');
+        }
+
+        if (!booking.pause_otp || booking.pause_otp !== otp) {
+            throw new BadRequestError('Invalid Pause OTP. Please ask the customer for the correct verification code.');
+        }
+
+        // Create milestone
+        const milestone = await prisma.bookingPauseMilestone.create({
+            data: {
+                booking_id: bookingId,
+                partner_id: partnerId,
+                pause_otp: otp,
+                pause_reason: reason || 'Multi-day work hold',
+                pause_images: images || [],
+            }
+        });
+
+        // Update booking status
+        const updatedBooking = await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                status: 'PAUSED',
+                is_paused: true,
+                pause_otp: null,
+            },
+            include: {
+                pause_milestones: true,
+                customer: true,
+                partner: { include: { user: true } }
+            }
+        });
+
+        // Update assigned partner status
+        await prisma.bookingPartner.updateMany({
+            where: { booking_id: bookingId, partner_id: partnerId },
+            data: { status: 'PAUSED' }
+        });
+
+        // Add status history
+        await prisma.bookingStatusHistory.create({
+            data: {
+                booking_id: bookingId,
+                status: 'PAUSED',
+                changed_by: partnerId,
+                notes: `Job paused with customer OTP. Reason: ${reason || 'Multi-day job'}`
+            }
+        });
+
+        try {
+            await this.notificationService.createNotification(
+                booking.customer_id,
+                'GENERAL',
+                'Job Paused (Resuming Tomorrow)',
+                `Booking #${booking.booking_number} is now on hold. Work will resume with customer verification.`,
+                { bookingId: booking.id }
+            );
+        } catch (error) {
+            logger.error('Failed to notify customer on pause:', error);
+        }
+
+        return {
+            message: 'Job paused successfully. Status updated to PAUSED.',
+            booking: updatedBooking,
+            milestone
+        };
+    }
+
+    /**
+     * Generate OTP for resuming a paused service
+     */
+    async generateResumeOTP(bookingId: string, partnerId: string): Promise<string> {
+        const booking = await prisma.booking.findUnique({
+            where: { id: bookingId },
+            include: { customer: true }
+        });
+
+        if (!booking) {
+            throw new NotFoundError('Booking not found');
+        }
+
+        if (booking.partner_id !== partnerId) {
+            throw new UnauthorizedError('Not assigned to this booking');
+        }
+
+        if (booking.status !== 'PAUSED') {
+            throw new BadRequestError('Booking must be in PAUSED status to generate a Resume OTP');
+        }
+
+        const otp = generateOTP(4);
+
+        await prisma.booking.update({
+            where: { id: bookingId },
+            data: { resume_otp: otp } as any,
+        });
+
+        if (booking.customer?.email) {
+            try {
+                await this.emailService.sendResumeOTPEmail(
+                    booking.customer.email,
+                    otp,
+                    booking.booking_number,
+                    booking.customer.full_name
+                );
+            } catch (err) {
+                logger.error('Failed to send resume OTP email:', err);
+            }
+        }
+
+        try {
+            await this.notificationService.createNotification(
+                booking.customer_id,
+                'GENERAL',
+                'Job Resume Verification OTP',
+                `Partner is ready to resume work on booking #${booking.booking_number}. Resume OTP: ${otp}.`,
+                { bookingId: booking.id, otp, type: 'RESUME_OTP' }
+            );
+        } catch (error) {
+            logger.error('Failed to create resume notification:', error);
+        }
+
+        return otp;
+    }
+
+    /**
+     * Verify Resume OTP and transition job back to IN_PROGRESS with check-in photos
+     */
+    async verifyResumeJob(bookingId: string, partnerId: string, otp: string, images: string[] = []) {
+        const booking = await prisma.booking.findUnique({
+            where: { id: bookingId },
+            include: { customer: true }
+        });
+
+        if (!booking) {
+            throw new NotFoundError('Booking not found');
+        }
+
+        if (booking.partner_id !== partnerId) {
+            throw new UnauthorizedError('Not assigned to this booking');
+        }
+
+        if (booking.status !== 'PAUSED') {
+            throw new BadRequestError('Booking must be PAUSED to resume');
+        }
+
+        if (!booking.resume_otp || booking.resume_otp !== otp) {
+            throw new BadRequestError('Invalid Resume OTP. Please ask the customer for the correct verification code.');
+        }
+
+        // Find active milestone
+        const latestMilestone = await prisma.bookingPauseMilestone.findFirst({
+            where: { booking_id: bookingId, resumed_at: null },
+            orderBy: { created_at: 'desc' }
+        });
+
+        if (latestMilestone) {
+            await prisma.bookingPauseMilestone.update({
+                where: { id: latestMilestone.id },
+                data: {
+                    resumed_at: new Date(),
+                    resume_otp: otp,
+                    resume_images: images || [],
+                }
+            });
+        }
+
+        // Transition booking back to IN_PROGRESS
+        const updatedBooking = await prisma.booking.update({
+            where: { id: bookingId },
+            data: {
+                status: 'IN_PROGRESS',
+                is_paused: false,
+                resume_otp: null,
+            },
+            include: {
+                pause_milestones: true,
+                customer: true,
+                partner: { include: { user: true } }
+            }
+        });
+
+        await prisma.bookingPartner.updateMany({
+            where: { booking_id: bookingId, partner_id: partnerId },
+            data: { status: 'IN_PROGRESS' }
+        });
+
+        await prisma.bookingStatusHistory.create({
+            data: {
+                booking_id: bookingId,
+                status: 'IN_PROGRESS',
+                changed_by: partnerId,
+                notes: 'Job resumed by partner with customer verification code'
+            }
+        });
+
+        try {
+            await this.notificationService.createNotification(
+                booking.customer_id,
+                'GENERAL',
+                'Job Resumed',
+                `Technician has resumed work on booking #${booking.booking_number}.`,
+                { bookingId: booking.id }
+            );
+        } catch (error) {
+            logger.error('Failed to notify customer on resume:', error);
+        }
+
+        return {
+            message: 'Job resumed successfully. Status updated to IN_PROGRESS.',
+            booking: updatedBooking
+        };
+    }
+
+    /**
      * Update partner's real-time location
      */
     async updatePartnerLocation(partnerId: string, latitude: number, longitude: number) {
@@ -1825,11 +2189,25 @@ export class BookingService {
         // Check if user can cancel
         const partner = await prisma.servicePartner.findUnique({
             where: { user_id: userId },
+            include: { user: true }
         });
+
+        // Also check if user is an assigned booking partner
+        const isBookingPartner = partner ? await prisma.bookingPartner.findFirst({
+            where: {
+                booking_id: bookingId,
+                partner_id: partner.id,
+                status: { notIn: ['CANCELLED_BY_PARTNER', 'REASSIGNED'] }
+            }
+        }) : null;
+
+        const isAdmin = role === 'ADMIN' || role === 'SUPER_ADMIN';
 
         const canCancel =
             booking.customer_id === userId ||
-            booking.partner_id === partner?.id;
+            booking.partner_id === partner?.id ||
+            Boolean(isBookingPartner) ||
+            isAdmin;
 
         if (!canCancel) {
             throw new UnauthorizedError('You cannot cancel this booking');
@@ -1849,47 +2227,136 @@ export class BookingService {
             }
         }
 
-        // 🌟 PARTNER CANCELLATION LOGIC
-        // If a partner cancels, we put it back in the pool instead of cancelling the whole booking
-        if (role === 'SERVICE_PARTNER') {
-            const updatedBooking = await prisma.booking.update({
-                where: { id: bookingId },
-                data: {
-                    partner_id: null,
-                    partner_assigned_at: null,
-                    partner_accepted_at: null,
-                    status: 'SEARCHING_PARTNER',
-                    status_history: {
-                        create: {
-                            status: 'SEARCHING_PARTNER',
-                            changed_by: userId,
-                            notes: `Service Partner cancelled the booking assignment. Reason: ${reason}`,
-                        },
+        // 🌟 PARTNER EMERGENCY CANCELLATION LOGIC
+        // If a partner cancels, release their slot and trigger automated failover search
+        if (role === 'SERVICE_PARTNER' || (partner && (booking.partner_id === partner.id || isBookingPartner))) {
+            const partnerName = partner?.user?.full_name || 'Service Partner';
+
+            // 1. Mark this partner's BookingPartner status as CANCELLED_BY_PARTNER
+            if (partner) {
+                await prisma.bookingPartner.updateMany({
+                    where: {
+                        booking_id: bookingId,
+                        partner_id: partner.id,
+                        status: { notIn: ['CANCELLED_BY_PARTNER', 'REASSIGNED'] }
                     },
+                    data: {
+                        status: 'CANCELLED_BY_PARTNER',
+                        cancellation_reason: reason,
+                        cancelled_at: new Date()
+                    }
+                });
+            }
+
+            // 2. Check remaining active partners for this booking
+            const remainingPartners = await prisma.bookingPartner.findMany({
+                where: {
+                    booking_id: bookingId,
+                    status: { notIn: ['CANCELLED_BY_PARTNER', 'REASSIGNED'] },
+                    ...(partner ? { partner_id: { not: partner.id } } : {})
                 },
                 include: {
-                    customer: true,
-                    items: { include: { service: true } }
+                    partner: { include: { user: true } }
                 }
             });
 
-            // Notify Customer that we're searching again
+            let updatedBooking;
+            const requiredCount = booking.required_partners_count || 1;
+
+            if (remainingPartners.length > 0) {
+                // Multi-partner team job: At least one partner remains active
+                const leadPartner = remainingPartners[0];
+                updatedBooking = await prisma.booking.update({
+                    where: { id: bookingId },
+                    data: {
+                        partner_id: leadPartner.partner_id,
+                        assigned_partners_count: remainingPartners.length,
+                        reassignment_count: { increment: 1 },
+                        needs_reassignment: true,
+                        reassignment_reason: `Partner ${partnerName} had an emergency: ${reason}`,
+                        status_history: {
+                            create: {
+                                status: booking.status,
+                                changed_by: userId,
+                                notes: `Partner ${partnerName} cancelled due to emergency: ${reason}. (${remainingPartners.length}/${requiredCount} partners remain). System searching for backup replacement.`,
+                            },
+                        },
+                    },
+                    include: {
+                        customer: true,
+                        items: { include: { service: true } },
+                        assigned_partners: { include: { partner: { include: { user: true } } } }
+                    }
+                });
+            } else {
+                // Single partner or all partners cancelled: Reset to SEARCHING_PARTNER
+                updatedBooking = await prisma.booking.update({
+                    where: { id: bookingId },
+                    data: {
+                        partner_id: null,
+                        partner_assigned_at: null,
+                        partner_accepted_at: null,
+                        assigned_partners_count: 0,
+                        reassignment_count: { increment: 1 },
+                        needs_reassignment: true,
+                        reassignment_reason: `Partner ${partnerName} cancelled: ${reason}`,
+                        status: 'SEARCHING_PARTNER',
+                        status_history: {
+                            create: {
+                                status: 'SEARCHING_PARTNER',
+                                changed_by: userId,
+                                notes: `Partner ${partnerName} cancelled: ${reason}. System searching for replacement partner.`,
+                            },
+                        },
+                    },
+                    include: {
+                        customer: true,
+                        items: { include: { service: true } },
+                        assigned_partners: { include: { partner: { include: { user: true } } } }
+                    }
+                });
+            }
+
+            // Realtime socket notifications to Customer & Admin
             try {
+                const io = getIO();
+
+                // 1. Reassure Customer Room
+                io.of('/customer').to(updatedBooking.customer_id).emit('booking:partner_reassigned', {
+                    bookingId: updatedBooking.id,
+                    bookingNumber: updatedBooking.booking_number,
+                    reason: 'Your professional encountered an unexpected transit/emergency issue. We are automatically routing a nearby backup verified pro right away.',
+                    requiredPartnersCount: requiredCount,
+                    assignedPartnersCount: remainingPartners.length,
+                    needsReassignment: true
+                });
+
+                // 2. Alert Admin Dashboard Room
+                io.of('/admin').emit('admin:emergency_reassignment', {
+                    bookingId: updatedBooking.id,
+                    bookingNumber: updatedBooking.booking_number,
+                    cancelledPartnerName: partnerName,
+                    reason: reason,
+                    remainingPartnersCount: remainingPartners.length,
+                    requiredPartnersCount: requiredCount,
+                    needsReassignment: true,
+                    timestamp: new Date().toISOString()
+                });
+
                 await this.notificationService.createNotification(
                     updatedBooking.customer_id,
                     'GENERAL',
-                    'Searching for new technician',
-                    `Your assigned technician had to cancel. We are searching for a new one for you.`,
+                    'Assigning replacement professional',
+                    `Your professional experienced an unforeseen issue. We are actively routing a backup professional to your location now.`,
                     { bookingId: updatedBooking.id }
                 );
 
-                // Also broadcast socket update
                 this.broadcastBookingUpdate(updatedBooking);
             } catch (error) {
-                logger.error('Failed to notify customer of partner cancellation:', error);
+                logger.error('Failed to notify customer/admin of partner emergency cancellation:', error);
             }
 
-            // Re-trigger partner matching
+            // Re-trigger automated partner matching for the vacant slot
             this.findAndNotifyPartners(bookingId).catch(err => logger.error(`Re-assignment error after partner cancel for ${bookingId}:`, err));
 
             return updatedBooking;

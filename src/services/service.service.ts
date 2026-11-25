@@ -13,6 +13,21 @@ interface CreateServiceData {
     unitLabel?: string;
     unit_label?: string;
     imageUrl?: string;
+    allowsMultiplePartners?: boolean | string;
+    allows_multiple_partners?: boolean | string;
+    minPartners?: number;
+    min_partners?: number;
+    maxPartners?: number;
+    max_partners?: number;
+    workerLabel?: string;
+    worker_label?: string;
+    images?: string[];
+    hasWarranty?: boolean | string;
+    has_warranty?: boolean | string;
+    warrantyDays?: number;
+    warranty_days?: number;
+    warrantyNote?: string | null;
+    warranty_note?: string | null;
     isActive?: boolean | string;
     displayOrder?: number;
     display_order?: number;
@@ -219,6 +234,21 @@ export class ServiceService {
             note: service.note,
             isActive: service.is_active,
             is_active: service.is_active,
+            images: (service.images && service.images.length > 0) ? service.images : (service.image_url ? [service.image_url] : []),
+            allowsMultiplePartners: service.allows_multiple_partners ?? false,
+            allows_multiple_partners: service.allows_multiple_partners ?? false,
+            minPartners: service.min_partners ?? 1,
+            min_partners: service.min_partners ?? 1,
+            maxPartners: service.max_partners ?? 5,
+            max_partners: service.max_partners ?? 5,
+            workerLabel: service.worker_label || 'Partner',
+            worker_label: service.worker_label || 'Partner',
+            hasWarranty: service.has_warranty ?? false,
+            has_warranty: service.has_warranty ?? false,
+            warrantyDays: service.warranty_days ?? 0,
+            warranty_days: service.warranty_days ?? 0,
+            warrantyNote: service.warranty_note,
+            warranty_note: service.warranty_note,
             avgRating: 4.5, // TODO: Calculate from actual ratings
             totalRatings: 0, // TODO: Count from actual ratings
             packages: formatServicePackages(service.packages || [], service.base_price, service.pricing_model, service.unit_label || 'order'),
@@ -294,6 +324,21 @@ export class ServiceService {
             note: service.note,
             isActive: service.is_active,
             is_active: service.is_active,
+            images: (service.images && service.images.length > 0) ? service.images : (service.image_url ? [service.image_url] : []),
+            allowsMultiplePartners: service.allows_multiple_partners ?? false,
+            allows_multiple_partners: service.allows_multiple_partners ?? false,
+            minPartners: service.min_partners ?? 1,
+            min_partners: service.min_partners ?? 1,
+            maxPartners: service.max_partners ?? 5,
+            max_partners: service.max_partners ?? 5,
+            workerLabel: service.worker_label || 'Partner',
+            worker_label: service.worker_label || 'Partner',
+            hasWarranty: service.has_warranty ?? false,
+            has_warranty: service.has_warranty ?? false,
+            warrantyDays: service.warranty_days ?? 0,
+            warranty_days: service.warranty_days ?? 0,
+            warrantyNote: service.warranty_note,
+            warranty_note: service.warranty_note,
             avgRating: 4.5, // TODO: Calculate from actual ratings
             totalRatings: 0, // TODO: Count from actual ratings
             packages: formatServicePackages(service.packages || [], service.base_price, service.pricing_model, service.unit_label || 'order'),
@@ -329,6 +374,26 @@ export class ServiceService {
         const rawUnitLabel = (data as any).unitLabel || (data as any).unit_label;
         const unitLabel = rawUnitLabel ? String(rawUnitLabel).trim() : (pricingModel === 'ORDER_BASED' ? 'order' : 'hour');
 
+        const allowsMultiplePartners = (data as any).allowsMultiplePartners !== undefined
+            ? ((data as any).allowsMultiplePartners === true || (data as any).allowsMultiplePartners === 'true')
+            : ((data as any).allows_multiple_partners !== undefined ? ((data as any).allows_multiple_partners === true || (data as any).allows_multiple_partners === 'true') : false);
+        const minPartners = (data as any).minPartners !== undefined
+            ? parseInt((data as any).minPartners, 10)
+            : ((data as any).min_partners !== undefined ? parseInt((data as any).min_partners, 10) : 1);
+        const maxPartners = (data as any).maxPartners !== undefined
+            ? parseInt((data as any).maxPartners, 10)
+            : ((data as any).max_partners !== undefined ? parseInt((data as any).max_partners, 10) : 5);
+        const workerLabel = (data as any).workerLabel || (data as any).worker_label || 'Partner';
+        const rawImages = (data as any).images;
+        const images: string[] = Array.isArray(rawImages) ? rawImages : (data.imageUrl ? [data.imageUrl] : []);
+        const hasWarranty = (data as any).hasWarranty !== undefined
+            ? ((data as any).hasWarranty === true || (data as any).hasWarranty === 'true')
+            : ((data as any).has_warranty !== undefined ? ((data as any).has_warranty === true || (data as any).has_warranty === 'true') : false);
+        const warrantyDays = (data as any).warrantyDays !== undefined
+            ? parseInt((data as any).warrantyDays, 10)
+            : ((data as any).warranty_days !== undefined ? parseInt((data as any).warranty_days, 10) : 0);
+        const warrantyNote = (data as any).warrantyNote !== undefined ? (data as any).warrantyNote : (data as any).warranty_note || null;
+
         const service = await prisma.service.create({
             data: {
                 name: data.name,
@@ -338,7 +403,15 @@ export class ServiceService {
                 duration: data.duration !== undefined ? parseInt(data.duration as any, 10) : 0,
                 pricing_model: pricingModel,
                 unit_label: unitLabel,
-                image_url: data.imageUrl,
+                allows_multiple_partners: allowsMultiplePartners,
+                min_partners: isNaN(minPartners) ? 1 : Math.max(1, minPartners),
+                max_partners: isNaN(maxPartners) ? 5 : Math.max(1, maxPartners),
+                worker_label: workerLabel,
+                images: images,
+                has_warranty: hasWarranty,
+                warranty_days: isNaN(warrantyDays) ? 0 : warrantyDays,
+                warranty_note: warrantyNote,
+                image_url: data.imageUrl || (images.length > 0 ? images[0] : null),
                 display_order: isNaN(displayOrder) ? 1 : Math.max(1, displayOrder),
                 is_repeated: isRepeated,
                 repeated_order: isNaN(repeatedOrder) ? 0 : repeatedOrder,
@@ -378,6 +451,21 @@ export class ServiceService {
             note: service.note,
             isActive: service.is_active,
             is_active: service.is_active,
+            images: (service.images && service.images.length > 0) ? service.images : (service.image_url ? [service.image_url] : []),
+            allowsMultiplePartners: service.allows_multiple_partners ?? false,
+            allows_multiple_partners: service.allows_multiple_partners ?? false,
+            minPartners: service.min_partners ?? 1,
+            min_partners: service.min_partners ?? 1,
+            maxPartners: service.max_partners ?? 5,
+            max_partners: service.max_partners ?? 5,
+            workerLabel: service.worker_label || 'Partner',
+            worker_label: service.worker_label || 'Partner',
+            hasWarranty: service.has_warranty ?? false,
+            has_warranty: service.has_warranty ?? false,
+            warrantyDays: service.warranty_days ?? 0,
+            warranty_days: service.warranty_days ?? 0,
+            warrantyNote: service.warranty_note,
+            warranty_note: service.warranty_note,
             createdAt: service.created_at,
             updatedAt: service.updated_at,
         };
@@ -418,6 +506,29 @@ export class ServiceService {
         const rawUnitLabel = (data as any).unitLabel !== undefined ? (data as any).unitLabel : (data as any).unit_label;
         const unitLabel = rawUnitLabel !== undefined ? String(rawUnitLabel).trim() : undefined;
 
+        const rawAllowsMultiplePartners = (data as any).allowsMultiplePartners !== undefined ? (data as any).allowsMultiplePartners : (data as any).allows_multiple_partners;
+        const allowsMultiplePartners = rawAllowsMultiplePartners !== undefined ? (rawAllowsMultiplePartners === true || String(rawAllowsMultiplePartners) === 'true') : undefined;
+
+        const rawMinPartners = (data as any).minPartners !== undefined ? (data as any).minPartners : (data as any).min_partners;
+        const minPartners = rawMinPartners !== undefined ? parseInt(String(rawMinPartners), 10) : undefined;
+
+        const rawMaxPartners = (data as any).maxPartners !== undefined ? (data as any).maxPartners : (data as any).max_partners;
+        const maxPartners = rawMaxPartners !== undefined ? parseInt(String(rawMaxPartners), 10) : undefined;
+
+        const workerLabel = (data as any).workerLabel !== undefined ? (data as any).workerLabel : (data as any).worker_label;
+
+        const rawImages = (data as any).images;
+        const images: string[] | undefined = Array.isArray(rawImages) ? rawImages : undefined;
+
+        const rawHasWarranty = (data as any).hasWarranty !== undefined ? (data as any).hasWarranty : (data as any).has_warranty;
+        const hasWarranty = rawHasWarranty !== undefined ? (rawHasWarranty === true || String(rawHasWarranty) === 'true') : undefined;
+
+        const rawWarrantyDays = (data as any).warrantyDays !== undefined ? (data as any).warrantyDays : (data as any).warranty_days;
+        const warrantyDays = rawWarrantyDays !== undefined ? parseInt(String(rawWarrantyDays), 10) : undefined;
+
+        const rawWarrantyNote = (data as any).warrantyNote !== undefined ? (data as any).warrantyNote : (data as any).warranty_note;
+        const warrantyNote = rawWarrantyNote !== undefined ? (rawWarrantyNote || null) : undefined;
+
         const updatedService = await prisma.service.update({
             where: { id: serviceId },
             data: {
@@ -428,7 +539,16 @@ export class ServiceService {
                 ...(data.duration !== undefined && { duration: parseInt(data.duration as any, 10) }),
                 ...(pricingModel && { pricing_model: pricingModel }),
                 ...(unitLabel !== undefined && { unit_label: unitLabel }),
+                ...(allowsMultiplePartners !== undefined && { allows_multiple_partners: allowsMultiplePartners }),
+                ...(minPartners !== undefined && !isNaN(minPartners) && { min_partners: Math.max(1, minPartners) }),
+                ...(maxPartners !== undefined && !isNaN(maxPartners) && { max_partners: Math.max(1, maxPartners) }),
+                ...(workerLabel !== undefined && { worker_label: workerLabel }),
+                ...(images !== undefined && { images }),
+                ...(hasWarranty !== undefined && { has_warranty: hasWarranty }),
+                ...(warrantyDays !== undefined && !isNaN(warrantyDays) && { warranty_days: warrantyDays }),
+                ...(warrantyNote !== undefined && { warranty_note: warrantyNote }),
                 ...(data.imageUrl && { image_url: data.imageUrl }),
+                ...(images && images.length > 0 && !data.imageUrl && { image_url: images[0] }),
                 ...(displayOrder !== undefined && { display_order: displayOrder }),
                 ...(isRepeated !== undefined && { is_repeated: isRepeated }),
                 ...(repeatedOrder !== undefined && !isNaN(repeatedOrder) && { repeated_order: repeatedOrder }),
@@ -514,6 +634,21 @@ export class ServiceService {
             note: updatedService.note,
             isActive: updatedService.is_active,
             is_active: updatedService.is_active,
+            images: (updatedService.images && updatedService.images.length > 0) ? updatedService.images : (updatedService.image_url ? [updatedService.image_url] : []),
+            allowsMultiplePartners: updatedService.allows_multiple_partners ?? false,
+            allows_multiple_partners: updatedService.allows_multiple_partners ?? false,
+            minPartners: updatedService.min_partners ?? 1,
+            min_partners: updatedService.min_partners ?? 1,
+            maxPartners: updatedService.max_partners ?? 5,
+            max_partners: updatedService.max_partners ?? 5,
+            workerLabel: updatedService.worker_label || 'Partner',
+            worker_label: updatedService.worker_label || 'Partner',
+            hasWarranty: updatedService.has_warranty ?? false,
+            has_warranty: updatedService.has_warranty ?? false,
+            warrantyDays: updatedService.warranty_days ?? 0,
+            warranty_days: updatedService.warranty_days ?? 0,
+            warrantyNote: updatedService.warranty_note,
+            warranty_note: updatedService.warranty_note,
             updatedAt: updatedService.updated_at,
         };
     }

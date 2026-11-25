@@ -33,12 +33,12 @@ export class AuthController {
             console.log(`🔌 [LOGIN DEBUG] Attempt from Origin: ${req.headers.origin}, Agent: ${req.headers['user-agent']}`);
             console.log(`🔌 [LOGIN DEBUG] ngrok skip header: ${req.headers['ngrok-skip-browser-warning']}`);
             
-            const { email, password, phoneNumber } = req.body;
-            const identifier = email || phoneNumber;
-            if (!identifier) {
+            const { email, password, phoneNumber, phone, identifier } = req.body;
+            const targetIdentifier = (identifier || email || phoneNumber || phone || '').toString().trim();
+            if (!targetIdentifier) {
                 return res.status(400).json({ status: 'error', message: 'Email or phone number is required' });
             }
-            const result = await this.authService.login(identifier, password);
+            const result = await this.authService.login(targetIdentifier, password);
             return res.json(successResponse(result, result.message || 'Login successful'));
         } catch (error) {
             return next(error);
@@ -47,8 +47,8 @@ export class AuthController {
 
     verifyEmail = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const { email, phoneNumber, identifier, otp, code } = req.body;
-            const targetIdentifier = (email || phoneNumber || identifier || '').trim().toLowerCase();
+            const { email, phoneNumber, identifier, phone, otp, code } = req.body;
+            const targetIdentifier = (identifier || email || phoneNumber || phone || '').toString().trim();
             const targetOtp = (otp || code || '').toString().trim();
             const result = await this.authService.verifyOtp(targetIdentifier, targetOtp);
             return res.json(successResponse(result, result.message));
@@ -59,8 +59,8 @@ export class AuthController {
 
     verifyOtp = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const { email, phoneNumber, identifier, otp, code } = req.body;
-            const targetIdentifier = (email || phoneNumber || identifier || '').trim().toLowerCase();
+            const { email, phoneNumber, identifier, phone, otp, code } = req.body;
+            const targetIdentifier = (identifier || email || phoneNumber || phone || '').toString().trim();
             const targetOtp = (otp || code || '').toString().trim();
             const result = await this.authService.verifyOtp(targetIdentifier, targetOtp);
             return res.json(successResponse(result, result.message));
@@ -71,8 +71,9 @@ export class AuthController {
 
     resendVerificationOTP = async (req: Request, res: Response, next: NextFunction) => {
         try {
-            const { email } = req.body;
-            const result = await this.authService.resendVerificationOTP(email);
+            const { email, phoneNumber, identifier, phone } = req.body;
+            const targetIdentifier = (identifier || email || phoneNumber || phone || '').toString().trim();
+            const result = await this.authService.resendVerificationOTP(targetIdentifier);
             return res.json(successResponse(null, result.message));
         } catch (error) {
             return next(error);

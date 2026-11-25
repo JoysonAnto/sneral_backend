@@ -399,6 +399,58 @@ router.post(
 
 /**
  * @swagger
+ * /bookings/{id}/pause-request:
+ *   post:
+ *     summary: Request Pause OTP for multi-day job progression (Partner Action)
+ *     tags: [Bookings]
+ */
+router.post(
+    '/:id/pause-request',
+    authorize('SERVICE_PARTNER'),
+    bookingController.generatePauseOTP
+);
+
+/**
+ * @swagger
+ * /bookings/{id}/pause-confirm:
+ *   post:
+ *     summary: Verify Pause OTP and put job on hold with photos (Partner Action)
+ *     tags: [Bookings]
+ */
+router.post(
+    '/:id/pause-confirm',
+    authorize('SERVICE_PARTNER'),
+    bookingController.verifyPauseJob
+);
+
+/**
+ * @swagger
+ * /bookings/{id}/resume-request:
+ *   post:
+ *     summary: Request Resume OTP for continuing multi-day job (Partner Action)
+ *     tags: [Bookings]
+ */
+router.post(
+    '/:id/resume-request',
+    authorize('SERVICE_PARTNER'),
+    bookingController.generateResumeOTP
+);
+
+/**
+ * @swagger
+ * /bookings/{id}/resume-confirm:
+ *   post:
+ *     summary: Verify Resume OTP and continue job with check-in photos (Partner Action)
+ *     tags: [Bookings]
+ */
+router.post(
+    '/:id/resume-confirm',
+    authorize('SERVICE_PARTNER'),
+    bookingController.verifyResumeJob
+);
+
+/**
+ * @swagger
  * /bookings/partner/update-location:
  *   post:
  *     summary: Update real-time GPS coordinates of the partner

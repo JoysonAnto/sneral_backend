@@ -39,13 +39,37 @@ export class ServiceController {
     createService = async (req: Request, res: Response, next: NextFunction) => {
         try {
             let imageUrl = req.body.imageUrl || req.body.image_url;
+            let images: string[] = [];
 
-            // If file uploaded, upload to Cloudinary
-            if (req.file) {
-                imageUrl = await CloudinaryService.uploadServiceImage(
-                    req.file.buffer,
-                    req.body.name || 'service'
+            if (req.body.images) {
+                if (Array.isArray(req.body.images)) {
+                    images = [...req.body.images];
+                } else {
+                    try {
+                        const parsed = JSON.parse(req.body.images);
+                        images = Array.isArray(parsed) ? parsed : [req.body.images];
+                    } catch {
+                        images = [req.body.images];
+                    }
+                }
+            }
+
+            // Upload any files provided in FormData to Cloudinary
+            const uploadedFiles = (req as any).files || ((req as any).file ? [(req as any).file] : []);
+            if (uploadedFiles && uploadedFiles.length > 0) {
+                const uploadedUrls = await Promise.all(
+                    uploadedFiles.map((f: any) =>
+                        CloudinaryService.uploadServiceImage(f.buffer, req.body.name || 'service')
+                    )
                 );
+                images = [...images, ...uploadedUrls];
+                if (!imageUrl && uploadedUrls.length > 0) {
+                    imageUrl = uploadedUrls[0];
+                }
+            }
+
+            if (imageUrl && !images.includes(imageUrl)) {
+                images.unshift(imageUrl);
             }
 
             const categoryId = req.body.categoryId || req.body.category_id;
@@ -65,6 +89,7 @@ export class ServiceController {
                 ...req.body,
                 ...(categoryId && { categoryId, category_id: categoryId }),
                 ...(imageUrl && { imageUrl, image_url: imageUrl }),
+                images,
                 pricingModel,
                 pricing_model: pricingModel,
                 unitLabel,
@@ -72,6 +97,28 @@ export class ServiceController {
                 displayOrder,
                 display_order: displayOrder,
                 note,
+                ...(req.body.allowsMultiplePartners !== undefined && {
+                    allowsMultiplePartners: req.body.allowsMultiplePartners === 'true' || req.body.allowsMultiplePartners === true
+                }),
+                ...(req.body.allows_multiple_partners !== undefined && {
+                    allowsMultiplePartners: req.body.allows_multiple_partners === 'true' || req.body.allows_multiple_partners === true
+                }),
+                ...(req.body.minPartners !== undefined && { minPartners: parseInt(req.body.minPartners, 10) }),
+                ...(req.body.min_partners !== undefined && { minPartners: parseInt(req.body.min_partners, 10) }),
+                ...(req.body.maxPartners !== undefined && { maxPartners: parseInt(req.body.maxPartners, 10) }),
+                ...(req.body.max_partners !== undefined && { maxPartners: parseInt(req.body.max_partners, 10) }),
+                ...(req.body.workerLabel !== undefined && { workerLabel: req.body.workerLabel }),
+                ...(req.body.worker_label !== undefined && { workerLabel: req.body.worker_label }),
+                ...(req.body.hasWarranty !== undefined && {
+                    hasWarranty: req.body.hasWarranty === 'true' || req.body.hasWarranty === true
+                }),
+                ...(req.body.has_warranty !== undefined && {
+                    hasWarranty: req.body.has_warranty === 'true' || req.body.has_warranty === true
+                }),
+                ...(req.body.warrantyDays !== undefined && { warrantyDays: parseInt(req.body.warrantyDays, 10) }),
+                ...(req.body.warranty_days !== undefined && { warrantyDays: parseInt(req.body.warranty_days, 10) }),
+                ...(req.body.warrantyNote !== undefined && { warrantyNote: req.body.warrantyNote }),
+                ...(req.body.warranty_note !== undefined && { warrantyNote: req.body.warranty_note }),
                 // Ensure numeric fields are converted (FormData sends everything as strings)
                 ...(req.body.basePrice !== undefined && { basePrice: parseFloat(req.body.basePrice) }),
                 ...(req.body.base_price !== undefined && { basePrice: parseFloat(req.body.base_price) }),
@@ -106,13 +153,33 @@ export class ServiceController {
     updateService = async (req: Request, res: Response, next: NextFunction) => {
         try {
             let imageUrl = req.body.imageUrl || req.body.image_url;
+            let images: string[] | undefined = undefined;
 
-            // If file uploaded, upload to Cloudinary
-            if (req.file) {
-                imageUrl = await CloudinaryService.uploadServiceImage(
-                    req.file.buffer,
-                    req.body.name || 'service_update'
+            if (req.body.images) {
+                if (Array.isArray(req.body.images)) {
+                    images = [...req.body.images];
+                } else {
+                    try {
+                        const parsed = JSON.parse(req.body.images);
+                        images = Array.isArray(parsed) ? parsed : [req.body.images];
+                    } catch {
+                        images = [req.body.images];
+                    }
+                }
+            }
+
+            // Upload any files provided in FormData to Cloudinary
+            const uploadedFiles = (req as any).files || ((req as any).file ? [(req as any).file] : []);
+            if (uploadedFiles && uploadedFiles.length > 0) {
+                const uploadedUrls = await Promise.all(
+                    uploadedFiles.map((f: any) =>
+                        CloudinaryService.uploadServiceImage(f.buffer, req.body.name || 'service_update')
+                    )
                 );
+                images = [...(images || []), ...uploadedUrls];
+                if (!imageUrl && uploadedUrls.length > 0) {
+                    imageUrl = uploadedUrls[0];
+                }
             }
 
             const categoryId = req.body.categoryId || req.body.category_id;
@@ -130,10 +197,33 @@ export class ServiceController {
                 ...req.body,
                 ...(categoryId && { categoryId, category_id: categoryId }),
                 ...(imageUrl && { imageUrl, image_url: imageUrl }),
+                ...(images !== undefined && { images }),
                 ...(pricingModel !== undefined && { pricingModel, pricing_model: pricingModel }),
                 ...(unitLabel !== undefined && { unitLabel, unit_label: unitLabel }),
                 ...(displayOrder !== undefined && { displayOrder, display_order: displayOrder }),
                 ...(note !== undefined && { note }),
+                ...(req.body.allowsMultiplePartners !== undefined && {
+                    allowsMultiplePartners: req.body.allowsMultiplePartners === 'true' || req.body.allowsMultiplePartners === true
+                }),
+                ...(req.body.allows_multiple_partners !== undefined && {
+                    allowsMultiplePartners: req.body.allows_multiple_partners === 'true' || req.body.allows_multiple_partners === true
+                }),
+                ...(req.body.minPartners !== undefined && { minPartners: parseInt(req.body.minPartners, 10) }),
+                ...(req.body.min_partners !== undefined && { minPartners: parseInt(req.body.min_partners, 10) }),
+                ...(req.body.maxPartners !== undefined && { maxPartners: parseInt(req.body.maxPartners, 10) }),
+                ...(req.body.max_partners !== undefined && { maxPartners: parseInt(req.body.max_partners, 10) }),
+                ...(req.body.workerLabel !== undefined && { workerLabel: req.body.workerLabel }),
+                ...(req.body.worker_label !== undefined && { workerLabel: req.body.worker_label }),
+                ...(req.body.hasWarranty !== undefined && {
+                    hasWarranty: req.body.hasWarranty === 'true' || req.body.hasWarranty === true
+                }),
+                ...(req.body.has_warranty !== undefined && {
+                    hasWarranty: req.body.has_warranty === 'true' || req.body.has_warranty === true
+                }),
+                ...(req.body.warrantyDays !== undefined && { warrantyDays: parseInt(req.body.warrantyDays, 10) }),
+                ...(req.body.warranty_days !== undefined && { warrantyDays: parseInt(req.body.warranty_days, 10) }),
+                ...(req.body.warrantyNote !== undefined && { warrantyNote: req.body.warrantyNote }),
+                ...(req.body.warranty_note !== undefined && { warrantyNote: req.body.warranty_note }),
                 // Ensure numeric fields are converted (FormData sends everything as strings)
                 ...(req.body.basePrice !== undefined && { basePrice: parseFloat(req.body.basePrice) }),
                 ...(req.body.base_price !== undefined && { basePrice: parseFloat(req.body.base_price) }),

@@ -53,6 +53,7 @@ model User {
   coupon_redemptions      CouponRedemption[]
   referrals_made          ReferralTracking[]  @relation("ReferrerUser")
   referrals_received      ReferralTracking[]  @relation("RefereeUser")
+  pincode_notifications   PincodeNotification[]
 
 
   @@index([email])
@@ -145,6 +146,7 @@ model ServicePartner {
   payout_methods       PartnerPayoutMethod[]
   merchandise_orders   MerchandiseOrder[]
   reward_claims        PartnerRewardClaim[]
+  booking_assignments  BookingPartner[]
   business_partner     BusinessPartner?         @relation(fields: [business_partner_id], references: [id])
   category             Category?                @relation(fields: [category_id], references: [id])
   user                 User                     @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -293,6 +295,14 @@ model Service {
   duration                Int
   pricing_model           String                   @default("TIME_BASED") // "TIME_BASED" | "ORDER_BASED"
   unit_label              String?                  @default("hour")
+  allows_multiple_partners Boolean                 @default(false)
+  min_partners             Int                     @default(1)
+  max_partners             Int                     @default(5)
+  worker_label             String?                 @default("Partner")
+  images                  String[]                 @default([])
+  has_warranty            Boolean                  @default(false)
+  warranty_days           Int                      @default(0)
+  warranty_note           String?
   image_url               String?
   display_order           Int                      @default(1)
   is_repeated             Boolean                  @default(false)
@@ -459,6 +469,14 @@ model Booking {
   material_bill_image   String?
   gst_amount            Float                    @default(0)
   start_otp             String?
+  is_paused             Boolean                  @default(false)
+  pause_otp             String?
+  resume_otp            String?
+  required_partners_count Int                    @default(1)
+  assigned_partners_count Int                    @default(0)
+  reassignment_count    Int                      @default(0)
+  needs_reassignment    Boolean                  @default(false)
+  reassignment_reason   String?
   group_id              String?
   is_scheduled          Boolean                  @default(false)
   booking_type          BookingType              @default(INSTANT)
@@ -468,9 +486,11 @@ model Booking {
   activity_logs         BookingActivityLog[]
   items                 BookingItem[]
   status_history        BookingStatusHistory[]
+  pause_milestones      BookingPauseMilestone[]
   business_partner      BusinessPartner?         @relation("BusinessPartnerBookings", fields: [business_partner_id], references: [id])
   customer              User                     @relation("CustomerBookings", fields: [customer_id], references: [id])
   partner               ServicePartner?          @relation("PartnerBookings", fields: [partner_id], references: [id])
+  assigned_partners     BookingPartner[]
   invoice               Invoice?
   messages              Message[]
   location_history      PartnerLocationHistory[]
@@ -506,6 +526,32 @@ model BookingItem {
   @@index([booking_id])
   @@index([package_id])
   @@map("booking_items")
+}
+
+model BookingPartner {
+  id                  String               @id @default(uuid())
+  booking_id          String
+  partner_id          String
+  is_lead             Boolean              @default(false)
+  status              BookingPartnerStatus @default(ASSIGNED)
+  cancellation_reason String?
+  cancelled_at        DateTime?
+  assigned_at         DateTime             @default(now())
+  accepted_at         DateTime?
+  arrived_at          DateTime?
+  started_at          DateTime?
+  completed_at        DateTime?
+  created_at          DateTime             @default(now())
+  updated_at          DateTime             @updatedAt
+
+  booking             Booking              @relation(fields: [booking_id], references: [id], onDelete: Cascade)
+  partner             ServicePartner       @relation(fields: [partner_id], references: [id], onDelete: Cascade)
+
+  @@unique([booking_id, partner_id])
+  @@index([booking_id])
+  @@index([partner_id])
+  @@index([status])
+  @@map("booking_partners")
 }
 
 model ServicePackage {
@@ -1073,6 +1119,7 @@ enum BookingStatus {
   PARTNER_ASSIGNED
   PARTNER_ACCEPTED
   IN_PROGRESS
+  PAUSED
   COMPLETED
   CANCELLED
   RATED
@@ -1080,6 +1127,17 @@ enum BookingStatus {
   PENDING_ASSIGNMENT
   PARTNER_ARRIVED
   ARRIVED
+}
+
+enum BookingPartnerStatus {
+  ASSIGNED
+  ACCEPTED
+  ARRIVED
+  IN_PROGRESS
+  PAUSED
+  COMPLETED
+  CANCELLED_BY_PARTNER
+  REASSIGNED
 }
 
 enum PaymentStatus {
@@ -1477,6 +1535,43 @@ model ReferralConfig {
   updated_at               DateTime @updatedAt
 
   @@map("referral_configs")
+}
+
+model BookingPauseMilestone {
+  id            String    @id @default(uuid())
+  booking_id    String
+  partner_id    String
+  paused_at     DateTime  @default(now())
+  pause_otp     String?
+  pause_reason  String?
+  pause_images  String[]  @default([])
+  resumed_at    DateTime?
+  resume_otp    String?
+  resume_images String[]  @default([])
+  created_at    DateTime  @default(now())
+
+  booking       Booking   @relation(fields: [booking_id], references: [id], onDelete: Cascade)
+
+  @@index([booking_id])
+  @@map("booking_pause_milestones")
+}
+
+model PincodeNotification {
+  id            String    @id @default(uuid())
+  pincode       String
+  area_name     String?
+  district_name String?
+  email         String?
+  phone_number  String?
+  user_id       String?
+  status        String    @default("PENDING") // PENDING, NOTIFIED, ARCHIVED
+  created_at    DateTime  @default(now())
+
+  user          User?     @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([pincode])
+  @@index([status])
+  @@map("pincode_notifications")
 }
 
 

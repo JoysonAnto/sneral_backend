@@ -51,11 +51,19 @@ export const registerValidator = [
 ];
 
 export const loginValidator = [
-    safeEmail(),
+    body('email')
+        .optional()
+        .trim()
+        .customSanitizer((val: string) => (typeof val === 'string' ? val.toLowerCase().trim() : val)),
     body('phoneNumber')
         .optional()
-        .isMobilePhone('any')
-        .withMessage('Please provide a valid phone number'),
+        .trim(),
+    body('phone')
+        .optional()
+        .trim(),
+    body('identifier')
+        .optional()
+        .trim(),
     body('password')
         .optional(),
 ];
